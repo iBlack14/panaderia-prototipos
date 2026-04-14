@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Snack Roque — Harina & Sabor</title>
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700;800&family=Fraunces:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<title>Snack Roque — Sistema de Gestión v3</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -16,27 +16,28 @@
 
   <div class="login-container" id="loginContainer">
     <div class="login-left">
-      <div class="ll-top" style="display:flex; flex-direction:column; align-items:center; text-align:center;">
-        <img src="../asset/logo.png" alt="Logo" class="bread-icon" style="width:220px; height:auto;">
-        <div class="ll-features" style="text-align:left; align-self:flex-start; margin-top:20px;">
-          <div class="feature"><div class="f-dot">🥖</div> Pan caliente y atención al instante</div>
-          <div class="feature"><div class="f-dot">📊</div> El sabor tradicional con la rapidez que mereces</div>
-          <div class="feature"><div class="f-dot">🛒</div> Sistema de ventas automatizado</div>
+      <div class="ll-top">
+        <img src="../asset/logo.png" alt="Logo Snack Roque" class="bread-icon">
+        <div class="ll-features">
+          <div class="feature"><div class="f-dot">🥖</div>Pan artesanal y atención al instante</div>
+          <div class="feature"><div class="f-dot">📊</div>Dashboard en tiempo real con métricas clave</div>
+          <div class="feature"><div class="f-dot">🛒</div>Punto de venta rápido e intuitivo</div>
+          <div class="feature"><div class="f-dot">👥</div>Gestión de roles y personal</div>
         </div>
       </div>
-      <div class="ll-bottom">Snack Roque Panadería & Pastelería</div>
+      <div class="ll-bottom">Snack Roque · Panadería &amp; Pastelería · v3.0</div>
     </div>
 
     <div class="login-right">
       <!-- STEP 1 -->
       <div id="ls1">
-        <div class="lr-title">Bienvenido</div>
+        <div class="lr-title">Bienvenido de vuelta</div>
         <p class="lr-sub">Accede a tu estación de trabajo</p>
         <div class="inp-group">
           <label>Usuario</label>
           <div class="inp-wrap">
             <span class="inp-icon">👤</span>
-            <input type="text" id="u1" placeholder="Ej: admin..." value="admin">
+            <input type="text" id="u1" placeholder="Ej: admin" value="admin">
           </div>
         </div>
         <div class="inp-group">
@@ -46,16 +47,16 @@
             <input type="password" id="p1" placeholder="••••••••" value="1234">
           </div>
         </div>
-        <button class="btn-enter" onclick="step1()">Ingresar →</button>
+        <button class="btn-enter" onclick="step1()">Ingresar al sistema →</button>
       </div>
 
       <!-- STEP 2 -->
       <div id="ls2" class="role-step">
-        <button class="btn-back-sm" onclick="goBack()">← Cambiar de usuario</button>
-        <div class="rs-title">Continuar como...</div>
-        <p class="rs-sub">Hola <strong id="greet"></strong>, elige tu rol para hoy</p>
+        <button class="btn-back-sm" onclick="goBack()">← Cambiar usuario</button>
+        <div class="lr-title">Selecciona tu rol</div>
+        <p class="lr-sub">Hola <strong id="greet"></strong>, elige cómo ingresar hoy</p>
         <div class="roles-stack" id="rolesStack"></div>
-        <button class="btn-enter" onclick="step2()">Confirmar e INGRESAR →</button>
+        <button class="btn-enter" onclick="step2()">Confirmar e ingresar →</button>
       </div>
     </div>
   </div>
@@ -65,18 +66,32 @@
 <div id="appWrap" class="app-wrap">
   <div class="app-body">
 
+    <!-- SIDEBAR -->
     <div class="sidebar">
       <div class="sb-brand">
         <img src="../asset/logo.png" alt="Logo" class="sb-logo">
-        <p>Expertos en Panadería</p>
+        <p>Snack Roque</p>
+        <div class="sb-brand-sub">Panadería &amp; Pastelería</div>
       </div>
       <div class="sb-nav">
-        <div class="sb-section">Gestión</div>
-        <div class="sb-item active" onclick="gp('dashboard',this)"><span class="sb-icon">📊</span> Dashboard</div>
-        <div class="sb-item" onclick="gp('ventas',this)"><span class="sb-icon">🛒</span> Punto de Venta</div>
-        <div class="sb-item" onclick="gp('productos',this)"><span class="sb-icon">🥖</span> Inventario</div>
-        <div class="sb-item" onclick="gp('reportes',this)"><span class="sb-icon">📉</span> Estadísticas</div>
-        <div class="sb-item admin-only" onclick="gp('usuarios',this)"><span class="sb-icon">👥</span> Personal</div>
+        <div class="sb-section">Principal</div>
+        <div class="sb-item active" onclick="gp('dashboard',this)" id="nav-dashboard">
+          <span class="sb-icon">📊</span> Dashboard
+        </div>
+        <div class="sb-section">Operaciones</div>
+        <div class="sb-item" onclick="gp('ventas',this)" id="nav-ventas">
+          <span class="sb-icon">🛒</span> Punto de Venta
+        </div>
+        <div class="sb-item" onclick="gp('productos',this)" id="nav-productos">
+          <span class="sb-icon">📦</span> Inventario
+        </div>
+        <div class="sb-section">Análisis</div>
+        <div class="sb-item" onclick="gp('reportes',this)" id="nav-reportes">
+          <span class="sb-icon">📈</span> Estadísticas
+        </div>
+        <div class="sb-item admin-only" onclick="gp('usuarios',this)" id="nav-usuarios">
+          <span class="sb-icon">👥</span> Personal
+        </div>
       </div>
       <div class="sb-footer">
         <div class="sb-user">
@@ -90,11 +105,12 @@
       </div>
     </div>
 
+    <!-- MAIN -->
     <div class="main-area">
       <div class="page-head">
         <div class="ph-left">
           <h2 id="pageH2">Dashboard</h2>
-          <p id="pageP">Resumen de operaciones actuales</p>
+          <p id="pageP">Resumen de operaciones · Hoy</p>
         </div>
         <div class="ph-right">
           <div class="search-pill">
@@ -110,19 +126,125 @@
         <!-- DASHBOARD -->
         <div class="screen active" id="pg-dashboard">
           <div class="stats-4">
-            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-lav">💰</div><div class="st-delta d-up">Hoy</div></div><div class="st-val" id="d-total">S/. 0</div><div class="st-lbl">Ventas registradas</div></div>
-            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-blush">🛒</div><div class="st-delta d-up">Hoy</div></div><div class="st-val" id="d-trans">0</div><div class="st-lbl">Transacciones</div></div>
-            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-peach">📦</div><div class="st-delta d-up">Hoy</div></div><div class="st-val" id="d-units">0</div><div class="st-lbl">Unidades vendidas</div></div>
-            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-mint">⚠️</div><div class="st-delta d-down">Alerta</div></div><div class="st-val" id="d-low">0</div><div class="st-lbl">Productos sin stock</div></div>
+            <div class="stat-tile">
+              <div class="st-header">
+                <div class="st-icon ic-lav">💰</div>
+                <div class="st-delta d-up">↑ 12%</div>
+              </div>
+              <div class="st-val" id="d-total">S/. 842</div>
+              <div class="st-lbl">Ventas del día</div>
+            </div>
+            <div class="stat-tile">
+              <div class="st-header">
+                <div class="st-icon ic-blush">🛒</div>
+                <div class="st-delta d-up">↑ 5%</div>
+              </div>
+              <div class="st-val" id="d-trans">34</div>
+              <div class="st-lbl">Transacciones</div>
+            </div>
+            <div class="stat-tile">
+              <div class="st-header">
+                <div class="st-icon ic-peach">📦</div>
+                <div class="st-delta d-up">↑ 8%</div>
+              </div>
+              <div class="st-val" id="d-units">127</div>
+              <div class="st-lbl">Unidades vendidas</div>
+            </div>
+            <div class="stat-tile">
+              <div class="st-header">
+                <div class="st-icon ic-mint">⚠️</div>
+                <div class="st-delta d-down">Alerta</div>
+              </div>
+              <div class="st-val" id="d-low">3</div>
+              <div class="st-lbl">Stock bajo</div>
+            </div>
           </div>
-          <div class="panel">
-            <div class="p-title"><h3>Actividad de hoy</h3></div>
-            <table>
-              <thead><tr><th>Comprobante</th><th>Detalle</th><th>Hora</th><th>Importe</th></tr></thead>
-              <tbody id="recentSales">
-                <!-- JS -->
-              </tbody>
-            </table>
+
+          <!-- Recent + Quick Info -->
+          <div style="display:grid; grid-template-columns:1fr 300px; gap:16px;">
+            <div class="panel">
+              <div class="p-title">
+                <span>Actividad reciente</span>
+                <span style="font-size:11px; font-weight:600; color:var(--text-3); font-family:'Inter',sans-serif;">Hoy · <span id="todayDate"></span></span>
+              </div>
+              <table>
+                <thead><tr><th>Boleta</th><th>Productos</th><th>Hora</th><th>Cajero</th><th>Importe</th></tr></thead>
+                <tbody id="recentSales">
+                  <tr>
+                    <td><span style="font-weight:700;color:var(--accent)">#B-0041</span></td>
+                    <td style="color:var(--text-2)">Pan de yema ×3, Croissant ×2</td>
+                    <td><span class="tag tg-blue">09:14</span></td>
+                    <td>Carlos R.</td>
+                    <td style="font-weight:800;color:var(--green)">S/. 24.50</td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-weight:700;color:var(--accent)">#B-0042</span></td>
+                    <td style="color:var(--text-2)">Torta de chocolate ×1</td>
+                    <td><span class="tag tg-blue">10:02</span></td>
+                    <td>María S.</td>
+                    <td style="font-weight:800;color:var(--green)">S/. 45.00</td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-weight:700;color:var(--accent)">#B-0043</span></td>
+                    <td style="color:var(--text-2)">Empanada ×5, Café ×2</td>
+                    <td><span class="tag tg-blue">10:47</span></td>
+                    <td>Carlos R.</td>
+                    <td style="font-weight:800;color:var(--green)">S/. 32.00</td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-weight:700;color:var(--accent)">#B-0044</span></td>
+                    <td style="color:var(--text-2)">Pan integral ×4, Alfajor ×2</td>
+                    <td><span class="tag tg-blue">11:30</span></td>
+                    <td>María S.</td>
+                    <td style="font-weight:800;color:var(--green)">S/. 18.80</td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-weight:700;color:var(--accent)">#B-0045</span></td>
+                    <td style="color:var(--text-2)">Bizcocho ×6, Queque ×1</td>
+                    <td><span class="tag tg-blue">12:15</span></td>
+                    <td>Carlos R.</td>
+                    <td style="font-weight:800;color:var(--green)">S/. 27.50</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <!-- Quick stats -->
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <div class="panel" style="flex:1">
+                <div class="p-title" style="font-size:14px; margin-bottom:14px;">🏆 Top Productos</div>
+                <div id="topProdDash" style="display:flex; flex-direction:column; gap:10px;">
+                  <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:20px">🥐</span>
+                    <div style="flex:1">
+                      <div style="font-size:13px; font-weight:700; color:var(--text)">Croissant</div>
+                      <div style="height:5px; background:var(--bg); border-radius:3px; margin-top:5px;"><div style="height:100%; width:80%; background:var(--accent); border-radius:3px;"></div></div>
+                    </div>
+                    <div style="font-size:12px; font-weight:800; color:var(--accent)">42u</div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:20px">🍞</span>
+                    <div style="flex:1">
+                      <div style="font-size:13px; font-weight:700; color:var(--text)">Pan de yema</div>
+                      <div style="height:5px; background:var(--bg); border-radius:3px; margin-top:5px;"><div style="height:100%; width:65%; background:var(--green); border-radius:3px;"></div></div>
+                    </div>
+                    <div style="font-size:12px; font-weight:800; color:var(--green)">34u</div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:20px">🎂</span>
+                    <div style="flex:1">
+                      <div style="font-size:13px; font-weight:700; color:var(--text)">Torta de choco</div>
+                      <div style="height:5px; background:var(--bg); border-radius:3px; margin-top:5px;"><div style="height:100%; width:40%; background:var(--blue); border-radius:3px;"></div></div>
+                    </div>
+                    <div style="font-size:12px; font-weight:800; color:var(--blue)">21u</div>
+                  </div>
+                </div>
+              </div>
+              <div class="panel" style="text-align:center; padding:18px 22px;">
+                <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-3); margin-bottom:8px;">Ticket Promedio</div>
+                <div style="font-size:36px; font-weight:900; color:var(--accent); letter-spacing:-1px;">S/. 24.8</div>
+                <div style="font-size:11px; color:var(--green); font-weight:600; margin-top:4px;">↑ +S/. 3.20 vs. ayer</div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -130,181 +252,279 @@
         <div class="screen" id="pg-ventas">
           <div class="pos-2col">
             <div class="cat-side">
-               <div class="cat-search">
-                  <span>🔍</span>
-                  <input type="text" placeholder="Buscar producto..." oninput="renderPos(this.value)">
-               </div>
-               <div class="cat-grid" id="catGrid">
-                  <!-- JS -->
-               </div>
+              <div class="cat-search">
+                <span>🔍</span>
+                <input type="text" placeholder="Buscar producto..." oninput="renderPos(this.value)">
+              </div>
+              <div class="cat-grid" id="catGrid">
+                <!-- JS -->
+              </div>
             </div>
             <div class="order-panel">
-               <div class="op-head">
-                  <h3>Detalle del Pedido</h3>
-                  <span>Mesa / Mostrador</span>
-               </div>
-               <div id="orderList" style="min-height:200px">
-                  <!-- JS -->
-               </div>
-               <div class="order-summary">
-                  <div class="os-row"><span>Subtotal</span><span>S/. 0.00</span></div>
-                  <div class="os-total"><span>Total</span><span id="ot">S/. 0.00</span></div>
-                  <button class="btn-sell" onclick="cobP()">Cobrar e Imprimir <span>💰</span></button>
-                  <button class="btn-clear" onclick="limP()">Vaciar Carrito</button>
-               </div>
+              <div class="op-head">
+                <h3>Pedido actual</h3>
+                <span id="orderCount">0 items</span>
+              </div>
+              <div id="orderList" style="min-height:160px;">
+                <!-- JS -->
+              </div>
+              <div class="order-summary">
+                <div class="os-row"><span>Subtotal</span><span id="subTotal">S/. 0.00</span></div>
+                <div class="os-row"><span>IGV (18%)</span><span id="igvTotal">S/. 0.00</span></div>
+                <div class="os-total">
+                  <span>TOTAL</span>
+                  <span id="ot">S/. 0.00</span>
+                </div>
+                <button class="btn-sell" onclick="cobP()">💳 Cobrar</button>
+                <button class="btn-clear" onclick="limP()">Vaciar carrito</button>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- PRODUCTOS -->
+        <!-- PRODUCTOS / INVENTARIO -->
         <div class="screen" id="pg-productos">
           <div class="tb-bar">
-             <div class="tb-left">
-                <div class="srch-box">🔍 <input oninput="renderInventory(this.value)" placeholder="Filtrar inventario..."></div>
-             </div>
-             <button class="btn-new" onclick="opnP()">+ Nuevo Producto</button>
+            <div class="tb-left">
+              <div class="srch-box">🔍 <input oninput="renderInventory(this.value)" placeholder="Filtrar inventario..."></div>
+            </div>
+            <button class="btn-new" onclick="opnP()">+ Nuevo producto</button>
           </div>
           <div class="panel">
-             <table>
-                <thead><tr><th>Producto</th><th>Categoría</th><th>Precio</th><th>Existencias</th><th>Acciones</th></tr></thead>
-                <tbody id="invBody">
-                   <!-- JS -->
-                </tbody>
-             </table>
+            <table>
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Categoría</th>
+                  <th>Precio</th>
+                  <th>Stock</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="invBody">
+                <!-- JS -->
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <!-- REPORTES -->
+        <!-- REPORTES / ESTADÍSTICAS -->
         <div class="screen" id="pg-reportes">
-          <div class="stats-4" style="margin-bottom:24px">
-            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-lav">💰</div></div><div class="st-val" id="r-total">S/. 0</div><div class="st-lbl">Ventas Totales</div></div>
-            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-blush">🛒</div></div><div class="st-val" id="r-trans">0</div><div class="st-lbl">Transacciones</div></div>
-            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-peach">📦</div></div><div class="st-val" id="r-units">0</div><div class="st-lbl">Unidades Totales</div></div>
-            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-mint">💳</div></div><div class="st-val" id="r-avg">S/. 0.00</div><div class="st-lbl">Ticket Promedio</div></div>
+          <!-- KPIs -->
+          <div class="stats-4" style="margin-bottom:18px">
+            <div class="stat-tile">
+              <div class="st-header"><div class="st-icon ic-lav">💰</div><div class="st-delta d-up">↑ 8%</div></div>
+              <div class="st-val" id="r-total">S/. 5,284</div>
+              <div class="st-lbl">Ventas semana</div>
+            </div>
+            <div class="stat-tile">
+              <div class="st-header"><div class="st-icon ic-blush">🛒</div><div class="st-delta d-up">↑ 3%</div></div>
+              <div class="st-val" id="r-trans">214</div>
+              <div class="st-lbl">Transacciones</div>
+            </div>
+            <div class="stat-tile">
+              <div class="st-header"><div class="st-icon ic-peach">📦</div><div class="st-delta d-up">↑ 11%</div></div>
+              <div class="st-val" id="r-units">863</div>
+              <div class="st-lbl">Unidades vendidas</div>
+            </div>
+            <div class="stat-tile">
+              <div class="st-header"><div class="st-icon ic-mint">💳</div><div class="st-delta d-up">↑ 5%</div></div>
+              <div class="st-val" id="r-avg">S/. 24.69</div>
+              <div class="st-lbl">Ticket promedio</div>
+            </div>
           </div>
-           <div class="panel">
-              <div class="p-title"><h3>Análisis Semanal</h3></div>
-              <div class="chart-wrap">
-                 <div class="bc"><div class="bbar" style="height:40%"></div><span class="blbl">Lun</span></div>
-                 <div class="bc"><div class="bbar" style="height:65%"></div><span class="blbl">Mar</span></div>
-                 <div class="bc"><div class="bbar" style="height:50%"></div><span class="blbl">Mie</span></div>
-                 <div class="bc"><div class="bbar" style="height:85%"></div><span class="blbl">Jue</span></div>
-                 <div class="bc"><div class="bbar" style="height:70%"></div><span class="blbl">Vie</span></div>
-                 <div class="bc"><div class="bbar" style="height:100%"></div><span class="blbl">Sab</span></div>
-                 <div class="bc"><div class="bbar" style="height:35%"></div><span class="blbl">Dom</span></div>
+
+          <!-- Chart + Top productos -->
+          <div style="display:grid; grid-template-columns:1fr 280px; gap:16px; margin-bottom:16px;">
+            <div class="panel">
+              <div class="p-title">
+                <span>Ventas por día — Semana actual</span>
+                <div style="display:flex; gap:8px;">
+                  <button style="padding:4px 14px; border-radius:20px; border:1.5px solid var(--accent); background:var(--accent-bg); color:var(--accent); font-family:'Inter',sans-serif; font-size:11px; font-weight:700; cursor:pointer;">Semana</button>
+                  <button style="padding:4px 14px; border-radius:20px; border:1.5px solid var(--border); background:transparent; color:var(--text-3); font-family:'Inter',sans-serif; font-size:11px; font-weight:700; cursor:pointer;">Mes</button>
+                </div>
               </div>
-           </div>
+              <div class="chart-wrap">
+                <div class="bc"><div class="bbar" style="height:58%"></div><span class="blbl">Lun</span></div>
+                <div class="bc"><div class="bbar" style="height:72%"></div><span class="blbl">Mar</span></div>
+                <div class="bc"><div class="bbar" style="height:61%"></div><span class="blbl">Mié</span></div>
+                <div class="bc"><div class="bbar" style="height:90%"></div><span class="blbl">Jue</span></div>
+                <div class="bc"><div class="bbar" style="height:100%"></div><span class="blbl">Vie</span></div>
+                <div class="bc"><div class="bbar" style="height:85%; background:linear-gradient(180deg,#A5B4FC,var(--accent));opacity:0.9"></div><span class="blbl">Sáb</span></div>
+                <div class="bc"><div class="bbar" style="height:42%;opacity:0.4"></div><span class="blbl">Dom</span></div>
+              </div>
+              <!-- Day labels with values -->
+              <div style="display:flex; gap:10px; padding-top:10px;">
+                <div style="flex:1;text-align:center;font-size:11px;color:var(--text-3);">S/.640</div>
+                <div style="flex:1;text-align:center;font-size:11px;color:var(--text-3);">S/.795</div>
+                <div style="flex:1;text-align:center;font-size:11px;color:var(--text-3);">S/.672</div>
+                <div style="flex:1;text-align:center;font-size:11px;color:var(--text-3);">S/.990</div>
+                <div style="flex:1;text-align:center;font-size:11px;color:var(--accent);font-weight:700;">S/.1,102</div>
+                <div style="flex:1;text-align:center;font-size:11px;color:var(--accent);font-weight:700;">S/.938</div>
+                <div style="flex:1;text-align:center;font-size:11px;color:var(--text-3);">S/.147</div>
+              </div>
+            </div>
+            <!-- Top productos -->
+            <div class="panel">
+              <div class="p-title" style="font-size:14px;">🥇 Ranking semanal</div>
+              <div style="display:flex; flex-direction:column; gap:12px; margin-top:4px;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                  <div style="width:28px;height:28px;background:linear-gradient(135deg,#FBBF24,#F59E0B);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:white;">1</div>
+                  <div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--text)">Croissant mantequilla</div><div style="font-size:11px;color:var(--text-3)">278 unidades</div></div>
+                  <div style="font-size:13px;font-weight:800;color:var(--green)">S/.695</div>
+                </div>
+                <div style="display:flex; align-items:center; gap:12px;">
+                  <div style="width:28px;height:28px;background:var(--bg-card2);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--text-2);">2</div>
+                  <div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--text)">Pan especial</div><div style="font-size:11px;color:var(--text-3)">196 unidades</div></div>
+                  <div style="font-size:13px;font-weight:800;color:var(--green)">S/.490</div>
+                </div>
+                <div style="display:flex; align-items:center; gap:12px;">
+                  <div style="width:28px;height:28px;background:var(--bg-card2);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--text-2);">3</div>
+                  <div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--text)">Torta chocolate</div><div style="font-size:11px;color:var(--text-3)">142 unidades</div></div>
+                  <div style="font-size:13px;font-weight:800;color:var(--green)">S/.638</div>
+                </div>
+                <div style="display:flex; align-items:center; gap:12px;">
+                  <div style="width:28px;height:28px;background:var(--bg-card2);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--text-2);">4</div>
+                  <div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--text)">Empanada de pollo</div><div style="font-size:11px;color:var(--text-3)">118 unidades</div></div>
+                  <div style="font-size:13px;font-weight:800;color:var(--green)">S/.414</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Últimas ventas semana -->
+          <div class="panel">
+            <div class="p-title">
+              <span>Historial de transacciones</span>
+              <span style="font-size:11px;font-weight:600;color:var(--text-3);font-family:'Inter',sans-serif;">Semana actual</span>
+            </div>
+            <table>
+              <thead><tr><th>Boleta</th><th>Fecha</th><th>Productos</th><th>Cajero</th><th>Método pago</th><th>Total</th><th>Estado</th></tr></thead>
+              <tbody>
+                <tr><td><b style="color:var(--accent)">#B-0038</b></td><td>Lun 14/04</td><td style="color:var(--text-2)">Pan de yema ×4, Alfajor ×2</td><td>Carlos R.</td><td><span class="tag tg-blue">Efectivo</span></td><td style="font-weight:800;color:var(--green)">S/. 22.00</td><td><span class="tag tg-ok">Pagado</span></td></tr>
+                <tr><td><b style="color:var(--accent)">#B-0039</b></td><td>Lun 14/04</td><td style="color:var(--text-2)">Torta ×1, Croissant ×3</td><td>María S.</td><td><span class="tag tg-blue">Yape</span></td><td style="font-weight:800;color:var(--green)">S/. 57.50</td><td><span class="tag tg-ok">Pagado</span></td></tr>
+                <tr><td><b style="color:var(--accent)">#B-0040</b></td><td>Mar 15/04</td><td style="color:var(--text-2)">Empanada ×6, Café ×2</td><td>Carlos R.</td><td><span class="tag tg-blue">Tarjeta</span></td><td style="font-weight:800;color:var(--green)">S/. 38.00</td><td><span class="tag tg-ok">Pagado</span></td></tr>
+                <tr><td><b style="color:var(--accent)">#B-0041</b></td><td>Mar 15/04</td><td style="color:var(--text-2)">Queque ×2, Pan especial ×5</td><td>María S.</td><td><span class="tag tg-blue">Efectivo</span></td><td style="font-weight:800;color:var(--green)">S/. 31.00</td><td><span class="tag tg-ok">Pagado</span></td></tr>
+                <tr><td><b style="color:var(--accent)">#B-0042</b></td><td>Mié 16/04</td><td style="color:var(--text-2)">Bizcocho ×8</td><td>Carlos R.</td><td><span class="tag tg-warn">Plin</span></td><td style="font-weight:800;color:var(--amber)">S/. 16.00</td><td><span class="tag tg-warn">Pendiente</span></td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        <!-- USUARIOS -->
+        <!-- USUARIOS / PERSONAL -->
         <div class="screen" id="pg-usuarios">
-           <div class="tb-bar">
-              <div></div>
-              <button class="btn-new" onclick="opnU()">+ Agregar Personal</button>
-           </div>
-           <div class="user-cards" id="userGrid">
-              <!-- JS -->
-           </div>
+          <div class="tb-bar">
+            <div style="display:flex; gap:10px; align-items:center;">
+              <div style="display:flex; gap:8px;">
+                <div style="padding:6px 14px; background:var(--accent-bg); border:1px solid rgba(129,140,248,0.2); border-radius:20px; font-size:11px; font-weight:700; color:var(--accent);">Total: <span id="totalUsers">0</span></div>
+                <div style="padding:6px 14px; background:var(--green-bg); border:1px solid rgba(52,211,153,0.2); border-radius:20px; font-size:11px; font-weight:700; color:var(--green);">Activos: <span id="activeUsers">0</span></div>
+              </div>
+            </div>
+            <button class="btn-new" onclick="opnU()">+ Agregar personal</button>
+          </div>
+          <div class="user-cards" id="userGrid">
+            <!-- JS -->
+          </div>
         </div>
 
-      </div>
-    </div>
-  </div>
-</div>
+      </div><!-- page-body -->
+    </div><!-- main-area -->
+  </div><!-- app-body -->
+</div><!-- app-wrap -->
 
 <!-- RECEIPT MODAL -->
 <div class="modal-overlay" id="receiptModal">
   <div class="modal-card">
-    <div class="mc-icon">🍞</div>
-    <div class="mc-title">¡Venta Exitosa!</div>
-    <p class="mc-sub">Se ha registrado el pago correctamente</p>
+    <div class="mc-icon">✅</div>
+    <div class="mc-title">¡Venta registrada!</div>
+    <p class="mc-sub">El pago ha sido procesado correctamente</p>
     <div class="mc-receipt">
-       <div class="mcr-head">
-          <strong>SNACK ROQUE</strong>
-          <span id="mcrDate"></span><br>
-          <span id="mcrNum"></span>
-       </div>
-       <div id="mcrList"></div>
-       <div class="mcr-total"><span>Total</span><span id="mcrTotal"></span></div>
+      <div class="mcr-head">
+        <strong>SNACK ROQUE</strong>
+        <span id="mcrDate"></span><br>
+        <span id="mcrNum" style="font-size:12px; opacity:0.6;"></span>
+      </div>
+      <div id="mcrList"></div>
+      <div class="mcr-total"><span>TOTAL</span><span id="mcrTotal"></span></div>
     </div>
     <div class="mc-btns">
-       <button class="mc-sec" onclick="clm('receiptModal')">Cerrar</button>
-       <button class="mc-pri" onclick="clm('receiptModal')">🖨 Imprimir Boleta</button>
+      <button class="mc-sec" onclick="clm('receiptModal')">Cerrar</button>
+      <button class="mc-pri" onclick="clm('receiptModal')">🖨 Imprimir boleta</button>
     </div>
   </div>
 </div>
 
 <!-- PRODUCT MODAL -->
 <div class="modal-overlay" id="mpModal">
-    <div class="modal-card" style="width:600px; text-align:left">
-        <h3 class="mc-title" id="mpTitle">Producto</h3>
-        <form id="mpForm" onsubmit="event.preventDefault(); svP();" style="margin-top:20px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
-            <input type="hidden" id="mpId">
-            <div class="inp-group" style="grid-column: span 2">
-                <label style="color:var(--text-2)">Nombre del producto</label>
-                <div class="inp-wrap"><input type="text" id="mpName" required style="color:var(--text); border-color:var(--border)"></div>
-            </div>
-            <div class="inp-group">
-                <label style="color:var(--text-2)">Categoría</label>
-                <div class="inp-wrap">
-                    <select id="mpCat" style="width:100%; padding:13px; border-radius:12px; border:2px solid var(--border); background:white;">
-                        <option value="Panes">Panes</option>
-                        <option value="Tortas">Tortas</option>
-                        <option value="Dulces">Dulces</option>
-                    </select>
-                </div>
-            </div>
-            <div class="inp-group">
-                <label style="color:var(--text-2)">Precio S/.</label>
-                <div class="inp-wrap"><input type="number" step="0.01" id="mpPrice" required style="color:var(--text); border-color:var(--border)"></div>
-            </div>
-            <div class="inp-group">
-                <label style="color:var(--text-2)">Stock Inicial</label>
-                <div class="inp-wrap"><input type="number" id="mpStock" required style="color:var(--text); border-color:var(--border)"></div>
-            </div>
-            <div class="inp-group">
-                <label style="color:var(--text-2)">Icono</label>
-                <div class="inp-wrap"><input type="text" id="mpEm" style="color:var(--text); border-color:var(--border)"></div>
-            </div>
-            <div class="mc-btns" style="grid-column: span 2; margin-top:20px">
-                <button type="button" class="mc-sec" onclick="clm('mpModal')">Cancelar</button>
-                <button type="submit" class="mc-pri">Guardar Producto</button>
-            </div>
-        </form>
-    </div>
+  <div class="modal-card" style="width:560px; text-align:left;">
+    <div class="mc-title" id="mpTitle" style="text-align:left; margin-bottom:20px;">Nuevo producto</div>
+    <form id="mpForm" onsubmit="event.preventDefault(); svP();" style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+      <input type="hidden" id="mpId">
+      <div class="inp-group" style="grid-column:span 2;">
+        <label>Nombre del producto</label>
+        <div class="inp-wrap"><input type="text" id="mpName" placeholder="Ej: Pan de yema..." required></div>
+      </div>
+      <div class="inp-group">
+        <label>Categoría</label>
+        <select id="mpCat">
+          <option value="Panes">🍞 Panes</option>
+          <option value="Tortas">🎂 Tortas</option>
+          <option value="Dulces">🍬 Dulces</option>
+          <option value="Bebidas">☕ Bebidas</option>
+        </select>
+      </div>
+      <div class="inp-group">
+        <label>Ícono (emoji)</label>
+        <div class="inp-wrap"><input type="text" id="mpEm" placeholder="🥐" maxlength="2"></div>
+      </div>
+      <div class="inp-group">
+        <label>Precio S/.</label>
+        <div class="inp-wrap"><input type="number" step="0.01" min="0.1" id="mpPrice" placeholder="0.00" required></div>
+      </div>
+      <div class="inp-group">
+        <label>Stock inicial</label>
+        <div class="inp-wrap"><input type="number" min="0" id="mpStock" placeholder="0" required></div>
+      </div>
+      <div class="mc-btns" style="grid-column:span 2; margin-top:8px;">
+        <button type="button" class="mc-sec" onclick="clm('mpModal')">Cancelar</button>
+        <button type="submit" class="mc-pri">Guardar producto</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <!-- USER MODAL -->
 <div class="modal-overlay" id="muModal">
-    <div class="modal-card" style="text-align:left">
-        <h3 class="mc-title" id="muTitle">Usuario</h3>
-        <form id="muForm" onsubmit="event.preventDefault(); svU();" style="margin-top:20px">
-            <input type="hidden" id="muId">
-            <div class="inp-group">
-                <label style="color:var(--text-2)">Nombre Completo</label>
-                <div class="inp-wrap"><input type="text" id="muName" required style="color:var(--text); border-color:var(--border)"></div>
-            </div>
-            <div class="inp-group">
-                <label style="color:var(--text-2)">Usuario (Login)</label>
-                <div class="inp-wrap"><input type="text" id="muUser" required style="color:var(--text); border-color:var(--border)"></div>
-            </div>
-            <div class="inp-group">
-                <label style="color:var(--text-2)">Contraseña</label>
-                <div class="inp-wrap"><input type="password" id="muPass" required style="color:var(--text); border-color:var(--border)"></div>
-            </div>
-            <div class="inp-group">
-                <label style="color:var(--text-2)">Rol</label>
-                <select id="muRole" style="width:100%; padding:13px; border-radius:12px; border:2px solid var(--border); background:white;">
-                    <option value="Cajero">Cajero</option>
-                    <option value="Administrador">Administrador</option>
-                </select>
-            </div>
-            <div class="mc-btns" style="margin-top:24px">
-                <button type="button" class="mc-sec" onclick="clm('muModal')">Cerrar</button>
-                <button type="submit" class="mc-pri">Crear Usuario</button>
-            </div>
-        </form>
-    </div>
+  <div class="modal-card" style="text-align:left;">
+    <div class="mc-title" id="muTitle" style="text-align:left; margin-bottom:20px;">Nuevo colaborador</div>
+    <form id="muForm" onsubmit="event.preventDefault(); svU();">
+      <input type="hidden" id="muId">
+      <div class="inp-group">
+        <label>Nombre completo</label>
+        <div class="inp-wrap"><input type="text" id="muName" placeholder="Ej: María García..." required></div>
+      </div>
+      <div class="inp-group">
+        <label>Usuario (login)</label>
+        <div class="inp-wrap"><input type="text" id="muUser" placeholder="Ej: mgarcia..." required></div>
+      </div>
+      <div class="inp-group">
+        <label>Contraseña</label>
+        <div class="inp-wrap"><input type="password" id="muPass" placeholder="Mínimo 4 caracteres" required></div>
+      </div>
+      <div class="inp-group">
+        <label>Rol</label>
+        <select id="muRole">
+          <option value="Cajero">🛒 Cajero</option>
+          <option value="Administrador">⚙️ Administrador</option>
+        </select>
+      </div>
+      <div class="mc-btns" style="margin-top:22px;">
+        <button type="button" class="mc-sec" onclick="clm('muModal')">Cancelar</button>
+        <button type="submit" class="mc-pri">Crear colaborador</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <div class="snack" id="snack"></div>

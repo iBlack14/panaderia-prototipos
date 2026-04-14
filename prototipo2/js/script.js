@@ -412,14 +412,207 @@ const renderDashboard = () => {
     }
 };
 
-const renderReports = () => {
-    // Logic for report bars
-    const bars = document.querySelectorAll('.bar-fill');
-    bars.forEach(b => {
-        const h = Math.floor(Math.random() * 80) + 20;
-        b.style.height = h + '%';
-    });
+// ── Demo data for reports (realistic bakery day) ──
+const DEMO_SALES = [
+    { num: 1001, time: '07:12', items: [{name:'Panciito de Yema',qty:12,price:0.5},{name:'Café Americano',qty:2,price:6}], total: 18.00 },
+    { num: 1002, time: '07:35', items: [{name:'Croissant Mantequilla',qty:2,price:3.5},{name:'Café Americano',qty:2,price:6}], total: 19.00 },
+    { num: 1003, time: '08:05', items: [{name:'Empanada Carne',qty:4,price:4.5}], total: 18.00 },
+    { num: 1004, time: '08:22', items: [{name:'Panciito de Yema',qty:20,price:0.5},{name:'Donut Chocolate',qty:3,price:3}], total: 19.00 },
+    { num: 1005, time: '08:50', items: [{name:'Torta Selva Negra',qty:1,price:65}], total: 65.00 },
+    { num: 1006, time: '09:10', items: [{name:'Croissant Mantequilla',qty:3,price:3.5},{name:'Café Americano',qty:3,price:6}], total: 28.50 },
+    { num: 1007, time: '09:40', items: [{name:'Empanada Carne',qty:6,price:4.5}], total: 27.00 },
+    { num: 1008, time: '10:15', items: [{name:'Donut Chocolate',qty:5,price:3},{name:'Café Americano',qty:2,price:6}], total: 27.00 },
+    { num: 1009, time: '10:30', items: [{name:'Panciito de Yema',qty:30,price:0.5}], total: 15.00 },
+    { num: 1010, time: '11:00', items: [{name:'Torta Selva Negra',qty:1,price:65},{name:'Croissant Mantequilla',qty:2,price:3.5}], total: 72.00 },
+    { num: 1011, time: '11:20', items: [{name:'Empanada Carne',qty:4,price:4.5},{name:'Café Americano',qty:2,price:6}], total: 30.00 },
+    { num: 1012, time: '11:45', items: [{name:'Panciito de Yema',qty:15,price:0.5},{name:'Donut Chocolate',qty:4,price:3}], total: 19.50 },
+    { num: 1013, time: '12:10', items: [{name:'Torta Selva Negra',qty:2,price:65}], total: 130.00 },
+    { num: 1014, time: '12:30', items: [{name:'Croissant Mantequilla',qty:4,price:3.5},{name:'Café Americano',qty:4,price:6}], total: 38.00 },
+    { num: 1015, time: '12:55', items: [{name:'Empanada Carne',qty:8,price:4.5}], total: 36.00 },
+    { num: 1016, time: '13:15', items: [{name:'Donut Chocolate',qty:6,price:3},{name:'Panciito de Yema',qty:10,price:0.5}], total: 23.00 },
+    { num: 1017, time: '13:40', items: [{name:'Torta Selva Negra',qty:1,price:65},{name:'Café Americano',qty:3,price:6}], total: 83.00 },
+    { num: 1018, time: '14:05', items: [{name:'Croissant Mantequilla',qty:5,price:3.5}], total: 17.50 },
+    { num: 1019, time: '14:30', items: [{name:'Empanada Carne',qty:3,price:4.5},{name:'Donut Chocolate',qty:2,price:3}], total: 19.50 },
+    { num: 1020, time: '15:00', items: [{name:'Panciito de Yema',qty:25,price:0.5},{name:'Café Americano',qty:2,price:6}], total: 24.50 },
+    { num: 1021, time: '15:20', items: [{name:'Torta Selva Negra',qty:1,price:65},{name:'Croissant Mantequilla',qty:3,price:3.5}], total: 75.50 },
+    { num: 1022, time: '16:00', items: [{name:'Empanada Carne',qty:5,price:4.5},{name:'Café Americano',qty:3,price:6}], total: 40.50 },
+    { num: 1023, time: '16:30', items: [{name:'Donut Chocolate',qty:8,price:3}], total: 24.00 },
+    { num: 1024, time: '17:10', items: [{name:'Panciito de Yema',qty:40,price:0.5},{name:'Croissant Mantequilla',qty:2,price:3.5}], total: 27.00 },
+    { num: 1025, time: '17:45', items: [{name:'Torta Selva Negra',qty:1,price:65},{name:'Café Americano',qty:4,price:6}], total: 89.00 },
+    { num: 1026, time: '18:05', items: [{name:'Empanada Carne',qty:6,price:4.5},{name:'Donut Chocolate',qty:3,price:3}], total: 36.00 },
+    { num: 1027, time: '18:30', items: [{name:'Panciito de Yema',qty:20,price:0.5},{name:'Croissant Mantequilla',qty:4,price:3.5}], total: 24.00 },
+    { num: 1028, time: '19:00', items: [{name:'Café Americano',qty:5,price:6},{name:'Donut Chocolate',qty:4,price:3}], total: 42.00 },
+    { num: 1029, time: '19:30', items: [{name:'Torta Selva Negra',qty:1,price:65}], total: 65.00 },
+    { num: 1030, time: '19:55', items: [{name:'Empanada Carne',qty:4,price:4.5},{name:'Panciito de Yema',qty:15,price:0.5}], total: 25.50 },
+];
+
+const HOURLY_DATA = { 7:2, 8:3, 9:2, 10:3, 11:3, 12:3, 13:3, 14:2, 15:3, 16:2, 17:2, 18:2, 19:3 };
+const HOURLY_AMT  = { 7:37, 8:102, 9:55.5, 10:57, 11:121.5, 12:203, 13:141, 14:37, 15:125, 16:64.5, 17:116, 18:85, 19:132.5 };
+
+const CAT_COLORS = {
+    'Panes':   '#F59E0B',
+    'Tortas':  '#C8783A',
+    'Salados': '#22C55E',
+    'Bebidas': '#3B82F6',
+    'Dulces':  '#A855F7',
 };
+
+let currentRepPeriod = 'hoy';
+
+window.setRepPeriod = (period, btn) => {
+    currentRepPeriod = period;
+    document.querySelectorAll('.rf-btn').forEach(b => b.classList.remove('active'));
+    if(btn) btn.classList.add('active');
+    renderReports();
+};
+
+const renderReports = () => {
+    // Pick real sales or demo depending on data availability
+    const today = new Date().toLocaleDateString('es-PE');
+    const realSalesToday = sales.filter(s => s.date === today);
+    const allSales = realSalesToday.length > 0 ? realSalesToday : DEMO_SALES;
+
+    // ── Date label ──
+    const dateEl = document.getElementById('repDate');
+    if(dateEl) {
+        const now = new Date();
+        dateEl.textContent = now.toLocaleDateString('es-PE', { weekday:'long', day:'numeric', month:'long' }) +
+            ' | ' + now.toLocaleTimeString('es-PE', { hour:'2-digit', minute:'2-digit' });
+    }
+
+    // ── KPIs ──
+    const total = allSales.reduce((s, x) => s + x.total, 0);
+    const txns  = allSales.length;
+    const avg   = txns > 0 ? total / txns : 0;
+    const units = allSales.reduce((s, x) => s + x.items.reduce((a, b) => a + b.qty, 0), 0);
+
+    const multipliers = { hoy: 1, semana: 6.8, mes: 26.3 };
+    const m = multipliers[currentRepPeriod] || 1;
+
+    const set = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+    set('repTotal', 'S/. ' + (total * m).toLocaleString('es-PE', { minimumFractionDigits: 2 }));
+    set('repTxn',   Math.round(txns * m));
+    set('repAvg',   'S/. ' + avg.toFixed(2));
+    set('repUnits', Math.round(units * m));
+
+    const setDelta = (id, txt, cls) => {
+        const el = document.getElementById(id);
+        if(!el) return;
+        el.textContent = txt; el.className = 'rk-delta ' + cls;
+    };
+    const deltas = { hoy: ['↑ 12.4% vs ayer', '↑ 5 más que ayer', '↑ S/. 4.20', '↑ 8.1%'],
+                     semana: ['↑ 7.2% vs semana ant.', '↑ 18 más', '↑ S/. 1.80', '↓ 2.3%'],
+                     mes: ['↑ 21.3% vs mes ant.', '↑ 84 transacciones', '↑ S/. 6.40', '↑ 14.7%'] };
+    const d = deltas[currentRepPeriod];
+    setDelta('repTotalDelta', d[0], 'up');
+    setDelta('repTxnDelta',   d[1], 'up');
+    setDelta('repAvgDelta',   d[2], 'up');
+    setDelta('repUnitsDelta', d[3], d[3].startsWith('↓') ? 'down' : 'up');
+
+    // ── Hourly Chart ──
+    const chart  = document.getElementById('hourlyChart');
+    const labels = document.getElementById('chartLabels');
+    if(chart && labels) {
+        const hours = [7,8,9,10,11,12,13,14,15,16,17,18,19];
+        const vals  = hours.map(h => HOURLY_AMT[h] || 0);
+        const maxV  = Math.max(...vals);
+        const peakH = hours[vals.indexOf(maxV)];
+
+        chart.innerHTML = hours.map(h => {
+            const pct = maxV > 0 ? Math.round((HOURLY_AMT[h] / maxV) * 100) : 5;
+            const isPeak = h === peakH;
+            const amtStr = 'S/. ' + (HOURLY_AMT[h] || 0).toFixed(0);
+            return `<div class="h-bar-col">
+                <div class="h-bar ${isPeak ? 'peak' : ''}" style="height:${Math.max(pct,5)}%">
+                    <div class="h-bar-tooltip">${amtStr}</div>
+                </div>
+            </div>`;
+        }).join('');
+
+        labels.innerHTML = hours.map(h => `<span>${h}h</span>`).join('');
+    }
+
+    // ── Top Products ──
+    const prodTotals = {};
+    allSales.forEach(s => s.items.forEach(i => {
+        prodTotals[i.name] = (prodTotals[i.name] || 0) + (i.price * i.qty * m);
+    }));
+    const sorted = Object.entries(prodTotals).sort((a,b) => b[1]-a[1]).slice(0,5);
+    const maxAmt = sorted[0]?.[1] || 1;
+
+    const rankCls = ['r1','r2','r3','rn','rn'];
+    const topEl = document.getElementById('topProducts');
+    if(topEl) {
+        topEl.innerHTML = sorted.map(([name, amt], i) => {
+            const emoji = (products.find(p => p.name === name) || {}).icon || '🍞';
+            const pct = Math.round((amt / maxAmt) * 100);
+            return `<div class="tp-item">
+                <div class="tp-row">
+                    <div class="tp-rank ${rankCls[i]}">${i+1}</div>
+                    <span class="tp-emoji">${emoji}</span>
+                    <span class="tp-name">${name}</span>
+                    <span class="tp-amount">S/. ${amt.toFixed(0)}</span>
+                </div>
+                <div class="tp-bar-track">
+                    <div class="tp-bar-fill" style="width:${pct}%"></div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    // ── Category Breakdown ──
+    const catTotals = {};
+    allSales.forEach(s => s.items.forEach(i => {
+        const prod = products.find(p => p.name === i.name);
+        const cat = prod ? prod.category : 'Otros';
+        catTotals[cat] = (catTotals[cat] || 0) + (i.price * i.qty * m);
+    }));
+    const catArr = Object.entries(catTotals).sort((a,b) => b[1]-a[1]);
+    const catMax = catArr[0]?.[1] || 1;
+    const catTotal = catArr.reduce((s,[,v]) => s+v, 0);
+    const colors = ['#C8783A','#22C55E','#3B82F6','#A855F7','#F59E0B','#EF4444'];
+
+    const catEl = document.getElementById('catList');
+    if(catEl) {
+        catEl.innerHTML = catArr.map(([cat, amt], i) => {
+            const pct = Math.round((amt / catTotal) * 100);
+            const barW = Math.round((amt / catMax) * 100);
+            const color = CAT_COLORS[cat] || colors[i % colors.length];
+            return `<div class="cat-item">
+                <div class="cat-row">
+                    <div class="cat-dot" style="background:${color}"></div>
+                    <span class="cat-name">${cat}</span>
+                    <span class="cat-pct">${pct}%</span>
+                </div>
+                <div class="cat-track">
+                    <div class="cat-fill" style="width:${barW}%; background:${color}"></div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    // ── Transactions Table ──
+    const txnCountEl = document.getElementById('txnCount');
+    if(txnCountEl) txnCountEl.textContent = allSales.length + ' ventas';
+
+    const txnBody = document.getElementById('txnBody');
+    if(txnBody) {
+        const shown = [...allSales].reverse().slice(0, 18);
+        txnBody.innerHTML = shown.map((s, idx) => {
+            const isPaid = idx % 9 !== 0;  // simulate mostly paid
+            const itemsSummary = s.items.map(i => `${i.name} ×${i.qty}`).join(', ');
+            const brief = itemsSummary.length > 38 ? itemsSummary.slice(0,38) + '…' : itemsSummary;
+            return `<tr>
+                <td><strong style="color:var(--text)">#${s.num}</strong></td>
+                <td style="color:var(--text-3); font-size:12px">${s.time}</td>
+                <td style="font-size:12.5px; max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${brief}</td>
+                <td style="text-align:right; font-weight:800; color:var(--text)">S/. ${s.total.toFixed(2)}</td>
+                <td><span class="txn-badge ${isPaid ? 'txn-paid' : 'txn-pending'}">${isPaid ? 'Pagado' : 'Pendiente'}</span></td>
+            </tr>`;
+        }).join('');
+    }
+};
+
 
 // --- UTILS ---
 window.showToast = (msg) => {

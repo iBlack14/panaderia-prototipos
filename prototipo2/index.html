@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Snack Roque — Sistema POS</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -55,11 +55,15 @@
 </div>
 
 <!-- ======= APP ======= -->
-<div id="appWrap" class="app-layout">
+<div id="appWrap" class="app-layout" style="display:none;flex-direction:column;">
 
   <div class="topnav">
     <div class="nav-brand">
       <img src="../asset/logo.png" alt="Logo" class="brand-logo">
+      <div class="brand-label">
+        <div class="bn-name">Snack Roque</div>
+        <div class="bn-sub">Panadería &amp; Pastelería</div>
+      </div>
     </div>
     <div class="nav-links">
       <div class="nav-link active" onclick="goScreen('dashboard', this)"><span>📊</span> Dashboard</div>
@@ -186,19 +190,101 @@
 
     <!-- REPORTES -->
     <div id="scr-reportes" class="screen">
-        <div class="panel">
-            <div class="panel-title">Ventas por Día</div>
-            <div class="chart-container">
-                <div class="bar-group"><div class="bar-fill" style="height:40%"></div><span class="bar-lbl">Lun</span></div>
-                <div class="bar-group"><div class="bar-fill" style="height:70%"></div><span class="bar-lbl">Mar</span></div>
-                <div class="bar-group"><div class="bar-fill" style="height:55%"></div><span class="bar-lbl">Mie</span></div>
-                <div class="bar-group"><div class="bar-fill" style="height:90%"></div><span class="bar-lbl">Jue</span></div>
-                <div class="bar-group"><div class="bar-fill" style="height:65%"></div><span class="bar-lbl">Vie</span></div>
-                <div class="bar-group"><div class="bar-fill" style="height:100%"></div><span class="bar-lbl">Sab</span></div>
-                <div class="bar-group"><div class="bar-fill" style="height:45%"></div><span class="bar-lbl">Dom</span></div>
-            </div>
+
+      <!-- Filter Row -->
+      <div class="rep-topbar">
+        <div>
+          <div class="rep-title">Análisis de Ventas</div>
+          <div class="rep-sub">Datos actualizados al <span id="repDate"></span></div>
         </div>
+        <div class="rep-filters">
+          <button class="rf-btn active" onclick="setRepPeriod('hoy', this)">Hoy</button>
+          <button class="rf-btn" onclick="setRepPeriod('semana', this)">Esta Semana</button>
+          <button class="rf-btn" onclick="setRepPeriod('mes', this)">Este Mes</button>
+        </div>
+      </div>
+
+      <!-- KPI Strip -->
+      <div class="rep-kpi-row">
+        <div class="rep-kpi rk-a">
+          <div class="rk-label">Ingresos Totales</div>
+          <div class="rk-value" id="repTotal">S/. 0</div>
+          <div class="rk-delta up" id="repTotalDelta">—</div>
+        </div>
+        <div class="rep-kpi rk-b">
+          <div class="rk-label">Transacciones</div>
+          <div class="rk-value" id="repTxn">0</div>
+          <div class="rk-delta up" id="repTxnDelta">—</div>
+        </div>
+        <div class="rep-kpi rk-c">
+          <div class="rk-label">Ticket Promedio</div>
+          <div class="rk-value" id="repAvg">S/. 0</div>
+          <div class="rk-delta up" id="repAvgDelta">—</div>
+        </div>
+        <div class="rep-kpi rk-d">
+          <div class="rk-label">Unidades Vendidas</div>
+          <div class="rk-value" id="repUnits">0</div>
+          <div class="rk-delta" id="repUnitsDelta">—</div>
+        </div>
+      </div>
+
+      <!-- Main Grid -->
+      <div class="rep-grid">
+        <!-- Hourly Chart -->
+        <div class="panel rep-chart-panel">
+          <div class="panel-title">
+            Ventas por Hora
+            <span class="pt-sub">Distribución del día</span>
+          </div>
+          <div class="hourly-chart-wrap">
+            <div class="hourly-chart" id="hourlyChart"></div>
+            <div class="chart-x-labels" id="chartLabels"></div>
+          </div>
+        </div>
+
+        <!-- Top Products -->
+        <div class="panel">
+          <div class="panel-title">
+            Top Productos
+            <span class="pt-sub">Por ingreso</span>
+          </div>
+          <div class="top-products" id="topProducts"></div>
+        </div>
+      </div>
+
+      <!-- Bottom Grid -->
+      <div class="rep-grid-bottom">
+        <!-- Category Breakdown -->
+        <div class="panel">
+          <div class="panel-title">Ventas por Categoría</div>
+          <div class="cat-list" id="catList"></div>
+        </div>
+
+        <!-- Transactions Table -->
+        <div class="panel">
+          <div class="panel-title">
+            Transacciones del Día
+            <span class="pt-sub" id="txnCount">0 ventas</span>
+          </div>
+          <div class="txn-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Boleta</th>
+                  <th>Hora</th>
+                  <th>Detalle</th>
+                  <th style="text-align:right">Total</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody id="txnBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     </div>
+
 
     <!-- USUARIOS -->
     <div id="scr-usuarios" class="screen">

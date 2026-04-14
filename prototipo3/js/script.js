@@ -1,22 +1,32 @@
-// --- DATA ---
+// =================================================================
+// PROTOTIPO 3 — Datos demo modernos
+// =================================================================
 let products = JSON.parse(localStorage.getItem('p3_products')) || [
-    { id: 101, name: 'Pan de Arroz', cat: 'Panes', price: 1.20, stock: 80, em: '🥖' },
-    { id: 102, name: 'Torta de Vainilla', cat: 'Tortas', price: 42.00, stock: 15, em: '🍰' },
-    { id: 103, name: 'Cuernito Dulce', cat: 'Panes', price: 1.50, stock: 60, em: '🥐' },
-    { id: 104, name: 'Tarta de Fresa', cat: 'Tortas', price: 55.00, stock: 5, em: '🍰' },
-    { id: 105, name: 'Muffin Arándano', cat: 'Dulces', price: 4.00, stock: 35, em: '🧁' },
-    { id: 106, name: 'Pan Campesino', cat: 'Panes', price: 3.80, stock: 22, em: '🍞' }
+  { id: 101, name: 'Croissant mantequilla', cat: 'Panes',   price: 4.50,  stock: 48, em: '🥐' },
+  { id: 102, name: 'Pan de yema especial',  cat: 'Panes',   price: 1.80,  stock: 74, em: '🍞' },
+  { id: 103, name: 'Torta de chocolate',    cat: 'Tortas',  price: 45.00, stock: 8,  em: '🎂' },
+  { id: 104, name: 'Empanada de pollo',     cat: 'Panes',   price: 3.50,  stock: 32, em: '🫓' },
+  { id: 105, name: 'Alfajor triple',        cat: 'Dulces',  price: 2.80,  stock: 40, em: '🍪' },
+  { id: 106, name: 'Queque de zanahoria',   cat: 'Tortas',  price: 28.00, stock: 6,  em: '🍰' },
+  { id: 107, name: 'Pan integral',          cat: 'Panes',   price: 5.50,  stock: 20, em: '🌾' },
+  { id: 108, name: 'Café americano',        cat: 'Bebidas', price: 6.00,  stock: 99, em: '☕' },
+  { id: 109, name: 'Bizcocho vainilla',     cat: 'Dulces',  price: 1.50,  stock: 3,  em: '🧁' },
+  { id: 110, name: 'Tarta de fresa',        cat: 'Tortas',  price: 38.00, stock: 5,  em: '🍓' },
+  { id: 111, name: 'Pan campesino',         cat: 'Panes',   price: 3.80,  stock: 0,  em: '🥙' },
+  { id: 112, name: 'Chocolate caliente',    cat: 'Bebidas', price: 7.50,  stock: 99, em: '🍫' },
 ];
 
 let users = JSON.parse(localStorage.getItem('p3_users')) || [
-    { id: 1, u: 'admin', p: '1234', n: 'Administrador', rs: ['Administrador'], st: 'act' },
-    { id: 2, u: 'cajero', p: '1234', n: 'Cajero 01', rs: ['Cajero'], st: 'act' }
+  { id: 1, u: 'admin',  p: '1234', n: 'Ana Rodríguez',  rs: ['Administrador'],           st: 'act' },
+  { id: 2, u: 'carlos', p: '1234', n: 'Carlos Mendoza', rs: ['Cajero'],                  st: 'act' },
+  { id: 3, u: 'maria',  p: '1234', n: 'María Sánchez',  rs: ['Cajero'],                  st: 'act' },
+  { id: 4, u: 'pedro',  p: '1234', n: 'Pedro Castillo', rs: ['Administrador','Cajero'],  st: 'ina' },
 ];
 
 let sales = JSON.parse(localStorage.getItem('p3_sales')) || [];
-let cart = [];
-let user = null;
-let role = null;
+let cart  = [];
+let user  = null;
+let role  = null;
 
 const save = () => {
     localStorage.setItem('p3_products', JSON.stringify(products));
@@ -33,9 +43,17 @@ window.step1 = () => {
     if(!found) { toast('❌ Credenciales inválidas'); return; }
 
     user = found;
+
+    // ── Si solo tiene 1 rol → entrar directo, sin pedir selección ──
+    if(user.rs.length === 1) {
+        role = user.rs[0];
+        enter();
+        return;
+    }
+
+    // ── Varios roles → mostrar selector ──
     document.getElementById('greet').textContent = user.n;
     
-    // Build Roles
     const stack = document.getElementById('rolesStack');
     stack.innerHTML = '';
     const icons = { Administrador: '👑', Cajero: '🛒' };
@@ -66,6 +84,7 @@ window.step1 = () => {
     document.getElementById('loginContainer').classList.add('wide-mode');
 };
 
+
 window.goBack = () => {
     document.getElementById('ls1').style.display = 'block';
     document.getElementById('ls2').style.display = 'none';
@@ -79,17 +98,34 @@ const enter = () => {
     document.getElementById('appWrap').style.display = 'block';
     document.getElementById('sbName').textContent = user.n;
     document.getElementById('sbRole').textContent = role;
-    document.getElementById('sbAv').textContent = user.n[0];
+    document.getElementById('sbAv').textContent = user.n[0].toUpperCase();
 
     if(role !== 'Administrador') {
         document.querySelectorAll('.admin-only').forEach(e => e.style.display = 'none');
     }
 
+    // Fecha en dashboard
+    const today = new Date();
+    const dateStr = today.toLocaleDateString('es-PE', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+    const dateEl = document.getElementById('todayDate');
+    if(dateEl) dateEl.textContent = dateStr;
+
+    // Clock tick
+    const tick = () => {
+        const now = new Date();
+        const t = now.toLocaleTimeString('es-PE', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+        const d = now.toLocaleDateString('es-PE', { weekday:'short', day:'2-digit', month:'short' });
+        const chip = document.getElementById('dtChip');
+        if(chip) chip.textContent = d + ' · ' + t;
+    };
+    tick();
+    setInterval(tick, 1000);
+
     renderPos();
     renderInventory();
     renderHome();
     renderUserList();
-    toast(`🥐 ¡Bienvenido!`);
+    toast('✨ Bienvenido, ' + user.n.split(' ')[0] + '!');
 };
 
 window.salir = () => {
@@ -106,23 +142,34 @@ window.gp = (scr, el) => {
     document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
     if(el) el.classList.add('active');
     
-    document.getElementById('pageH2').textContent = el ? el.textContent.trim() : scr;
-    
+    const titles = { dashboard:'Dashboard', ventas:'Punto de Venta', productos:'Inventario', reportes:'Estadísticas', usuarios:'Personal' };
+    const subs   = { dashboard:'Resumen de operaciones · Hoy', ventas:'Registrar nueva venta', productos:'Control de stock', reportes:'Análisis y métricas', usuarios:'Gestión del equipo' };
+    document.getElementById('pageH2').textContent = titles[scr] || scr;
+    const pEl = document.getElementById('pageP');
+    if(pEl) pEl.textContent = subs[scr] || '';
+
     if(scr === 'dashboard') renderHome();
     if(scr === 'reportes') renderReports();
 };
 
+const DEMO_SALES = { total: 5284, trans: 214, units: 863, avg: 24.69 };
+
 const renderReports = () => {
-    const sls = sales; // For all time or filter
-    const tv = sls.reduce((a,b) => a + b.total, 0);
-    const tr = sls.length;
-    const un = sls.reduce((a,b) => a + b.items.reduce((x,y)=>x+y.qty,0), 0);
+    const tv = sales.reduce((a,b) => a + b.total, 0);
+    const tr = sales.length;
+    const un = sales.reduce((a,b) => a + b.items.reduce((x,y)=>x+y.qty,0), 0);
     const av = tr > 0 ? (tv / tr) : 0;
 
-    document.getElementById('r-total').textContent = 'S/. ' + tv.toFixed(2);
-    document.getElementById('r-trans').textContent = tr;
-    document.getElementById('r-units').textContent = un;
-    document.getElementById('r-avg').textContent = 'S/. ' + av.toFixed(2);
+    // Mostrar datos reales si existen, demo en caso contrario
+    const show = (id, real, demo, prefix='', suffix='') => {
+        const el = document.getElementById(id);
+        if(el) el.textContent = prefix + (tr > 0 ? real : demo) + suffix;
+    };
+
+    show('r-total', tv.toFixed(2), DEMO_SALES.total.toLocaleString(), 'S/. ');
+    show('r-trans', tr, DEMO_SALES.trans);
+    show('r-units', un, DEMO_SALES.units);
+    show('r-avg',   av.toFixed(2), DEMO_SALES.avg.toFixed(2), 'S/. ');
 };
 
 // --- POS ---
@@ -130,13 +177,16 @@ const renderPos = (f = '') => {
     const grid = document.getElementById('catGrid');
     if(!grid) return;
     const items = products.filter(p => p.name.toLowerCase().includes(f.toLowerCase()));
-    grid.innerHTML = items.map(p => `
-        <div class="cat-item" onclick="ai('${p.name}', ${p.price}, '${p.em}', ${p.id})">
-            <div class="ci-em">${p.em}</div>
-            <div class="ci-nm">${p.name}</div>
-            <div class="ci-pr">S/. ${p.price.toFixed(2)}</div>
-        </div>
-    `).join('');
+    grid.innerHTML = items.length === 0
+        ? `<div style="grid-column:span 4;text-align:center;padding:40px;color:var(--text-3);font-weight:600;">Sin resultados</div>`
+        : items.map(p => `
+            <div class="cat-item ${p.stock===0?'style="opacity:.4;pointer-events:none"':''}" onclick="ai('${p.name}',${p.price},'${p.em}',${p.id})">
+                <span class="ci-em">${p.em}</span>
+                <div class="ci-nm">${p.name}</div>
+                <div class="ci-pr">S/. ${p.price.toFixed(2)}</div>
+                <div class="pc-stock">${p.stock > 0 ? p.stock + ' disponibles' : 'Agotado'}</div>
+            </div>
+        `).join('');
 };
 
 window.ai = (n, p, e, id) => {
@@ -166,27 +216,41 @@ window.cq = (id, delta) => {
 
 const urt = () => {
     const list = document.getElementById('orderList');
+    const countEl = document.getElementById('orderCount');
     if(cart.length === 0) {
-        list.innerHTML = '<div class="order-empty"><div>🥖</div>Inicia un pedido</div>';
+        list.innerHTML = '<div class="order-empty"><div>🛒</div>Añade productos al pedido</div>';
         document.getElementById('ot').textContent = 'S/. 0.00';
+        const subEl = document.getElementById('subTotal');
+        const igvEl = document.getElementById('igvTotal');
+        if(subEl) subEl.textContent = 'S/. 0.00';
+        if(igvEl) igvEl.textContent = 'S/. 0.00';
+        if(countEl) countEl.textContent = '0 items';
         return;
     }
-    let t = 0;
+    let sub = 0;
+    let totalQty = 0;
     list.innerHTML = cart.map(i => {
-        t += i.price * i.qty;
+        sub += i.price * i.qty;
+        totalQty += i.qty;
         return `
             <div class="order-line">
                 <div class="ol-name">${i.name}</div>
                 <div class="ol-ctrl">
-                    <button class="q-btn" onclick="cq(${i.id},-1)">-</button>
+                    <button class="q-btn" onclick="cq(${i.id},-1)">−</button>
                     <span class="q-num">${i.qty}</span>
                     <button class="q-btn" onclick="cq(${i.id},1)">+</button>
                 </div>
                 <div class="ol-price">S/. ${(i.price*i.qty).toFixed(2)}</div>
-            </div>
-        `;
+            </div>`;
     }).join('');
-    document.getElementById('ot').textContent = 'S/. ' + t.toFixed(2);
+    const igv = sub * 0.18;
+    const total = sub + igv;
+    const subEl = document.getElementById('subTotal');
+    const igvEl = document.getElementById('igvTotal');
+    if(subEl) subEl.textContent = 'S/. ' + sub.toFixed(2);
+    if(igvEl) igvEl.textContent = 'S/. ' + igv.toFixed(2);
+    document.getElementById('ot').textContent = 'S/. ' + total.toFixed(2);
+    if(countEl) countEl.textContent = totalQty + (totalQty === 1 ? ' item' : ' items');
 };
 
 window.limP = () => { cart = []; urt(); };
@@ -230,21 +294,36 @@ window.renderInventory = (f = '') => {
     const body = document.getElementById('invBody');
     if(!body) return;
     const items = products.filter(p => p.name.toLowerCase().includes(f.toLowerCase()));
-    body.innerHTML = items.map(p => `
+    const catColor = { 'Panes':'tg-blue','Tortas':'tg-blue','Dulces':'tg-warn','Bebidas':'tg-ok' };
+    body.innerHTML = items.map(p => {
+        const stTag = p.stock <= 0  ? '<span class="tag tg-err">Agotado</span>'
+                    : p.stock < 10  ? '<span class="tag tg-warn">Stock bajo</span>'
+                    : '<span class="tag tg-ok">Disponible</span>';
+        return `
         <tr>
-            <td><div class="row-chip"><div class="chip-icon">${p.em}</div><strong>${p.name}</strong></div></td>
-            <td><span class="tag tg-blue">${p.cat}</span></td>
-            <td style="font-weight:800">S/. ${p.price.toFixed(2)}</td>
-            <td><span class="tag ${p.stock<=0?'tg-err':p.stock<10?'tg-warn':'tg-ok'}">${p.stock} und.</span></td>
             <td>
-                <div class="act-row">
-                    <button class="act-btn" onclick="edP(${p.id})">✏️</button>
-                    <button class="act-btn del" onclick="deP(${p.id})">🗑</button>
+                <div class="row-chip">
+                    <div class="chip-icon">${p.em}</div>
+                    <div>
+                        <div style="font-weight:700;color:var(--text);font-size:13.5px">${p.name}</div>
+                        <div style="font-size:11px;color:var(--text-3);margin-top:2px">ID #${p.id}</div>
+                    </div>
                 </div>
             </td>
-        </tr>
-    `).join('');
+            <td><span class="tag ${catColor[p.cat]||'tg-blue'}">${p.cat}</span></td>
+            <td style="font-weight:800;color:var(--accent)">S/. ${p.price.toFixed(2)}</td>
+            <td style="font-weight:700;color:var(--text)">${p.stock} <span style="font-size:11px;color:var(--text-3)">und.</span></td>
+            <td>${stTag}</td>
+            <td>
+                <div class="act-row">
+                    <button class="act-btn" onclick="edP(${p.id})" title="Editar">✏️</button>
+                    <button class="act-btn del" onclick="deP(${p.id})" title="Eliminar">🗑</button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
 };
+
 
 window.opnP = () => {
     document.getElementById('mpTitle').textContent = 'Nuevo Producto';
@@ -300,15 +379,21 @@ window.deP = (id) => {
 const renderUserList = () => {
     const grid = document.getElementById('userGrid');
     if(!grid) return;
+    const actives = users.filter(u => u.st === 'act').length;
+    const totalEl = document.getElementById('totalUsers');
+    const actEl   = document.getElementById('activeUsers');
+    if(totalEl) totalEl.textContent = users.length;
+    if(actEl)   actEl.textContent   = actives;
     grid.innerHTML = users.map(u => `
         <div class="uc">
-            <div class="uc-av" style="background:var(--violet)">${u.n[0]}</div>
+            <div class="uc-av">${u.n[0].toUpperCase()}</div>
             <div class="uc-name">${u.n}</div>
+            <div style="font-size:11px;color:var(--text-3)">@${u.u}</div>
             <div class="uc-roles">${u.rs.map(r => `<span class="role-tag ${r==='Administrador'?'rt-a':'rt-c'}">${r}</span>`).join('')}</div>
-            <div class="uc-status ${u.st==='act'?'on':'off'}">${u.st==='act'?'● Conectado':'○ Offline'}</div>
+            <div class="uc-status ${u.st==='act'?'on':'off'}">${u.st==='act'?'● Activo':'○ Inactivo'}</div>
             <div class="uc-btns">
                 <button class="uc-btn" onclick="edU(${u.id})">Editar</button>
-                <button class="uc-btn" onclick="tgU(${u.id})">Estado</button>
+                <button class="uc-btn" onclick="tgU(${u.id})">${u.st==='act'?'Desactivar':'Activar'}</button>
             </div>
         </div>
     `).join('');
@@ -348,50 +433,59 @@ window.tgU = (id) => {
     renderUserList();
 };
 
-// --- REPORTS ---
+// -- renderHome --
+const DEMO_HOME = { total: 842, trans: 34, units: 127 };
+
 const renderHome = () => {
     const tod = new Date().toLocaleDateString();
     const sls = sales.filter(s => s.d === tod);
-    const tv = sls.reduce((a,b) => a + b.total, 0);
+    const tv  = sls.reduce((a,b) => a + b.total, 0);
     const low = products.filter(p => p.stock < 10).length;
+    const hasReal = sls.length > 0;
 
-    const v = document.querySelectorAll('.st-val');
-    if(v.length) {
-        v[0].textContent = 'S/. ' + tv.toFixed(2);
-        v[1].textContent = sls.length;
-        v[2].textContent = sls.reduce((a,b) => a + b.items.reduce((x,y)=>x+y.qty,0), 0);
-        v[3].textContent = low;
-    }
+    const dT = document.getElementById('d-total');
+    const dTr= document.getElementById('d-trans');
+    const dU = document.getElementById('d-units');
+    const dL = document.getElementById('d-low');
+    if(dT)  dT.textContent  = 'S/. ' + (hasReal ? tv.toFixed(2) : DEMO_HOME.total);
+    if(dTr) dTr.textContent = hasReal ? sls.length : DEMO_HOME.trans;
+    if(dU)  dU.textContent  = hasReal ? sls.reduce((a,b) => a + b.items.reduce((x,y)=>x+y.qty,0), 0) : DEMO_HOME.units;
+    if(dL)  dL.textContent  = low;
 
-    const b = document.getElementById('recentSales');
-    if(b) {
-        b.innerHTML = sls.slice(-5).reverse().map(s => `
-            <tr>
-                <td><span class="tag tg-ok">#${s.n}</span></td>
-                <td>${s.items.map(i=>i.name).join(', ')}</td>
-                <td>${s.t}</td>
-                <td>S/. ${s.total.toFixed(2)}</td>
-            </tr>
-        `).join('');
+    // Only update recent sales table if there are real ones
+    if(hasReal) {
+        const b = document.getElementById('recentSales');
+        if(b) {
+            b.innerHTML = sls.slice(-5).reverse().map(s => `
+                <tr>
+                    <td><span style="font-weight:700;color:var(--accent)">#B-${String(s.n).padStart(4,'0')}</span></td>
+                    <td style="color:var(--text-2)">${s.items.map(i=>i.name+' ×'+i.qty).join(', ')}</td>
+                    <td><span class="tag tg-blue">${s.t}</span></td>
+                    <td>${user ? user.n : '-'}</td>
+                    <td style="font-weight:800;color:var(--green)">S/. ${s.total.toFixed(2)}</td>
+                </tr>
+            `).join('');
+        }
     }
 };
 
 // --- UTILS ---
+window.clm = (id) => document.getElementById(id).classList.remove('open');
+
 const toast = (msg) => {
     const s = document.getElementById('snack');
-    s.textContent = msg; s.style.display = 'block';
-    setTimeout(() => s.style.display = 'none', 3000);
-};
-
-const tick = () => {
-    const el = document.getElementById('dtChip');
-    if(el) el.textContent = new Date().toLocaleString('es-PE', {weekday:'long', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+    s.textContent = msg;
+    s.style.display = 'block';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => s.style.display = 'none', 3000);
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-    renderPos();
-    renderInventory();
-    renderHome();
-    renderUserList();
-    setInterval(tick, 1000); tick();
+    // Forzar recarga de datos demo si los guardados son los viejos
+    const saved = JSON.parse(localStorage.getItem('p3_products') || '[]');
+    if(saved.length > 0 && saved[0].id === 101 && saved[0].name === 'Pan de Arroz') {
+        localStorage.removeItem('p3_products');
+        localStorage.removeItem('p3_users');
+        location.reload();
+    }
 });
