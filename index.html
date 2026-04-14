@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panaderia - Demos</title>
+  <style>
+    :root {
+      --bg: #fff8f0;
+      --card: #ffffff;
+      --text: #2b1d14;
+      --accent: #d97706;
+      --accent-hover: #b45309;
+      --border: #f1d3b0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #fffaf4 0%, #fff3e5 100%);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 760px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: 0 10px 30px rgba(56, 29, 8, 0.08);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(1.5rem, 2.5vw, 2rem);
+    }
+
+    p {
+      margin: 0 0 22px;
+      line-height: 1.5;
+    }
+
+    .grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+
+    a.demo-btn {
+      display: block;
+      text-align: center;
+      text-decoration: none;
+      background: var(--accent);
+      color: #fff;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-weight: 600;
+      transition: transform .15s ease, background .15s ease;
+    }
+
+    a.demo-btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+    }
+
+    .note {
+      margin-top: 18px;
+      font-size: 0.95rem;
+      opacity: .9;
+    }
+
+    code {
+      background: #fff2e2;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+
+<body>
+  <main class="container">
+    <h1>Portal de Demos - Sistema de Panaderia</h1>
+    <p>Selecciona el prototipo que quieres mostrar. Cada boton te lleva directamente al demo correspondiente.</p>
+
+    <section class="grid">
+      <a class="demo-btn" href="./prototipo1/index.html">Abrir Demo 1</a>
+      <a class="demo-btn" href="./prototipo2/index.html">Abrir Demo 2</a>
+      <a class="demo-btn" href="./prototipo3/index.html">Abrir Demo 3</a>
+    </section>
+
+  </main>
+</body>
+
+</html>

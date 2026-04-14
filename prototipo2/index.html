@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Snack Roque — Sistema POS</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ======= LOGIN ======= -->
+<div id="loginWrap" class="login-wrap">
+  <div class="login-left">
+    <div class="left-tag">🌿 Sistema de Gestión</div>
+    <img src="../asset/logo.png" alt="Logo" style="width:320px; height:auto; margin:40px 0;">
+    <div class="feature-list">
+      <div class="feature-item"><div class="feature-dot">🛒</div> Registro de ventas en tiempo real</div>
+      <div class="feature-item"><div class="feature-dot">📦</div> Control automático de inventario</div>
+      <div class="feature-item"><div class="feature-dot">🧾</div> Generación de boletas al instante</div>
+      <div class="feature-item"><div class="feature-dot">📊</div> Reportes diarios y estadísticas</div>
+    </div>
+  </div>
+  <div class="login-right">
+    <div class="login-box">
+
+      <!-- STEP 1: CREDENTIALS -->
+      <div id="step1">
+        <h2>Iniciar sesión</h2>
+        <p>Ingresa tus credenciales para continuar</p>
+        <div class="field">
+          <label>Usuario</label>
+          <input type="text" id="uInput" placeholder="Ej: admin, cajero..." value="admin">
+        </div>
+        <div class="field">
+          <label>Contraseña</label>
+          <input type="password" id="pInput" placeholder="••••••••" value="1234">
+        </div>
+        <button class="btn-go" onclick="loginStep()">Continuar <span>→</span></button>
+      </div>
+
+      <!-- STEP 2: ROLE -->
+      <div id="step2" class="role-step">
+        <div class="step-header">
+           <button class="btn-back-link" onclick="backStep()" style="background:none; border:none; color:var(--text-2); cursor:pointer; margin-bottom:12px">← Volver al login</button>
+           <h2>Selecciona tu rol</h2>
+           <p>Hola, <strong id="greetName">Usuario</strong>. ¿Con qué rol ingresas hoy?</p>
+        </div>
+        <div class="roles-list" id="rolesList"></div>
+        <button class="btn-go" onclick="enterWithRole()">Ingresar al sistema →</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ======= APP ======= -->
+<div id="appWrap" class="app-layout">
+
+  <div class="topnav">
+    <div class="nav-brand">
+      <img src="../asset/logo.png" alt="Logo" class="brand-logo">
+    </div>
+    <div class="nav-links">
+      <div class="nav-link active" onclick="goScreen('dashboard', this)"><span>📊</span> Dashboard</div>
+      <div class="nav-link" onclick="goScreen('ventas', this)"><span>🛒</span> Ventas</div>
+      <div class="nav-link" onclick="goScreen('productos', this)"><span>🍞</span> Inventario</div>
+      <div class="nav-link admin-only" onclick="goScreen('reportes', this)"><span>📈</span> Reportes</div>
+      <div class="nav-link admin-only" onclick="goScreen('usuarios', this)"><span>👥</span> Usuarios</div>
+    </div>
+    <div class="nav-right">
+      <div class="nav-user">
+        <div class="nav-avatar" id="navAv">A</div>
+        <div class="nav-user-info">
+          <div class="nu-name" id="navName">Admin</div>
+          <div class="nu-role" id="navRole">Administrador</div>
+        </div>
+      </div>
+      <button class="btn-logout-top" onclick="logout()">Cerrar Sesión</button>
+    </div>
+  </div>
+
+  <div class="page-content">
+
+    <!-- DASHBOARD -->
+    <div id="scr-dashboard" class="screen active">
+        <div class="kpi-row">
+            <div class="kpi">
+                <div class="kpi-icon ic-green">💰</div>
+                <div class="kpi-value">S/. 0</div>
+                <div class="kpi-label">Ventas de Hoy</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-icon ic-yellow">🛒</div>
+                <div class="kpi-value">0</div>
+                <div class="kpi-label">Transacciones</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-icon ic-blue">📦</div>
+                <div class="kpi-value">0</div>
+                <div class="kpi-label">Productos Vendidos</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-icon ic-orange">⚠️</div>
+                <div class="kpi-value">0</div>
+                <div class="kpi-label">Stock Crítico</div>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-title">Ventas Recientes <span class="pt-sub">Últimos movimientos de hoy</span></div>
+                <table>
+                    <thead>
+                        <tr><th>Boleta</th><th>Detalle</th><th>Hora</th><th style="text-align:right">Total</th></tr>
+                    </thead>
+                    <tbody id="recentSalesBody">
+                        <!-- JS -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="panel">
+                <div class="panel-title">Filtros Rápidos</div>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                    <button class="btn-limpiar" style="text-align:left; padding:12px; font-weight:600">📅 Reporte del Día</button>
+                    <button class="btn-limpiar" style="text-align:left; padding:12px; font-weight:600">📊 Gráficas Semanales</button>
+                    <button class="btn-limpiar" style="text-align:left; padding:12px; font-weight:600">📥 Exportar a Excel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VENTAS (POS) -->
+    <div id="scr-ventas" class="screen">
+        <div class="pos-layout">
+            <div class="catalog-side">
+                <div class="catalog-head">
+                    <div class="search-box">
+                        <i class="icon-search">🔍</i>
+                        <input type="text" placeholder="Buscar producto por nombre..." oninput="catalogSearch(this.value)">
+                    </div>
+                </div>
+                <div class="products-catalog" id="catalogGrid">
+                    <!-- JS -->
+                </div>
+            </div>
+            <div class="panel ticket-pnl">
+                <div class="ticket-header">
+                    <h3>Ticket de Venta</h3>
+                    <span id="ticketId">#0001</span>
+                </div>
+                <div class="ticket-list" id="ticketList">
+                    <!-- JS -->
+                </div>
+                <div class="t-summary">
+                    <div class="ts-row"><span>Subtotal</span><span id="tsSub">S/. 0.00</span></div>
+                    <div class="ts-row"><span>IGV (0%)</span><span>S/. 0.00</span></div>
+                    <div class="ts-total"><span>Total</span><span id="tsTotal">S/. 0.00</span></div>
+                    <button class="btn-cobrar" onclick="payTicket()">Cobrar Pedido <span>→</span></button>
+                    <button class="btn-limpiar" onclick="clearCart()">Cancelar Todo</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PRODUCTOS -->
+    <div id="scr-productos" class="screen">
+        <div class="tb-actions">
+            <div class="tb-search">
+                <span>🔍</span>
+                <input type="text" placeholder="Filtrar inventario..." oninput="renderInventory(this.value)">
+            </div>
+            <button class="btn-primary-sm" onclick="addProd()">+ Agregar Nuevo Producto</button>
+        </div>
+        <div class="panel">
+            <table class="inventory-table">
+                <thead>
+                    <tr><th>Producto</th><th>Categoría</th><th>Precio</th><th>Stock</th><th>Acciones</th></tr>
+                </thead>
+                <tbody id="inventoryBody">
+                    <!-- JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- REPORTES -->
+    <div id="scr-reportes" class="screen">
+        <div class="panel">
+            <div class="panel-title">Ventas por Día</div>
+            <div class="chart-container">
+                <div class="bar-group"><div class="bar-fill" style="height:40%"></div><span class="bar-lbl">Lun</span></div>
+                <div class="bar-group"><div class="bar-fill" style="height:70%"></div><span class="bar-lbl">Mar</span></div>
+                <div class="bar-group"><div class="bar-fill" style="height:55%"></div><span class="bar-lbl">Mie</span></div>
+                <div class="bar-group"><div class="bar-fill" style="height:90%"></div><span class="bar-lbl">Jue</span></div>
+                <div class="bar-group"><div class="bar-fill" style="height:65%"></div><span class="bar-lbl">Vie</span></div>
+                <div class="bar-group"><div class="bar-fill" style="height:100%"></div><span class="bar-lbl">Sab</span></div>
+                <div class="bar-group"><div class="bar-fill" style="height:45%"></div><span class="bar-lbl">Dom</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- USUARIOS -->
+    <div id="scr-usuarios" class="screen">
+        <div class="tb-actions">
+            <div></div>
+            <button class="btn-primary-sm" onclick="addUser()">+ Crear Usuario</button>
+        </div>
+        <div class="users-stack" id="usersStack">
+            <!-- JS -->
+        </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- RECEIPT MODAL -->
+<div class="modal-bg" id="receiptModal">
+    <div class="modal-box">
+        <div class="success-mark">🥖</div>
+        <h3>Venta Procesada</h3>
+        <p class="sub">Se ha registrado el cobro exitosamente</p>
+        <div class="receipt-block">
+            <div class="rb-h">
+                <strong>SNACK ROQUE</strong>
+                <span id="rbDate"></span><br>
+                <span id="rbNum"></span>
+            </div>
+            <div class="receipt-items" id="rbList"></div>
+            <div class="rb-t">
+                <span>PAGADO</span>
+                <span id="rbTotal"></span>
+            </div>
+        </div>
+        <div class="modal-buttons">
+            <button class="mb-sec" onclick="closeModal('receiptModal')">🖨 Imprimir</button>
+            <button class="mb-pri" onclick="closeModal('receiptModal')">✓ Aceptar</button>
+        </div>
+    </div>
+</div>
+
+<!-- PROD MODAL -->
+<div class="modal-bg" id="prodModal">
+    <div class="modal-box large">
+        <h3 id="prodTitle">Producto</h3>
+        <form id="prodForm" onsubmit="event.preventDefault(); saveProd();">
+            <input type="hidden" id="prodId">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px; text-align:left">
+                <div class="field" style="grid-column: span 2">
+                    <label style="color:var(--text-2)">Nombre</label>
+                    <input type="text" id="prodName" required style="color:var(--text); border-color:var(--border)">
+                </div>
+                <div class="field">
+                    <label style="color:var(--text-2)">Categoría</label>
+                    <select id="prodCat" style="color:var(--text); border-color:var(--border); width:100%; padding:14px; border-radius:12px; background:var(--bg); border:1.5px solid var(--border)">
+                        <option value="Panes">Panes</option>
+                        <option value="Tortas">Tortas</option>
+                        <option value="Bebidas">Bebidas</option>
+                        <option value="Dulces">Dulces</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label style="color:var(--text-2)">Precio (S/.)</label>
+                    <input type="number" step="0.01" id="prodPrice" required style="color:var(--text); border-color:var(--border)">
+                </div>
+                <div class="field">
+                    <label style="color:var(--text-2)">Stock Inicial</label>
+                    <input type="number" id="prodStock" required style="color:var(--text); border-color:var(--border)">
+                </div>
+                <div class="field">
+                    <label style="color:var(--text-2)">Icono (Emoji)</label>
+                    <input type="text" id="prodIcon" style="color:var(--text); border-color:var(--border)">
+                </div>
+            </div>
+            <div class="modal-buttons" style="margin-top:24px">
+                <button type="button" class="mb-sec" onclick="closeModal('prodModal')">Cancelar</button>
+                <button type="submit" class="mb-pri">Guardar en Inventario</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- USER MODAL -->
+<div class="modal-bg" id="userModal">
+    <div class="modal-box">
+        <h3 id="userTitle">Usuario</h3>
+        <form id="userForm" onsubmit="event.preventDefault(); saveUser();">
+            <input type="hidden" id="userId">
+            <div style="text-align:left; margin-top:20px">
+                <div class="field">
+                    <label style="color:var(--text-2)">Nombre Completo</label>
+                    <input type="text" id="userName" required style="color:var(--text); border-color:var(--border)">
+                </div>
+                <div class="field">
+                    <label style="color:var(--text-2)">Usuario (Login)</label>
+                    <input type="text" id="userLogin" required style="color:var(--text); border-color:var(--border)">
+                </div>
+                <div class="field">
+                    <label style="color:var(--text-2)">Contraseña</label>
+                    <input type="password" id="userPass" required style="color:var(--text); border-color:var(--border)">
+                </div>
+                <div class="field">
+                    <label style="color:var(--text-2)">Rol</label>
+                    <select id="userRole" style="color:var(--text); border-color:var(--border); width:100%; padding:14px; border-radius:12px; background:var(--bg); border:1.5px solid var(--border)">
+                        <option value="Cajero">Cajero</option>
+                        <option value="Administrador">Administrador</option>
+                        <option value="Contabilidad">Contabilidad</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-buttons" style="margin-top:24px">
+                <button type="button" class="mb-sec" onclick="closeModal('userModal')">Cancelar</button>
+                <button type="submit" class="mb-pri">Guardar Usuario</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="js/script.js"></script>
+</body>
+</html>

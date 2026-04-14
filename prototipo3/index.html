@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Snack Roque — Harina & Sabor</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700;800&family=Fraunces:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ======= LOGIN ======= -->
+<div id="loginScene" class="login-scene">
+  <div class="deco-circle dc1"></div>
+  <div class="deco-circle dc2"></div>
+
+  <div class="login-container" id="loginContainer">
+    <div class="login-left">
+      <div class="ll-top" style="display:flex; flex-direction:column; align-items:center; text-align:center;">
+        <img src="../asset/logo.png" alt="Logo" class="bread-icon" style="width:220px; height:auto;">
+        <div class="ll-features" style="text-align:left; align-self:flex-start; margin-top:20px;">
+          <div class="feature"><div class="f-dot">🥖</div> Pan caliente y atención al instante</div>
+          <div class="feature"><div class="f-dot">📊</div> El sabor tradicional con la rapidez que mereces</div>
+          <div class="feature"><div class="f-dot">🛒</div> Sistema de ventas automatizado</div>
+        </div>
+      </div>
+      <div class="ll-bottom">Snack Roque Panadería & Pastelería</div>
+    </div>
+
+    <div class="login-right">
+      <!-- STEP 1 -->
+      <div id="ls1">
+        <div class="lr-title">Bienvenido</div>
+        <p class="lr-sub">Accede a tu estación de trabajo</p>
+        <div class="inp-group">
+          <label>Usuario</label>
+          <div class="inp-wrap">
+            <span class="inp-icon">👤</span>
+            <input type="text" id="u1" placeholder="Ej: admin..." value="admin">
+          </div>
+        </div>
+        <div class="inp-group">
+          <label>Contraseña</label>
+          <div class="inp-wrap">
+            <span class="inp-icon">🔐</span>
+            <input type="password" id="p1" placeholder="••••••••" value="1234">
+          </div>
+        </div>
+        <button class="btn-enter" onclick="step1()">Ingresar →</button>
+      </div>
+
+      <!-- STEP 2 -->
+      <div id="ls2" class="role-step">
+        <button class="btn-back-sm" onclick="goBack()">← Cambiar de usuario</button>
+        <div class="rs-title">Continuar como...</div>
+        <p class="rs-sub">Hola <strong id="greet"></strong>, elige tu rol para hoy</p>
+        <div class="roles-stack" id="rolesStack"></div>
+        <button class="btn-enter" onclick="step2()">Confirmar e INGRESAR →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======= APP ======= -->
+<div id="appWrap" class="app-wrap">
+  <div class="app-body">
+
+    <div class="sidebar">
+      <div class="sb-brand">
+        <img src="../asset/logo.png" alt="Logo" class="sb-logo">
+        <p>Expertos en Panadería</p>
+      </div>
+      <div class="sb-nav">
+        <div class="sb-section">Gestión</div>
+        <div class="sb-item active" onclick="gp('dashboard',this)"><span class="sb-icon">📊</span> Dashboard</div>
+        <div class="sb-item" onclick="gp('ventas',this)"><span class="sb-icon">🛒</span> Punto de Venta</div>
+        <div class="sb-item" onclick="gp('productos',this)"><span class="sb-icon">🥖</span> Inventario</div>
+        <div class="sb-item" onclick="gp('reportes',this)"><span class="sb-icon">📉</span> Estadísticas</div>
+        <div class="sb-item admin-only" onclick="gp('usuarios',this)"><span class="sb-icon">👥</span> Personal</div>
+      </div>
+      <div class="sb-footer">
+        <div class="sb-user">
+          <div class="sb-av" id="sbAv">A</div>
+          <div>
+            <div class="sb-u-name" id="sbName">Usuario</div>
+            <div class="sb-u-role" id="sbRole">Administrador</div>
+          </div>
+          <button class="sb-logout" onclick="salir()" title="Cerrar sesión">↩</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-area">
+      <div class="page-head">
+        <div class="ph-left">
+          <h2 id="pageH2">Dashboard</h2>
+          <p id="pageP">Resumen de operaciones actuales</p>
+        </div>
+        <div class="ph-right">
+          <div class="search-pill">
+            <span>🔍</span>
+            <input placeholder="Buscar...">
+          </div>
+          <div class="datetime-chip" id="dtChip"></div>
+        </div>
+      </div>
+
+      <div class="page-body">
+
+        <!-- DASHBOARD -->
+        <div class="screen active" id="pg-dashboard">
+          <div class="stats-4">
+            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-lav">💰</div><div class="st-delta d-up">Hoy</div></div><div class="st-val" id="d-total">S/. 0</div><div class="st-lbl">Ventas registradas</div></div>
+            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-blush">🛒</div><div class="st-delta d-up">Hoy</div></div><div class="st-val" id="d-trans">0</div><div class="st-lbl">Transacciones</div></div>
+            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-peach">📦</div><div class="st-delta d-up">Hoy</div></div><div class="st-val" id="d-units">0</div><div class="st-lbl">Unidades vendidas</div></div>
+            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-mint">⚠️</div><div class="st-delta d-down">Alerta</div></div><div class="st-val" id="d-low">0</div><div class="st-lbl">Productos sin stock</div></div>
+          </div>
+          <div class="panel">
+            <div class="p-title"><h3>Actividad de hoy</h3></div>
+            <table>
+              <thead><tr><th>Comprobante</th><th>Detalle</th><th>Hora</th><th>Importe</th></tr></thead>
+              <tbody id="recentSales">
+                <!-- JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- VENTAS -->
+        <div class="screen" id="pg-ventas">
+          <div class="pos-2col">
+            <div class="cat-side">
+               <div class="cat-search">
+                  <span>🔍</span>
+                  <input type="text" placeholder="Buscar producto..." oninput="renderPos(this.value)">
+               </div>
+               <div class="cat-grid" id="catGrid">
+                  <!-- JS -->
+               </div>
+            </div>
+            <div class="order-panel">
+               <div class="op-head">
+                  <h3>Detalle del Pedido</h3>
+                  <span>Mesa / Mostrador</span>
+               </div>
+               <div id="orderList" style="min-height:200px">
+                  <!-- JS -->
+               </div>
+               <div class="order-summary">
+                  <div class="os-row"><span>Subtotal</span><span>S/. 0.00</span></div>
+                  <div class="os-total"><span>Total</span><span id="ot">S/. 0.00</span></div>
+                  <button class="btn-sell" onclick="cobP()">Cobrar e Imprimir <span>💰</span></button>
+                  <button class="btn-clear" onclick="limP()">Vaciar Carrito</button>
+               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PRODUCTOS -->
+        <div class="screen" id="pg-productos">
+          <div class="tb-bar">
+             <div class="tb-left">
+                <div class="srch-box">🔍 <input oninput="renderInventory(this.value)" placeholder="Filtrar inventario..."></div>
+             </div>
+             <button class="btn-new" onclick="opnP()">+ Nuevo Producto</button>
+          </div>
+          <div class="panel">
+             <table>
+                <thead><tr><th>Producto</th><th>Categoría</th><th>Precio</th><th>Existencias</th><th>Acciones</th></tr></thead>
+                <tbody id="invBody">
+                   <!-- JS -->
+                </tbody>
+             </table>
+          </div>
+        </div>
+
+        <!-- REPORTES -->
+        <div class="screen" id="pg-reportes">
+          <div class="stats-4" style="margin-bottom:24px">
+            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-lav">💰</div></div><div class="st-val" id="r-total">S/. 0</div><div class="st-lbl">Ventas Totales</div></div>
+            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-blush">🛒</div></div><div class="st-val" id="r-trans">0</div><div class="st-lbl">Transacciones</div></div>
+            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-peach">📦</div></div><div class="st-val" id="r-units">0</div><div class="st-lbl">Unidades Totales</div></div>
+            <div class="stat-tile"><div class="st-header"><div class="st-icon ic-mint">💳</div></div><div class="st-val" id="r-avg">S/. 0.00</div><div class="st-lbl">Ticket Promedio</div></div>
+          </div>
+           <div class="panel">
+              <div class="p-title"><h3>Análisis Semanal</h3></div>
+              <div class="chart-wrap">
+                 <div class="bc"><div class="bbar" style="height:40%"></div><span class="blbl">Lun</span></div>
+                 <div class="bc"><div class="bbar" style="height:65%"></div><span class="blbl">Mar</span></div>
+                 <div class="bc"><div class="bbar" style="height:50%"></div><span class="blbl">Mie</span></div>
+                 <div class="bc"><div class="bbar" style="height:85%"></div><span class="blbl">Jue</span></div>
+                 <div class="bc"><div class="bbar" style="height:70%"></div><span class="blbl">Vie</span></div>
+                 <div class="bc"><div class="bbar" style="height:100%"></div><span class="blbl">Sab</span></div>
+                 <div class="bc"><div class="bbar" style="height:35%"></div><span class="blbl">Dom</span></div>
+              </div>
+           </div>
+        </div>
+
+        <!-- USUARIOS -->
+        <div class="screen" id="pg-usuarios">
+           <div class="tb-bar">
+              <div></div>
+              <button class="btn-new" onclick="opnU()">+ Agregar Personal</button>
+           </div>
+           <div class="user-cards" id="userGrid">
+              <!-- JS -->
+           </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- RECEIPT MODAL -->
+<div class="modal-overlay" id="receiptModal">
+  <div class="modal-card">
+    <div class="mc-icon">🍞</div>
+    <div class="mc-title">¡Venta Exitosa!</div>
+    <p class="mc-sub">Se ha registrado el pago correctamente</p>
+    <div class="mc-receipt">
+       <div class="mcr-head">
+          <strong>SNACK ROQUE</strong>
+          <span id="mcrDate"></span><br>
+          <span id="mcrNum"></span>
+       </div>
+       <div id="mcrList"></div>
+       <div class="mcr-total"><span>Total</span><span id="mcrTotal"></span></div>
+    </div>
+    <div class="mc-btns">
+       <button class="mc-sec" onclick="clm('receiptModal')">Cerrar</button>
+       <button class="mc-pri" onclick="clm('receiptModal')">🖨 Imprimir Boleta</button>
+    </div>
+  </div>
+</div>
+
+<!-- PRODUCT MODAL -->
+<div class="modal-overlay" id="mpModal">
+    <div class="modal-card" style="width:600px; text-align:left">
+        <h3 class="mc-title" id="mpTitle">Producto</h3>
+        <form id="mpForm" onsubmit="event.preventDefault(); svP();" style="margin-top:20px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <input type="hidden" id="mpId">
+            <div class="inp-group" style="grid-column: span 2">
+                <label style="color:var(--text-2)">Nombre del producto</label>
+                <div class="inp-wrap"><input type="text" id="mpName" required style="color:var(--text); border-color:var(--border)"></div>
+            </div>
+            <div class="inp-group">
+                <label style="color:var(--text-2)">Categoría</label>
+                <div class="inp-wrap">
+                    <select id="mpCat" style="width:100%; padding:13px; border-radius:12px; border:2px solid var(--border); background:white;">
+                        <option value="Panes">Panes</option>
+                        <option value="Tortas">Tortas</option>
+                        <option value="Dulces">Dulces</option>
+                    </select>
+                </div>
+            </div>
+            <div class="inp-group">
+                <label style="color:var(--text-2)">Precio S/.</label>
+                <div class="inp-wrap"><input type="number" step="0.01" id="mpPrice" required style="color:var(--text); border-color:var(--border)"></div>
+            </div>
+            <div class="inp-group">
+                <label style="color:var(--text-2)">Stock Inicial</label>
+                <div class="inp-wrap"><input type="number" id="mpStock" required style="color:var(--text); border-color:var(--border)"></div>
+            </div>
+            <div class="inp-group">
+                <label style="color:var(--text-2)">Icono</label>
+                <div class="inp-wrap"><input type="text" id="mpEm" style="color:var(--text); border-color:var(--border)"></div>
+            </div>
+            <div class="mc-btns" style="grid-column: span 2; margin-top:20px">
+                <button type="button" class="mc-sec" onclick="clm('mpModal')">Cancelar</button>
+                <button type="submit" class="mc-pri">Guardar Producto</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- USER MODAL -->
+<div class="modal-overlay" id="muModal">
+    <div class="modal-card" style="text-align:left">
+        <h3 class="mc-title" id="muTitle">Usuario</h3>
+        <form id="muForm" onsubmit="event.preventDefault(); svU();" style="margin-top:20px">
+            <input type="hidden" id="muId">
+            <div class="inp-group">
+                <label style="color:var(--text-2)">Nombre Completo</label>
+                <div class="inp-wrap"><input type="text" id="muName" required style="color:var(--text); border-color:var(--border)"></div>
+            </div>
+            <div class="inp-group">
+                <label style="color:var(--text-2)">Usuario (Login)</label>
+                <div class="inp-wrap"><input type="text" id="muUser" required style="color:var(--text); border-color:var(--border)"></div>
+            </div>
+            <div class="inp-group">
+                <label style="color:var(--text-2)">Contraseña</label>
+                <div class="inp-wrap"><input type="password" id="muPass" required style="color:var(--text); border-color:var(--border)"></div>
+            </div>
+            <div class="inp-group">
+                <label style="color:var(--text-2)">Rol</label>
+                <select id="muRole" style="width:100%; padding:13px; border-radius:12px; border:2px solid var(--border); background:white;">
+                    <option value="Cajero">Cajero</option>
+                    <option value="Administrador">Administrador</option>
+                </select>
+            </div>
+            <div class="mc-btns" style="margin-top:24px">
+                <button type="button" class="mc-sec" onclick="clm('muModal')">Cerrar</button>
+                <button type="submit" class="mc-pri">Crear Usuario</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="snack" id="snack"></div>
+
+<script src="js/script.js"></script>
+</body>
+</html>
