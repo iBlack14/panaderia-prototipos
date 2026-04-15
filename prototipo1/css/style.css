@@ -60,14 +60,16 @@
   margin: 0; padding: 0; box-sizing: border-box;
 }
 
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; overflow-x: hidden; }
 
 body {
   font-family: 'Inter', sans-serif;
   background: var(--bg);
   color: var(--text-1);
   min-height: 100vh;
+  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
 }
 
 /* ======================================================
@@ -111,7 +113,8 @@ body {
   background: var(--surface);
   border-radius: var(--r-xl);
   padding: 52px 48px;
-  width: 440px;
+  width: 100%;
+  max-width: 440px;
   box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255,255,255,0.06);
   position: relative;
   z-index: 1;
@@ -119,7 +122,7 @@ body {
   transition: width 0.4s var(--ease);
 }
 
-.login-card.wide-mode { width: 820px; }
+.login-card.wide-mode { max-width: 820px; }
 
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(28px); }
@@ -277,7 +280,22 @@ body {
   display: none;
 }
 
-/* ── Sidebar ── */
+/* Sidebar overlay for mobile */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: none;
+  z-index: 150;
+}
+
+@media (max-width: 480px) {
+  body.sidebar-open::before {
+    display: block;
+  }
+}
+
 .sidebar {
   width: 248px;
   background: var(--sidebar-bg);
@@ -417,6 +435,23 @@ body {
 
 .btn-logout:hover { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.06); }
 
+.btn-sidebar-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-1);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 8px;
+  margin-right: 8px;
+  transition: all 0.2s;
+  line-height: 1;
+}
+
+.btn-sidebar-toggle:hover {
+  color: var(--primary);
+}
+
 /* ======================================================
    MAIN
    ====================================================== */
@@ -464,7 +499,38 @@ body {
   white-space: nowrap;
 }
 
-/* Search */
+/* ======================================================
+   TOUCH FRIENDLY ENHANCEMENTS
+   ====================================================== */
+button {
+  cursor: pointer;
+  transition: all 0.2s var(--ease);
+}
+
+@media (min-width: 376px) and (max-width: 768px) {
+  button,
+  input[type="button"],
+  input[type="submit"],
+  .btn-primary,
+  .btn-outline,
+  .btn-login,
+  .btn-add {
+    min-height: 44px;
+    font-size: 14px;
+    padding: 10px 16px;
+  }
+
+  input[type="text"],
+  input[type="password"],
+  input[type="email"],
+  input[type="number"],
+  select,
+  textarea {
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 16px;
+  }
+}
 .search-bar {
   display: flex;
   align-items: center;
@@ -609,7 +675,27 @@ body {
 }
 
 /* ── Table ── */
-table { width: 100%; border-collapse: collapse; }
+table { 
+  width: 100%; 
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0;
+  padding: 0;
+}
+
+@media (min-width: 376px) and (max-width: 768px) {
+  .table-wrapper {
+    margin: 0;
+    padding: 0;
+    overflow-x: auto;
+  }
+}
 
 th {
   text-align: left;
@@ -618,8 +704,9 @@ th {
   text-transform: uppercase;
   letter-spacing: 1.2px;
   color: var(--text-3);
-  padding: 0 16px 12px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 12px 16px 12px 0;
+  border-bottom: 1.5px solid var(--border);
+  white-space: nowrap;
 }
 
 td {
@@ -631,8 +718,19 @@ td {
 }
 
 tr:last-child td { border-bottom: none; }
-tbody tr { transition: background 0.15s; }
+tbody tr { 
+  transition: background 0.15s;
+  height: auto;
+}
 tbody tr:hover td { background: var(--surface-2); }
+
+@media (max-width: 600px) {
+  table th,
+  table td {
+    padding: 8px;
+    font-size: 12px;
+  }
+}
 
 .product-chip {
   display: inline-flex;
@@ -1202,3 +1300,701 @@ tbody tr:hover td { background: var(--surface-2); }
    ====================================================== */
 .text-right { text-align: right; }
 .w-full { width: 100%; }
+
+/* ======================================================
+   RESPONSIVE DESIGN
+   ====================================================== */
+@media (max-width: 1024px) {
+  .sidebar {
+    width: 220px;
+  }
+
+  .main {
+    margin-left: 220px;
+    width: calc(100% - 220px);
+  }
+
+  .content {
+    padding: 20px 24px;
+  }
+
+  .topbar {
+    padding: 0 24px;
+  }
+
+  .search-bar {
+    max-width: 180px;
+  }
+
+  .search-bar input {
+    width: 140px;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Layout */
+  .login-page {
+    padding: 20px;
+  }
+
+  .login-card {
+    padding: 40px 28px;
+    max-width: 100%;
+  }
+
+  .login-logo .icon {
+    width: 90px;
+    height: 90px;
+  }
+
+  .role-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .sidebar {
+    width: 200px;
+  }
+
+  .main {
+    margin-left: 200px;
+    width: calc(100% - 200px);
+  }
+
+  .topbar {
+    padding: 0 16px;
+    height: 60px;
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .topbar > div:first-child {
+    width: 100%;
+    display: flex;
+    gap: 10px;
+  }
+
+  .topbar h3 {
+    font-size: 16px;
+    white-space: nowrap;
+  }
+
+  .topbar .date {
+    display: none;
+  }
+
+  .search-bar {
+    margin-left: 0;
+    flex: 1;
+    max-width: 100%;
+  }
+
+  .search-bar input {
+    width: 100%;
+    font-size: 12px;
+  }
+
+  /* Grids */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-card {
+    padding: 16px;
+  }
+
+  .stat-card .stat-value {
+    font-size: 22px;
+  }
+
+  .stat-card .stat-label {
+    font-size: 10px;
+  }
+
+  /* Cards & Tables */
+  .card {
+    padding: 16px;
+    border-radius: 12px;
+  }
+
+  .card table {
+    font-size: 12px;
+  }
+
+  .card table th {
+    padding: 10px 6px;
+    font-size: 11px;
+  }
+
+  .card table td {
+    padding: 8px 6px;
+  }
+
+  /* Buttons */
+  .btn-login, .btn-primary, .btn-outline {
+    padding: 12px;
+    font-size: 13px;
+    min-height: 40px;
+  }
+
+  /* Forms */
+  .form-group input,
+  .form-group select {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .form-group label {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 600px) {
+  /* Hide secondary elements */
+  .search-bar {
+    display: none !important;
+  }
+
+  .page-title,
+  .topbar > div:last-child {
+    display: none;
+  }
+
+  .topbar {
+    height: 50px;
+    padding: 0 12px;
+  }
+
+  .topbar h3 {
+    font-size: 14px;
+  }
+
+  /* Grid adjustments */
+  .role-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .toolbar-search {
+    width: 100%;
+  }
+
+  .toolbar-search input {
+    width: 100%;
+  }
+
+  .btn-add {
+    width: 100%;
+    padding: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Page layout */
+  .login-page {
+    padding: 12px;
+  }
+
+  .login-card {
+    padding: 24px 16px;
+    border-radius: 16px;
+  }
+
+  .login-logo {
+    margin-bottom: 20px;
+  }
+
+  .login-logo .icon {
+    width: 60px;
+    height: 60px;
+    margin-bottom: 8px;
+  }
+
+  .form-group {
+    margin-bottom: 14px;
+  }
+
+  .form-group label {
+    font-size: 9px;
+    margin-bottom: 6px;
+  }
+
+  .form-group input,
+  .form-group select {
+    padding: 10px 12px;
+    font-size: 14px;
+    border-radius: 8px;
+    min-height: 44px;
+  }
+
+  .btn-login {
+    padding: 11px;
+    font-size: 12px;
+    border-radius: 8px;
+    margin-top: 6px;
+  }
+
+  .role-selector h2 {
+    font-size: 16px;
+    margin-bottom: 4px;
+  }
+
+  .role-selector p {
+    font-size: 12px;
+    margin-bottom: 16px;
+  }
+
+  .role-card {
+    padding: 14px 10px;
+    border-radius: 10px;
+  }
+
+  .role-card .role-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+  }
+
+  .role-card .role-name {
+    font-size: 13px;
+  }
+
+  .role-card .role-desc {
+    font-size: 10px;
+    margin-top: 2px;
+  }
+
+  .btn-back {
+    font-size: 11px;
+  }
+
+  /* Sidebar mobile */
+  .sidebar {
+    width: 0;
+    position: fixed;
+    transform: translateX(-100%);
+    transition: transform 0.3s var(--ease);
+    z-index: 200;
+    height: 100vh;
+    top: 0;
+    left: 0;
+  }
+
+  .sidebar.active {
+    transform: translateX(0);
+  }
+
+  .btn-sidebar-toggle {
+    display: block !important;
+  }
+
+  .main {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  /* Topbar mobile */
+  .topbar {
+    padding: 0 12px;
+    height: 48px;
+    gap: 0;
+    flex-direction: row;
+  }
+
+  .topbar > div:first-child {
+    width: 100%;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .topbar h3 {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+  }
+
+  .topbar .date {
+    display: none;
+  }
+
+  /* Content */
+  .content {
+    padding: 16px;
+  }
+
+  /* Stats */
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .stat-card {
+    padding: 16px;
+    border-radius: 12px;
+    min-height: 100px;
+  }
+
+  .stat-card .stat-icon {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+    margin-bottom: 10px;
+  }
+
+  .stat-card .stat-value {
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .stat-card .stat-label {
+    font-size: 9px;
+    margin-top: 2px;
+  }
+
+  .stat-card .stat-change {
+    font-size: 9px;
+    margin-top: 6px;
+  }
+
+  /* Cards */
+  .card {
+    padding: 16px;
+    border-radius: 12px;
+    margin-bottom: 16px;
+  }
+
+  .card-title {
+    font-size: 14px;
+    margin-bottom: 12px;
+  }
+
+  .card table {
+    font-size: 12px;
+    width: 100%;
+    display: block;
+  }
+
+  .card table thead {
+    display: none;
+  }
+
+  .card table tbody {
+    display: block;
+  }
+
+  .card table tbody tr {
+    display: block;
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    background: var(--bg);
+  }
+
+  .card table tbody td {
+    padding: 0;
+    margin-bottom: 6px;
+    border-bottom: none;
+    font-size: 12px;
+    display: block;
+    color: var(--text-2);
+  }
+
+  .card table tbody td:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Modals */
+  .modal-overlay {
+    padding: 12px;
+  }
+
+  .modal {
+    width: 100%;
+    max-width: calc(100% - 24px);
+    max-height: 90vh;
+    border-radius: 16px;
+    padding: 20px;
+  }
+
+  .modal.large {
+    width: 100%;
+  }
+
+  .modal-header {
+    text-align: center;
+    margin-bottom: 16px;
+  }
+
+  .modal-header h3 {
+    font-size: 16px;
+    margin-bottom: 4px;
+  }
+
+  .modal-header p {
+    font-size: 12px;
+  }
+
+  .crud-form {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .form-group {
+    margin-bottom: 10px;
+  }
+
+  .form-group label {
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+
+  .form-group input,
+  .form-group select,
+  .modal-card input,
+  .modal-card select {
+    width: 100%;
+    padding: 10px;
+    font-size: 14px;
+    border-radius: 8px;
+    min-height: 40px;
+  }
+
+  .modal-btns {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .btn-modal-sec,
+  .btn-modal-pri {
+    flex: 1;
+    padding: 11px;
+    font-size: 12px;
+    border-radius: 8px;
+    min-height: 40px;
+  }
+
+  /* Buttons general */
+  .btn-primary,
+  .btn-outline,
+  .btn-add {
+    width: 100%;
+    padding: 11px;
+    font-size: 12px;
+    min-height: 40px;
+    border-radius: 8px;
+  }
+
+  /* Toolbar */
+  .toolbar {
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .toolbar-search {
+    width: 100%;
+  }
+
+  .toolbar-search input {
+    width: 100%;
+  }
+
+  /* Charts */
+  .chart-container {
+    margin-top: 16px;
+    padding-bottom: 10px;
+  }
+
+  .chart-bars {
+    height: 140px;
+  }
+
+  .bar-col {
+    flex: 1;
+  }
+
+  .bar-label {
+    font-size: 9px;
+  }
+
+  /* Users grid */
+  .users-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .user-card {
+    padding: 12px;
+  }
+
+  .user-card .user-avatar {
+    width: 36px;
+    height: 36px;
+    font-size: 14px;
+  }
+
+  /* Notification */
+  .notification {
+    font-size: 12px;
+    padding: 12px;
+    bottom: 12px;
+    right: 12px;
+    left: 12px;
+    border-radius: 10px;
+  }
+}
+
+/* ======================================================
+   ULTRA-MOBILE (320px - 375px)
+   ====================================================== */
+@media (max-width: 375px) {
+  .login-card {
+    padding: 20px 12px;
+  }
+
+  .form-group input,
+  .form-group select {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .btn-login,
+  .btn-primary {
+    padding: 10px;
+    font-size: 12px;
+  }
+
+  .topbar h3 {
+    font-size: 12px;
+  }
+
+  .content {
+    padding: 10px;
+  }
+
+  .stat-card {
+    padding: 12px;
+  }
+
+  .stat-card .stat-value {
+    font-size: 16px;
+  }
+
+  .card {
+    padding: 12px;
+  }
+
+  .card-title {
+    font-size: 13px;
+  }
+
+  .card table {
+    font-size: 10px;
+  }
+
+  .modal {
+    padding: 16px;
+  }
+
+  .btn-modal-pri,
+  .btn-modal-sec {
+    padding: 9px;
+    font-size: 11px;
+  }
+}
+
+/* ======================================================
+   RESPONSIVE HOTFIX (tablet/mobile)
+   ====================================================== */
+@media (min-width: 376px) and (max-width: 768px) {
+  body.sidebar-open::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 150;
+  }
+
+  .sidebar {
+    width: 240px;
+    position: fixed;
+    transform: translateX(-100%);
+    transition: transform 0.3s var(--ease);
+    z-index: 200;
+    height: 100vh;
+    top: 0;
+    left: 0;
+  }
+
+  .sidebar.active {
+    transform: translateX(0);
+  }
+
+  .btn-sidebar-toggle {
+    display: block !important;
+  }
+
+  .main {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .topbar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+    padding: 0 14px;
+    gap: 8px;
+  }
+
+  .topbar > div:first-child {
+    width: 100%;
+    min-width: 0;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .topbar h3 {
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .topbar .date,
+  .search-bar,
+  .topbar > div:last-child {
+    display: none !important;
+  }
+
+  .content {
+    padding: 16px;
+  }
+
+  .card,
+  .stat-card {
+    min-width: 0;
+  }
+
+  .card table,
+  .inventory-table,
+  .report-table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}

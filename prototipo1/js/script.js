@@ -129,6 +129,36 @@ window.showScreen = (name, btn) => {
   if(name === 'reportes') renderReports();
 };
 
+window.toggleSidebar = () => {
+  const sidebar = document.querySelector('.sidebar');
+  const body = document.body;
+  sidebar.classList.toggle('active');
+  body.classList.toggle('sidebar-open');
+};
+
+// Close sidebar when clicking a nav item on mobile
+document.addEventListener('DOMContentLoaded', () => {
+  const navItems = document.querySelectorAll('.nav-item');
+  navItems.forEach(item => {
+    item.addEventListener('click', () => {
+      if (window.innerWidth <= 768) {
+        document.querySelector('.sidebar').classList.remove('active');
+        document.body.classList.remove('sidebar-open');
+      }
+    });
+  });
+
+  // Close sidebar when clicking overlay
+  document.body.addEventListener('click', (e) => {
+    const sidebar = document.querySelector('.sidebar');
+    const toggle = document.querySelector('.btn-sidebar-toggle');
+    if (window.innerWidth <= 768 && !sidebar.contains(e.target) && !toggle.contains(e.target)) {
+      sidebar.classList.remove('active');
+      document.body.classList.remove('sidebar-open');
+    }
+  });
+});
+
 // --- POS LOGIC ---
 const renderCatalog = (filter = '') => {
   const grid = document.querySelector('.quick-products');

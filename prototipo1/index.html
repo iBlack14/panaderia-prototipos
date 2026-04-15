@@ -74,6 +74,7 @@
   <!-- Main -->
   <div class="main">
     <div class="topbar">
+      <button class="btn-sidebar-toggle" onclick="toggleSidebar()" id="sidebarToggle" style="display:none;">☰</button>
       <div style="display:flex;align-items:center;">
         <h3 id="pageTitle">Resumen General</h3>
         <div class="search-bar">
@@ -118,29 +119,33 @@
         <div class="content-grid">
           <div class="card">
             <div class="card-title">Ventas Recientes <span class="badge">Hoy</span></div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Boleta</th>
-                  <th>Productos</th>
-                  <th>Hora</th>
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                <!-- JS populated -->
-              </tbody>
-            </table>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Boleta</th>
+                    <th>Productos</th>
+                    <th>Hora</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- JS populated -->
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div class="card">
             <div class="card-title">Stock Crítico <span class="badge" style="background:#FFF3E0;color:#E65100">⚠️ Alerta</span></div>
-            <table>
-              <thead><tr><th>Producto</th><th>Stock</th></tr></thead>
-              <tbody>
-                <!-- JS populated -->
-              </tbody>
-            </table>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th>Producto</th><th>Stock</th></tr></thead>
+                <tbody>
+                  <!-- JS populated -->
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -180,20 +185,22 @@
           <button class="btn-add" onclick="openAddProduct()">+ Agregar Producto</button>
         </div>
         <div class="card">
-          <table class="products-table">
-            <thead>
-              <tr>
-                <th>Producto</th>
-                <th>Categoría</th>
-                <th>Precio</th>
-                <th>Stock</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              <!-- JS populated -->
-            </tbody>
-          </table>
+          <div class="table-wrapper">
+            <table class="products-table">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Categoría</th>
+                  <th>Precio</th>
+                  <th>Stock</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- JS populated -->
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -228,12 +235,14 @@
           </div>
           <div style="margin-top:40px">
             <div class="card-title" style="font-size:15px">Top Productos más vendidos</div>
-            <table>
-              <thead><tr><th>#</th><th>Producto</th><th>Unidades</th><th>Ingreso</th></tr></thead>
-              <tbody>
-                <!-- JS populated -->
-              </tbody>
-            </table>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th>#</th><th>Producto</th><th>Unidades</th><th>Ingreso</th></tr></thead>
+                <tbody>
+                  <!-- JS populated -->
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
