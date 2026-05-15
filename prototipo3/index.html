@@ -78,19 +78,32 @@
         <div class="sb-item active" onclick="gp('dashboard',this)" id="nav-dashboard">
           <span class="sb-icon">📊</span> Dashboard
         </div>
+        <div class="sb-item" onclick="gp('clientes',this)" id="nav-clientes">
+          <span class="sb-icon">👥</span> Clientes
+        </div>
         <div class="sb-section">Operaciones</div>
         <div class="sb-item" onclick="gp('ventas',this)" id="nav-ventas">
           <span class="sb-icon">🛒</span> Punto de Venta
         </div>
+        <div class="sb-item" onclick="gp('caja',this)" id="nav-caja">
+          <span class="sb-icon">💰</span> Control de Caja
+        </div>
         <div class="sb-item" onclick="gp('productos',this)" id="nav-productos">
           <span class="sb-icon">📦</span> Inventario
+        </div>
+        <div class="sb-section">Logística</div>
+        <div class="sb-item" onclick="gp('proveedores',this)" id="nav-proveedores">
+          <span class="sb-icon">🏭</span> Proveedores
+        </div>
+        <div class="sb-item" onclick="gp('compras',this)" id="nav-compras">
+          <span class="sb-icon">📥</span> Compras
         </div>
         <div class="sb-section">Análisis</div>
         <div class="sb-item" onclick="gp('reportes',this)" id="nav-reportes">
           <span class="sb-icon">📈</span> Estadísticas
         </div>
         <div class="sb-item admin-only" onclick="gp('usuarios',this)" id="nav-usuarios">
-          <span class="sb-icon">👥</span> Personal
+          <span class="sb-icon">👤</span> Personal
         </div>
       </div>
       <div class="sb-footer">
@@ -248,6 +261,23 @@
           </div>
         </div>
 
+        <!-- CLIENTES -->
+        <div class="screen" id="pg-clientes">
+          <div class="tb-bar">
+            <div class="tb-left"><div class="srch-box">🔍 <input placeholder="Buscar cliente..."></div></div>
+            <button class="btn-new">+ Nuevo cliente</button>
+          </div>
+          <div class="panel">
+            <table>
+              <thead><tr><th>ID</th><th>Nombre / Empresa</th><th>Teléfono</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <tbody>
+                <tr><td>#C-001</td><td>Público General</td><td>-</td><td><span class="tag tg-ok">Activo</span></td><td><div class="act-row"><button class="act-btn">✏️</button></div></td></tr>
+                <tr><td>#C-002</td><td>Juan Perez</td><td>987654321</td><td><span class="tag tg-ok">Activo</span></td><td><div class="act-row"><button class="act-btn">✏️</button></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- VENTAS -->
         <div class="screen" id="pg-ventas">
           <div class="pos-2col">
@@ -282,6 +312,25 @@
           </div>
         </div>
 
+        <!-- CAJA -->
+        <div class="screen" id="pg-caja">
+          <div class="stats-4" style="margin-bottom:18px">
+            <div class="stat-tile"><div class="st-lbl">Saldo Inicial</div><div class="st-val">S/. 100.00</div></div>
+            <div class="stat-tile"><div class="st-lbl">Ventas Efectivo</div><div class="st-val">S/. 450.00</div></div>
+            <div class="stat-tile"><div class="st-lbl">Otros Medios</div><div class="st-val">S/. 392.00</div></div>
+            <div class="stat-tile"><div class="st-lbl">Total en Caja</div><div class="st-val" style="color:var(--green)">S/. 942.00</div></div>
+          </div>
+          <div class="panel">
+            <div class="p-title">Historial de Turnos / Cierres</div>
+            <table>
+              <thead><tr><th>Fecha</th><th>Usuario</th><th>Turno</th><th>Apertura</th><th>Cierre</th><th>Monto Final</th></tr></thead>
+              <tbody>
+                <tr><td>15/05/2026</td><td>Carlos M.</td><td>Mañana</td><td>06:00</td><td>14:00</td><td>S/. 842.00</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- PRODUCTOS / INVENTARIO -->
         <div class="screen" id="pg-productos">
           <div class="tb-bar">
@@ -304,6 +353,38 @@
               </thead>
               <tbody id="invBody">
                 <!-- JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- PROVEEDORES -->
+        <div class="screen" id="pg-proveedores">
+          <div class="tb-bar">
+            <div class="tb-left"><div class="srch-box">🔍 <input placeholder="Buscar proveedor..."></div></div>
+            <button class="btn-new">+ Nuevo proveedor</button>
+          </div>
+          <div class="panel">
+            <table>
+              <thead><tr><th>RUC</th><th>Empresa</th><th>Teléfono</th><th>Dirección</th><th>Acciones</th></tr></thead>
+              <tbody>
+                <tr><td>20123456789</td><td>Harinas S.A.</td><td>987654321</td><td>Av. Trigo 123</td><td><div class="act-row"><button class="act-btn">✏️</button></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- COMPRAS -->
+        <div class="screen" id="pg-compras">
+          <div class="tb-bar">
+            <div class="tb-left"><div class="srch-box">🔍 <input placeholder="Buscar compra..."></div></div>
+            <button class="btn-new">+ Registrar compra</button>
+          </div>
+          <div class="panel">
+            <table>
+              <thead><tr><th>ID</th><th>Fecha</th><th>Proveedor</th><th>Subtotal</th><th>IGV</th><th>Total</th></tr></thead>
+              <tbody>
+                <tr><td>#COM-001</td><td>14/05/2026</td><td>Harinas S.A.</td><td>S/. 100.00</td><td>S/. 18.00</td><td>S/. 118.00</td></tr>
               </tbody>
             </table>
           </div>

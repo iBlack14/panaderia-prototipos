@@ -142,8 +142,28 @@ window.gp = (scr, el) => {
     document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
     if(el) el.classList.add('active');
     
-    const titles = { dashboard:'Dashboard', ventas:'Punto de Venta', productos:'Inventario', reportes:'Estadísticas', usuarios:'Personal' };
-    const subs   = { dashboard:'Resumen de operaciones · Hoy', ventas:'Registrar nueva venta', productos:'Control de stock', reportes:'Análisis y métricas', usuarios:'Gestión del equipo' };
+    const titles = { 
+        dashboard: 'Dashboard', 
+        clientes: 'Gestión de Clientes',
+        ventas: 'Punto de Venta', 
+        caja: 'Control de Caja',
+        productos: 'Inventario de Productos', 
+        proveedores: 'Directorio de Proveedores',
+        compras: 'Gestión de Compras',
+        reportes: 'Estadísticas y Reportes', 
+        usuarios: 'Gestión de Personal' 
+    };
+    const subs = { 
+        dashboard: 'Resumen de operaciones · Hoy', 
+        clientes: 'Listado y registro de clientes frecuentes',
+        ventas: 'Registrar nueva venta al detalle', 
+        caja: 'Apertura, cierre y movimientos de efectivo',
+        productos: 'Control de stock y precios', 
+        proveedores: 'Gestión de socios estratégicos',
+        compras: 'Registro de abastecimiento de insumos',
+        reportes: 'Análisis y métricas de rendimiento', 
+        usuarios: 'Control de accesos y roles del equipo' 
+    };
     document.getElementById('pageH2').textContent = titles[scr] || scr;
     const pEl = document.getElementById('pageP');
     if(pEl) pEl.textContent = subs[scr] || '';
