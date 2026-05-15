@@ -55,7 +55,7 @@ INSERT INTO proveedor_producto (id_proveedor_producto, id_proveedor, id_producto
 (2, 2, 3, 30.00, 1);
 
 -- 10. Cierre de Caja
-INSERT INTO cierre_caja (id_cierre_caja, id_usuario, id_turno, fec_apertura, fec_cierre, tot_saldo_initial, tot_ventas, estado) VALUES 
+INSERT INTO cierre_caja (id_cierre_caja, id_usuario, id_turno, fec_apertura, fec_cierre, tot_saldo_inicial, tot_ventas, estado) VALUES 
 (1, 2, 1, '2026-05-15 06:00:00', '2026-05-15 14:00:00', 100.00, 842.00, 1);
 
 -- 11. Ventas

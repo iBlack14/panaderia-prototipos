@@ -28,17 +28,47 @@ let cart  = [];
 let user  = null;
 let role  = null;
 
+const API_URL = 'http://localhost:3000/api';
+
 const save = () => {
     localStorage.setItem('p3_products', JSON.stringify(products));
     localStorage.setItem('p3_users', JSON.stringify(users));
     localStorage.setItem('p3_sales', JSON.stringify(sales));
 };
 
+// Helper para peticiones API con fallback
+async function callApi(endpoint, method = 'GET', data = null) {
+    try {
+        const options = {
+            method,
+            headers: { 'Content-Type': 'application/json' }
+        };
+        if (data) options.body = JSON.stringify(data);
+        
+        const response = await fetch(`${API_URL}${endpoint}`, options);
+        if (!response.ok) throw new Error('API Error');
+        return await response.json();
+    } catch (err) {
+        console.warn(`⚠️ Usando modo demo: ${endpoint} no disponible en el servidor.`);
+        return null;
+    }
+}
+
 // --- LOGIN ---
-window.step1 = () => {
+window.step1 = async () => {
     const uIn = document.getElementById('u1').value;
     const pIn = document.getElementById('p1').value;
-    const found = users.find(x => x.u === uIn && x.p === pIn && x.st === 'act');
+    
+    // Intentar Login via API
+    const apiRes = await callApi('/login', 'POST', { user: uIn, pass: pIn });
+    let found = null;
+
+    if (apiRes && apiRes.success) {
+        found = { ...apiRes.user, n: apiRes.user.nombre, u: apiRes.user.user_login, rs: [apiRes.user.id_rol === 1 ? 'Administrador' : 'Cajero'] };
+        console.log('✅ Login exitoso via API');
+    } else {
+        found = users.find(x => x.u === uIn && x.p === pIn && x.st === 'act');
+    }
 
     if(!found) { toast('❌ Credenciales inválidas'); return; }
 
@@ -93,7 +123,21 @@ window.goBack = () => {
 
 window.step2 = () => { if(role) enter(); };
 
-const enter = () => {
+const enter = async () => {
+    // Intentar cargar productos desde API al entrar
+    const apiProds = await callApi('/productos');
+    if (apiProds) {
+        products = apiProds.map(p => ({
+            id: p.id_producto,
+            name: p.nombre,
+            cat: 'General', // O mapear segun id_categoria
+            price: parseFloat(p.precio_unitario),
+            stock: p.num_stock,
+            em: '📦'
+        }));
+        console.log('📦 Inventario sincronizado con DB');
+    }
+
     document.getElementById('loginScene').style.display = 'none';
     document.getElementById('appWrap').style.display = 'block';
     document.getElementById('sbName').textContent = user.n;
@@ -150,6 +194,8 @@ window.gp = (scr, el) => {
         productos: 'Inventario de Productos', 
         proveedores: 'Directorio de Proveedores',
         compras: 'Gestión de Compras',
+        categorias: 'Mantenimiento de Categorías',
+        metodos: 'Métodos de Pago Configurados',
         reportes: 'Estadísticas y Reportes', 
         usuarios: 'Gestión de Personal' 
     };
@@ -161,6 +207,8 @@ window.gp = (scr, el) => {
         productos: 'Control de stock y precios', 
         proveedores: 'Gestión de socios estratégicos',
         compras: 'Registro de abastecimiento de insumos',
+        categorias: 'Organización jerárquica de productos',
+        metodos: 'Configuración de canales de cobro',
         reportes: 'Análisis y métricas de rendimiento', 
         usuarios: 'Control de accesos y roles del equipo' 
     };
@@ -295,6 +343,15 @@ window.cobP = () => {
     sales.push(s);
     save();
     
+    // Registrar venta en API
+    callApi('/ventas', 'POST', {
+        id_cliente: 1, // Por defecto
+        id_usuario: user.id,
+        id_metodo_pago: 1,
+        items: cart,
+        total: tot
+    });
+
     // Receipt
     document.getElementById('mcrNum').textContent = '#' + s.n;
     document.getElementById('mcrDate').textContent = s.d + ' ' + s.t;

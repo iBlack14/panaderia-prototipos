@@ -98,6 +98,13 @@
         <div class="sb-item" onclick="gp('compras',this)" id="nav-compras">
           <span class="sb-icon">📥</span> Compras
         </div>
+        <div class="sb-section">Mantenimiento</div>
+        <div class="sb-item" onclick="gp('categorias',this)" id="nav-categorias">
+          <span class="sb-icon">🏷️</span> Categorías
+        </div>
+        <div class="sb-item" onclick="gp('metodos',this)" id="nav-metodos">
+          <span class="sb-icon">💳</span> Métodos de Pago
+        </div>
         <div class="sb-section">Análisis</div>
         <div class="sb-item" onclick="gp('reportes',this)" id="nav-reportes">
           <span class="sb-icon">📈</span> Estadísticas
@@ -385,6 +392,40 @@
               <thead><tr><th>ID</th><th>Fecha</th><th>Proveedor</th><th>Subtotal</th><th>IGV</th><th>Total</th></tr></thead>
               <tbody>
                 <tr><td>#COM-001</td><td>14/05/2026</td><td>Harinas S.A.</td><td>S/. 100.00</td><td>S/. 18.00</td><td>S/. 118.00</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- CATEGORIAS -->
+        <div class="screen" id="pg-categorias">
+          <div class="tb-bar">
+            <div class="tb-left"><div class="srch-box">🔍 <input placeholder="Buscar categoría..."></div></div>
+            <button class="btn-new">+ Nueva categoría</button>
+          </div>
+          <div class="panel">
+            <table>
+              <thead><tr><th>ID</th><th>Nombre</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <tbody>
+                <tr><td>1</td><td>Panes</td><td><span class="tag tg-ok">Activo</span></td><td><div class="act-row"><button class="act-btn">✏️</button></div></td></tr>
+                <tr><td>2</td><td>Tortas</td><td><span class="tag tg-ok">Activo</span></td><td><div class="act-row"><button class="act-btn">✏️</button></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- METODOS DE PAGO -->
+        <div class="screen" id="pg-metodos">
+          <div class="tb-bar">
+            <div class="tb-left"><div class="srch-box">🔍 <input placeholder="Buscar método..."></div></div>
+            <button class="btn-new">+ Nuevo método</button>
+          </div>
+          <div class="panel">
+            <table>
+              <thead><tr><th>ID</th><th>Tipo de Pago</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <tbody>
+                <tr><td>1</td><td>Efectivo</td><td><span class="tag tg-ok">Activo</span></td><td><div class="act-row"><button class="act-btn">✏️</button></div></td></tr>
+                <tr><td>2</td><td>Yape / Plin</td><td><span class="tag tg-ok">Activo</span></td><td><div class="act-row"><button class="act-btn">✏️</button></div></td></tr>
               </tbody>
             </table>
           </div>
