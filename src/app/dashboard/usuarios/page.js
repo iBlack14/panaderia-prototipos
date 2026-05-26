@@ -135,7 +135,7 @@ export default function PersonalPage() {
       </div>
 
       {/* USER COLLABORATOR MODAL WITH STRENGTH CHECKLIST */}
-      {showProductModal || showModal && (
+      {showModal && (
         <div className="modal-overlay open">
           <div className="modal-card" style={{ width: '520px' }}>
             <div className="mc-title" style={{ textAlign: 'left', marginBottom: '20px' }}>

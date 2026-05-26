@@ -20,6 +20,27 @@ export default function LoginPage() {
   const [verifiedUserId, setVerifiedUserId] = useState(null);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [recoverySent, setRecoverySent] = useState(false);
+
+  // Security Captcha states
+  const [captchaNum1, setCaptchaNum1] = useState(0);
+  const [captchaNum2, setCaptchaNum2] = useState(0);
+  const [captchaAnswer, setCaptchaAnswer] = useState('');
+  const [captchaError, setCaptchaError] = useState(false);
+
+  const generateCaptcha = () => {
+    setCaptchaNum1(Math.floor(Math.random() * 9) + 1);
+    setCaptchaNum2(Math.floor(Math.random() * 9) + 1);
+    setCaptchaAnswer('');
+    setCaptchaError(false);
+  };
+
+  const handleOpenRecovery = () => {
+    setShowRecovery(true);
+    setIsVerified(false);
+    setRecoverySent(false);
+    generateCaptcha();
+  };
 
   // Multi-role selection step
   const [roleStep, setRoleStep] = useState(false);
@@ -54,12 +75,23 @@ export default function LoginPage() {
 
   const handleRecoverySubmit = async (e) => {
     e.preventDefault();
-    if (!recUsername || !recEmail) return;
+    if (!recEmail) return;
 
-    const res = await sendRecoveryEmail(recUsername, recEmail);
+    if (parseInt(captchaAnswer) !== (captchaNum1 + captchaNum2)) {
+      setCaptchaError(true);
+      generateCaptcha();
+      return;
+    }
+
+    setCaptchaError(false);
+    const res = await sendRecoveryEmail(recEmail);
     if (res && res.success) {
-      setIsVerified(true);
-      setVerifiedUserId(res.userId);
+      if (res.online) {
+        setRecoverySent(true);
+      } else {
+        setIsVerified(true);
+        setVerifiedUserId(res.userId);
+      }
     }
   };
 
@@ -149,7 +181,7 @@ export default function LoginPage() {
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <span 
-                    onClick={() => { setShowRecovery(true); setIsVerified(false); }} 
+                    onClick={handleOpenRecovery} 
                     style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: '600', cursor: 'pointer', fontFamily: 'sans-serif' }}
                   >
                     ¿Olvidaste tu contraseña?
@@ -205,41 +237,69 @@ export default function LoginPage() {
           {/* STEP 3: PASSWORD RECOVERY VIEW */}
           {showRecovery && !isVerified && (
             <div>
-              <button className="btn-back-sm" onClick={() => setShowRecovery(false)}>← Volver al login</button>
+              <button className="btn-back-sm" onClick={() => { setShowRecovery(false); setRecoverySent(false); }}>← Volver al login</button>
               <div className="lr-title">Recuperar Acceso</div>
-              <p className="lr-sub">Verifica tus datos de personal</p>
               
-              <form onSubmit={handleRecoverySubmit}>
-                <div className="inp-group">
-                  <label>Usuario (login)</label>
-                  <div className="inp-wrap">
-                    <span className="inp-icon">👤</span>
-                    <input 
-                      type="text" 
-                      placeholder="Ej: admin" 
-                      value={recUsername}
-                      onChange={(e) => setRecUsername(e.target.value)}
-                      required 
-                    />
-                  </div>
+              {recoverySent ? (
+                <div style={{ marginTop: '20px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>📧</div>
+                  <p className="lr-sub" style={{ fontSize: '14px', lineHeight: '1.6', color: 'var(--text-1)', marginBottom: '8px' }}>
+                    Hemos enviado un enlace de recuperación a <strong>{recEmail}</strong>.
+                  </p>
+                  <p className="lr-sub" style={{ fontSize: '12px', color: 'var(--text-3)', lineHeight: '1.5', marginBottom: '24px' }}>
+                    Por favor revisa tu bandeja de entrada (y la carpeta de correo no deseado) y sigue las instrucciones para restablecer tu contraseña en la nube.
+                  </p>
+                  <button 
+                    onClick={() => { setShowRecovery(false); setRecoverySent(false); }} 
+                    className="btn-enter"
+                  >
+                    Volver al inicio de sesión
+                  </button>
                 </div>
+              ) : (
+                <>
+                  <p className="lr-sub">Verifica tus datos de personal</p>
+                  <form onSubmit={handleRecoverySubmit}>
+                    <div className="inp-group">
+                      <label>Correo Electrónico</label>
+                      <div className="inp-wrap">
+                        <span className="inp-icon">📧</span>
+                        <input 
+                          type="email" 
+                          placeholder="correo@snackroque.com" 
+                          value={recEmail}
+                          onChange={(e) => setRecEmail(e.target.value)}
+                          required 
+                        />
+                      </div>
+                    </div>
 
-                <div className="inp-group">
-                  <label>Correo Electrónico</label>
-                  <div className="inp-wrap">
-                    <span className="inp-icon">📧</span>
-                    <input 
-                      type="email" 
-                      placeholder="correo@snackroque.com" 
-                      value={recEmail}
-                      onChange={(e) => setRecEmail(e.target.value)}
-                      required 
-                    />
-                  </div>
-                </div>
+                    <div className="inp-group" style={{ marginBottom: '20px' }}>
+                      <label>Verificación de Seguridad</label>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', background: 'rgba(0,0,0,0.02)', padding: '10px', borderRadius: '10px', border: '1.5px solid var(--border)' }}>
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-1)', padding: '0 8px', letterSpacing: '0.5px', userSelect: 'none' }}>
+                          ¿Cuánto es {captchaNum1} + {captchaNum2}?
+                        </span>
+                        <input 
+                          type="number" 
+                          placeholder="Tu respuesta" 
+                          value={captchaAnswer}
+                          onChange={(e) => setCaptchaAnswer(e.target.value)}
+                          style={{ flex: 1, padding: '8px 12px', border: '1.5px solid var(--border)', borderRadius: '8px', fontSize: '13px', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-1)' }}
+                          required 
+                        />
+                      </div>
+                      {captchaError && (
+                        <span style={{ fontSize: '11px', color: 'var(--red)', fontWeight: '600', marginTop: '6px', display: 'block' }}>
+                          ❌ El resultado es incorrecto. Inténtalo de nuevo.
+                        </span>
+                      )}
+                    </div>
 
-                <button type="submit" className="btn-enter">Verificar datos →</button>
-              </form>
+                    <button type="submit" className="btn-enter">Verificar datos →</button>
+                  </form>
+                </>
+              )}
             </div>
           )}
 

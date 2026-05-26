@@ -6,26 +6,10 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 const AppContext = createContext();
 
 // --- SEED DATA FALLBACKS ---
-const DEFAULT_PRODUCTS = [
-  { id: 101, name: 'Croissant mantequilla', cat: 'Panes', price: 4.50, stock: 48, em: '🥐', versions: [] },
-  { id: 102, name: 'Pan de yema especial', cat: 'Panes', price: 1.80, stock: 74, em: '🍞', versions: [] },
-  { id: 103, name: 'Torta de chocolate', cat: 'Tortas', price: 45.00, stock: 8, em: '🎂', versions: [] },
-  { id: 104, name: 'Empanada de pollo', cat: 'Panes', price: 3.50, stock: 32, em: '🫓', versions: [] },
-  { id: 105, name: 'Alfajor triple', cat: 'Dulces', price: 2.80, stock: 40, em: '🍪', versions: [] },
-  { id: 106, name: 'Queque de zanahoria', cat: 'Tortas', price: 28.00, stock: 6, em: '🍰', versions: [] },
-  { id: 107, name: 'Pan integral', cat: 'Panes', price: 5.50, stock: 20, em: '🌾', versions: [] },
-  { id: 108, name: 'Café americano', cat: 'Bebidas', price: 6.00, stock: 99, em: '☕', versions: [] },
-  { id: 109, name: 'Bizcocho vainilla', cat: 'Dulces', price: 1.50, stock: 3, em: '🧁', versions: [] },
-  { id: 110, name: 'Tarta de fresa', cat: 'Tortas', price: 38.00, stock: 5, em: '🍓', versions: [] },
-  { id: 111, name: 'Pan campesino', cat: 'Panes', price: 3.80, stock: 0, em: '🥙', versions: [] },
-  { id: 112, name: 'Chocolate caliente', cat: 'Bebidas', price: 7.50, stock: 99, em: '🍫', versions: [] },
-];
+const DEFAULT_PRODUCTS = [];
 
 const DEFAULT_USERS = [
-  { id: 1, u: 'admin', p: '1234', n: 'Ana Rodríguez', rs: ['Administrador'], st: 'act', email: 'admin@snackroque.com', phone: '987654321' },
-  { id: 2, u: 'carlos', p: '1234', n: 'Carlos Mendoza', rs: ['Cajero'], st: 'act', email: 'carlos@snackroque.com', phone: '987112233' },
-  { id: 3, u: 'maria', p: '1234', n: 'María Sánchez', rs: ['Cajero'], st: 'act', email: 'maria@snackroque.com', phone: '987445566' },
-  { id: 4, u: 'pedro', p: '1234', n: 'Pedro Castillo', rs: ['Administrador', 'Cajero'], st: 'ina', email: 'pedro@snackroque.com', phone: '987778899' },
+  { id: 1, u: 'admin', p: '1234', n: 'Administrador', rs: ['Administrador'], st: 'act', email: 'admin@snackroque.com', phone: '' },
 ];
 
 const DEFAULT_PAYMENT_METHODS = [
@@ -35,10 +19,7 @@ const DEFAULT_PAYMENT_METHODS = [
   { id: 4, name: 'Tarjeta Crédito/Débito', desc: 'Terminal POS Visa/Mastercard', active: true }
 ];
 
-const DEFAULT_PROVIDERS = [
-  { id: 1, ruc: '20123456789', name: 'Harinas S.A.', phone: '987654321', address: 'Av. Trigo 123', active: true },
-  { id: 2, ruc: '20987654321', name: 'Distribuidora Dulce', phone: '912345678', address: 'Calle Azucar 456', active: true }
-];
+const DEFAULT_PROVIDERS = [];
 
 export function AppProvider({ children }) {
   // --- STATE VARIABLES ---
@@ -69,12 +50,19 @@ export function AppProvider({ children }) {
 
   // --- INITIAL LOAD ---
   useEffect(() => {
-    // Proactively clean obsolete localStorage keys from old prototypes to avoid conflicts
-    const cleaned = localStorage.getItem('snack_ls_cleaned');
+    // Proactively clean obsolete localStorage keys containing demo/mock data
+    const cleaned = localStorage.getItem('snack_ls_demo_cleaned_v3');
     if (!cleaned) {
-      localStorage.clear();
-      localStorage.setItem('snack_ls_cleaned', 'true');
-      console.log('🧹 LocalStorage limpiado con éxito para evitar conflictos.');
+      localStorage.removeItem('snack_products');
+      localStorage.removeItem('snack_users');
+      localStorage.removeItem('snack_providers');
+      localStorage.removeItem('snack_sales');
+      localStorage.removeItem('snack_purchases');
+      localStorage.removeItem('snack_session');
+      localStorage.removeItem('snack_cash_history');
+      localStorage.removeItem('snack_bread_logs');
+      localStorage.setItem('snack_ls_demo_cleaned_v3', 'true');
+      console.log('🧹 LocalStorage limpiado con éxito para eliminar datos demo.');
     }
 
     async function loadData() {
@@ -247,25 +235,25 @@ export function AppProvider({ children }) {
   };
 
   // --- PASSWORD RECOVERY ---
-  const sendRecoveryEmail = async (uIn, emailIn) => {
+  const sendRecoveryEmail = async (emailIn) => {
     if (isSupabaseConfigured && supabase) {
       const { error } = await supabase.auth.resetPasswordForEmail(emailIn, {
         redirectTo: `${window.location.origin}/recovery`,
       });
       if (error) {
         toast(`❌ Error: ${error.message}`);
-        return false;
+        return { success: false, message: error.message };
       }
       toast('📧 Enlace de recuperación enviado al correo.');
-      return true;
+      return { success: true, online: true };
     } else {
-      const found = usersList.find(x => x.u === uIn && x.email === emailIn);
+      const found = usersList.find(x => x.email === emailIn);
       if (found) {
         toast('🔓 Datos verificados. Configura tu nueva contraseña.');
-        return { success: true, userId: found.id };
+        return { success: true, userId: found.id, online: false };
       }
-      toast('❌ Datos incorrectos. No coinciden usuario y correo.');
-      return false;
+      toast('❌ Correo electrónico no encontrado.');
+      return { success: false };
     }
   };
 
