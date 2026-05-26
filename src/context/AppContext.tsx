@@ -57,6 +57,11 @@ export interface CartItem {
   version: string | null;
 }
 
+export interface DenominacionArqueo {
+  b100: number; b50: number; b20: number; b10: number;
+  m5: number; m2: number; m1: number; m050: number; m020: number; m010: number;
+}
+
 export interface CashSession {
   id: number | string;
   fec_apertura: string | Date;
@@ -64,9 +69,19 @@ export interface CashSession {
   tot_saldo_inicial: number;
   tot_ventas_efectivo: number;
   tot_ventas_otros: number;
+  tot_retiros: number;
   estado: 'abierto' | 'cerrado';
   cajero?: string;
   turno?: string;
+}
+
+export interface CashDrop {
+  id: number;
+  sessionId: number | string;
+  monto: number;
+  motivo: string;
+  cajero: string;
+  hora: string;
 }
 
 export interface CashHistoryRecord {
@@ -77,21 +92,48 @@ export interface CashHistoryRecord {
   monto_final: number;
   ventas_efectivo: number;
   ventas_otros: number;
+  tot_retiros?: number;
   diferencia?: number;
   estado: 'cerrado';
   cajero?: string;
   date?: string;
   turno?: string;
   observaciones?: string;
+  denominaciones?: DenominacionArqueo;
+}
+
+export interface Client {
+  id: number | string;
+  nombre: string;
+  dni?: string;
+  telefono?: string;
+  email?: string;
+  limiteCred: number;
+  saldoCred: number;
+  historialPagos: CreditPayment[];
+  active: boolean;
+}
+
+export interface CreditPayment {
+  id: number;
+  fecha: string;
+  concepto: string;
+  monto: number;
+  tipo: 'cargo' | 'abono';
+  metodoPago?: string; // Efectivo, Yape, Transferencia, etc.
 }
 
 export interface BreadLog {
   id: number;
   d: string;
   prodName: string;
-  type: 'produccion' | 'descarte';
+  type: 'produccion' | 'descarte' | 'venta' | 'compra' | 'conversion';
   qty: number;
   reason: string;
+  cajero?: string;
+  ref_id?: string;
+  destino?: string;        // Para conversiones: producto destino (ej: "Budín de pan")
+  costoEstimado?: number;  // Costo estimado del insumo convertido
 }
 
 export interface Sale {
@@ -100,9 +142,12 @@ export interface Sale {
   items: CartItem[];
   total: number;
   method: string;
+  methodId?: number;
   d: string;
   t: string;
   cajero: string;
+  clienteId?: number | string;
+  clienteNombre?: string;
 }
 
 export interface PurchaseItem {
@@ -135,7 +180,9 @@ export interface AppContextType {
   cart: CartItem[];
   cashSession: CashSession | null;
   cashHistory: CashHistoryRecord[];
+  cashDrops: CashDrop[];
   breadLogs: BreadLog[];
+  clients: Client[];
   toastMsg: string;
   toast: (msg: string) => void;
   login: (uIn: string, pIn: string) => Promise<{ success: boolean; user?: User; message?: string }>;
@@ -145,7 +192,7 @@ export interface AppContextType {
   addToCart: (productName: string, price: number, em: any, id: number, versionObj?: ProductVersion | null) => void;
   updateCartQty: (id: number, delta: number, version?: string | null) => void;
   clearCart: () => void;
-  checkoutCart: (paymentMethodId: number) => Promise<Sale | undefined>;
+  checkoutCart: (paymentMethodId: number, clienteId?: number | string) => Promise<Sale | undefined>;
   saveUser: (uObj: any) => void;
   toggleUserStatus: (userId: number | string) => void;
   saveProvider: (pObj: any) => Promise<void>;
@@ -154,11 +201,16 @@ export interface AppContextType {
   togglePaymentMethod: (id: number) => void;
   registerPurchase: (pObj: { providerId: number | string; items: PurchaseItem[] }) => Promise<void>;
   openCashSession: (initialAmount: string | number, shift: string) => Promise<void>;
-  closeCashSession: (countedAmount: string | number, observaciones: string) => Promise<void>;
+  closeCashSession: (countedAmount: string | number, observaciones: string, denominaciones?: DenominacionArqueo) => Promise<void>;
+  registerCashDrop: (monto: number, motivo: string) => void;
   saveProduct: (pObj: any) => void;
   deleteProduct: (id: number) => void;
   logBreadProduction: (prodId: number, qty: number, version?: string | null) => void;
   logBreadDiscard: (prodId: number, qty: number, reason: string, version?: string | null) => void;
+  saveClient: (cObj: any) => void;
+  toggleClient: (id: number | string) => void;
+  payCreditBalance: (clientId: number | string, monto: number, concepto: string, metodoPago?: string) => void;
+  logBreadConversion: (prodId: number, qty: number, destino: string, costoEstimado?: number, version?: string | null) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -181,6 +233,13 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
 
 const DEFAULT_PROVIDERS: Provider[] = [];
 
+const DEFAULT_CLIENTS: Client[] = [
+  { id: 1, nombre: 'Rosa Quispe Mamani', dni: '43218765', telefono: '987654321', email: '', limiteCred: 80, saldoCred: 0, historialPagos: [], active: true },
+  { id: 2, nombre: 'Juan Torres Huanca', dni: '56781234', telefono: '912345678', email: '', limiteCred: 120, saldoCred: 35, historialPagos: [{ id: 1, fecha: '24/05/2026', concepto: 'Compra a crédito — 4 panes y 1 torta', monto: 35, tipo: 'cargo' }], active: true },
+  { id: 3, nombre: 'Carmen Flores Díaz', dni: '29876543', telefono: '945612378', email: '', limiteCred: 200, saldoCred: 0, historialPagos: [], active: true }
+];
+
+
 export function AppProvider({ children }: { children: ReactNode }) {
   // --- STATE VARIABLES ---
   const [user, setUser] = useState<User | null>(null);
@@ -198,7 +257,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   
   const [cashSession, setCashSession] = useState<CashSession | null>(null);
   const [cashHistory, setCashHistory] = useState<CashHistoryRecord[]>([]);
+  const [cashDrops, setCashDrops] = useState<CashDrop[]>([]);
   const [breadLogs, setBreadLogs] = useState<BreadLog[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
 
   const [toastMsg, setToastMsg] = useState<string>('');
 
@@ -284,6 +345,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               tot_saldo_inicial: parseFloat(ses[0].tot_saldo_inicial),
               tot_ventas_efectivo: parseFloat(ses[0].tot_ventas_efectivo),
               tot_ventas_otros: parseFloat(ses[0].tot_ventas_otros),
+              tot_retiros: parseFloat(ses[0].tot_retiros || 0),
               estado: 'abierto'
             });
           }
@@ -319,6 +381,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const localCashHist = localStorage.getItem('snack_cash_history');
         const localBreadLogs = localStorage.getItem('snack_bread_logs');
 
+        const localDrops = localStorage.getItem('snack_cash_drops');
+        const localClients = localStorage.getItem('snack_clients');
+
         setProducts(localProds ? JSON.parse(localProds) : DEFAULT_PRODUCTS);
         setUsersList(localUsers ? JSON.parse(localUsers) : DEFAULT_USERS);
         setProviders(localProviders ? JSON.parse(localProviders) : DEFAULT_PROVIDERS);
@@ -328,6 +393,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setCashSession(localSession ? JSON.parse(localSession) : null);
         setCashHistory(localCashHist ? JSON.parse(localCashHist) : []);
         setBreadLogs(localBreadLogs ? JSON.parse(localBreadLogs) : []);
+        setCashDrops(localDrops ? JSON.parse(localDrops) : []);
+        setClients(localClients ? JSON.parse(localClients) : DEFAULT_CLIENTS);
       }
       setLoading(false);
     }
@@ -509,7 +576,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const clearCart = () => setCart([]);
 
-  const checkoutCart = async (paymentMethodId: number): Promise<Sale | undefined> => {
+  const checkoutCart = async (paymentMethodId: number, clienteId?: number | string): Promise<Sale | undefined> => {
     if (cart.length === 0) return;
     
     let activeSession = cashSession;
@@ -525,6 +592,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           tot_saldo_inicial: 0,
           tot_ventas_efectivo: 0,
           tot_ventas_otros: 0,
+          tot_retiros: 0,
           estado: 'abierto',
           cajero: user ? user.n : 'Administrador',
           turno: 'Administrativo'
@@ -596,16 +664,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCashSession(updatedSession);
     saveOffline('snack_session', updatedSession);
 
+    // Determinar si es venta a crédito
+    const isCredito = paymentMethodId === 999; // ID reservado para crédito
+    const clienteObj = clienteId ? clients.find(c => c.id === clienteId) : null;
+
+    if (isCredito && clienteObj) {
+      // Verificar límite de crédito
+      const disponible = clienteObj.limiteCred - clienteObj.saldoCred;
+      if (tot > disponible) {
+        toast(`⚠️ Límite de crédito insuficiente. Disponible: S/. ${disponible.toFixed(2)}`);
+        return;
+      }
+      // Cargar crédito al cliente
+      const nuevoPago: CreditPayment = { id: Date.now(), fecha: new Date().toLocaleDateString(), concepto: `Compra a crédito — ${cart.map(i => i.name).join(', ')}`, monto: tot, tipo: 'cargo' };
+      const updClients = clients.map(c => c.id === clienteId ? { ...c, saldoCred: c.saldoCred + tot, historialPagos: [...c.historialPagos, nuevoPago] } : c);
+      setClients(updClients);
+      saveOffline('snack_clients', updClients);
+    }
+
     // Registrar Venta
     const saleObj: Sale = {
       id: Date.now(),
       n: sales.length + 501,
       items: [...cart],
       total: tot,
-      method: methodStr,
+      method: isCredito ? `Crédito${clienteObj ? ' — ' + clienteObj.nombre : ''}` : methodStr,
+      methodId: paymentMethodId,
       d: new Date().toLocaleDateString(),
       t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      cajero: user ? user.n : 'Carlos Mendoza'
+      cajero: user ? user.n : 'Carlos Mendoza',
+      clienteId: clienteId || undefined,
+      clienteNombre: clienteObj?.nombre || undefined
     };
 
     const newSales = [...sales, saleObj];
@@ -643,6 +732,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         console.error('Error al sincronizar venta con Supabase', err);
       }
     }
+
+    // Registrar Kardex por cada producto vendido
+    const saleRef = `VTA-${saleObj.id}`;
+    const newKardexEntries: BreadLog[] = cart.map(item => ({
+      id: Date.now() + Math.random(),
+      d: `${saleObj.d} ${saleObj.t}`,
+      prodName: item.name,
+      type: 'venta',
+      qty: item.qty,
+      reason: `Venta POS #${saleObj.n}`,
+      cajero: user?.n || 'Sistema',
+      ref_id: saleRef
+    }));
+    const updLogs = [...newKardexEntries, ...breadLogs];
+    setBreadLogs(updLogs);
+    saveOffline('snack_bread_logs', updLogs);
 
     setCart([]);
     toast('✅ Venta registrada correctamente');
@@ -795,6 +900,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const newPurchases = [...purchases, purchaseRec];
     setPurchases(newPurchases);
     saveOffline('snack_purchases', newPurchases);
+
+    // Registrar Kardex por cada item comprado
+    const purchaseKardex: BreadLog[] = pObj.items.map(item => {
+      const prod = products.find(p => p.id === item.productId);
+      return {
+        id: Date.now() + Math.random(),
+        d: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
+        prodName: (prod?.name || 'Producto') + (item.version ? ` (${item.version})` : ''),
+        type: 'compra',
+        qty: item.qty,
+        reason: `Compra a proveedor: ${provName}`,
+        cajero: user?.n || 'Sistema',
+        ref_id: purchaseRec.id
+      };
+    });
+    const updLogs2 = [...purchaseKardex, ...breadLogs];
+    setBreadLogs(updLogs2);
+    saveOffline('snack_bread_logs', updLogs2);
+
     toast('📥 Compra registrada e inventario actualizado');
   };
 
@@ -808,6 +932,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       tot_saldo_inicial: parsedInit,
       tot_ventas_efectivo: 0,
       tot_ventas_otros: 0,
+      tot_retiros: 0,
       estado: 'abierto',
       cajero: user ? user.n : 'Carlos Mendoza',
       turno: shift
@@ -836,11 +961,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast(`💰 Caja abierta en turno ${shift}. Ventas habilitadas.`);
   };
 
-  const closeCashSession = async (countedAmount: string | number, observaciones: string) => {
+  const closeCashSession = async (countedAmount: string | number, observaciones: string, denominaciones?: DenominacionArqueo) => {
     if (!cashSession) return;
 
     const parsedCounted = typeof countedAmount === 'string' ? parseFloat(countedAmount) || 0 : countedAmount;
-    const expected = cashSession.tot_saldo_inicial + cashSession.tot_ventas_efectivo;
+    const totalRetiros = cashSession.tot_retiros || 0;
+    const expected = cashSession.tot_saldo_inicial + cashSession.tot_ventas_efectivo - totalRetiros;
     const diff = parsedCounted - expected;
 
     const closedRecord: CashHistoryRecord = {
@@ -852,11 +978,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       monto_final: parsedCounted,
       ventas_efectivo: cashSession.tot_ventas_efectivo,
       ventas_otros: cashSession.tot_ventas_otros,
+      tot_retiros: totalRetiros,
       diferencia: diff,
       estado: 'cerrado',
       cajero: cashSession.cajero,
       turno: cashSession.turno,
-      observaciones: observaciones
+      observaciones: observaciones,
+      denominaciones: denominaciones
     };
 
     const newHistory = [closedRecord, ...cashHistory];
@@ -973,6 +1101,138 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast('⚠️ Reporte de descarte registrado');
   };
 
+  // --- RETIRO PARCIAL DE CAJA (CASH DROP) ---
+  const registerCashDrop = (monto: number, motivo: string) => {
+    if (!cashSession) {
+      toast('⚠️ No hay caja activa para registrar un retiro.');
+      return;
+    }
+    const drop: CashDrop = {
+      id: Date.now(),
+      sessionId: cashSession.id,
+      monto,
+      motivo,
+      cajero: user?.n || 'Sistema',
+      hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    const newDrops = [drop, ...cashDrops];
+    setCashDrops(newDrops);
+    saveOffline('snack_cash_drops', newDrops);
+
+    // Descontar el retiro del flujo de efectivo de la sesión activa
+    const updatedSession: CashSession = {
+      ...cashSession,
+      tot_retiros: (cashSession.tot_retiros || 0) + monto
+    };
+    setCashSession(updatedSession);
+    saveOffline('snack_session', updatedSession);
+    toast(`💸 Retiro de S/. ${monto.toFixed(2)} registrado y descontado de caja.`);
+  };
+
+  // --- CRUD CLIENTES FRECUENTES ---
+  const saveClient = (cObj: any) => {
+    let updated;
+    if (cObj.id && clients.find(c => c.id === cObj.id)) {
+      updated = clients.map(c => c.id === cObj.id ? { ...c, ...cObj } : c);
+      toast('👤 Cliente actualizado');
+    } else {
+      const newClient: Client = {
+        id: Date.now(),
+        nombre: cObj.nombre,
+        dni: cObj.dni || '',
+        telefono: cObj.telefono || '',
+        email: cObj.email || '',
+        limiteCred: cObj.limiteCred || 0,
+        saldoCred: 0,
+        historialPagos: [],
+        active: true
+      };
+      updated = [...clients, newClient];
+      toast('👤 Cliente registrado');
+    }
+    setClients(updated);
+    saveOffline('snack_clients', updated);
+  };
+
+  const toggleClient = (id: number | string) => {
+    const updated = clients.map(c => c.id === id ? { ...c, active: !c.active } : c);
+    setClients(updated);
+    saveOffline('snack_clients', updated);
+    toast('👤 Estado de cliente actualizado');
+  };
+
+  const payCreditBalance = (clientId: number | string, monto: number, concepto: string, metodoPago?: string) => {
+    const metodoFinal = metodoPago || 'Efectivo';
+    const abono: CreditPayment = {
+      id: Date.now(),
+      fecha: new Date().toLocaleDateString(),
+      concepto: `${concepto} (${metodoFinal})`,
+      monto,
+      tipo: 'abono',
+      metodoPago: metodoFinal
+    };
+    const updated = clients.map(c => {
+      if (c.id === clientId) {
+        const newSaldo = Math.max(0, c.saldoCred - monto);
+        return { ...c, saldoCred: newSaldo, historialPagos: [...c.historialPagos, abono] };
+      }
+      return c;
+    });
+    setClients(updated);
+    saveOffline('snack_clients', updated);
+
+    // Enrutar según método de pago a la caja activa
+    if (cashSession) {
+      const isEfectivo = metodoFinal.toLowerCase().includes('efectivo');
+      const updatedSession: CashSession = {
+        ...cashSession,
+        tot_ventas_efectivo: cashSession.tot_ventas_efectivo + (isEfectivo ? monto : 0),
+        tot_ventas_otros: cashSession.tot_ventas_otros + (!isEfectivo ? monto : 0)
+      };
+      setCashSession(updatedSession);
+      saveOffline('snack_session', updatedSession);
+    }
+    toast(`✅ Abono de S/. ${monto.toFixed(2)} vía ${metodoFinal} registrado en caja.`);
+  };
+
+  // --- CONVERSIÓN DE PAN A INSUMO (pan duro → budín, pastel, etc.) ---
+  const logBreadConversion = (prodId: number, qty: number, destino: string, costoEstimado?: number, version: string | null = null) => {
+    // 1. Descontar stock del producto origen (pan)
+    const updated = products.map(p => {
+      if (p.id === prodId) {
+        if (version) {
+          const newVers = p.versions.map(v =>
+            v.name === version ? { ...v, stock: Math.max(0, v.stock - qty) } : v
+          );
+          return { ...p, versions: newVers };
+        } else {
+          return { ...p, stock: Math.max(0, p.stock - qty) };
+        }
+      }
+      return p;
+    });
+    setProducts(updated);
+    saveOffline('snack_products', updated);
+
+    // 2. Registrar movimiento tipo 'conversion' en el Kardex
+    const prodNombre = (products.find(x => x.id === prodId)?.name || 'Producto') + (version ? ` (${version})` : '');
+    const log: BreadLog = {
+      id: Date.now(),
+      d: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      prodName: prodNombre,
+      type: 'conversion',
+      qty,
+      reason: `Convertido en insumo para: ${destino}`,
+      cajero: user?.n || 'Sistema',
+      destino,
+      costoEstimado
+    };
+    const newLogs = [log, ...breadLogs];
+    setBreadLogs(newLogs);
+    saveOffline('snack_bread_logs', newLogs);
+    toast(`♻️ ${qty} und. de ${prodNombre} convertidos en insumo para ${destino}.`);
+  };
+
   return (
     <AppContext.Provider value={{
       user,
@@ -987,7 +1247,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       cart,
       cashSession,
       cashHistory,
+      cashDrops,
       breadLogs,
+      clients,
       toastMsg,
       toast,
       login,
@@ -1007,10 +1269,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       registerPurchase,
       openCashSession,
       closeCashSession,
+      registerCashDrop,
       saveProduct,
       deleteProduct,
       logBreadProduction,
-      logBreadDiscard
+      logBreadDiscard,
+      logBreadConversion,
+      saveClient,
+      toggleClient,
+      payCreditBalance
     }}>
       {children}
       {toastMsg && <div className="snack" style={{ display: 'block' }}>{toastMsg}</div>}

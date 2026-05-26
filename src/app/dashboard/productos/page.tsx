@@ -10,13 +10,14 @@ export default function InventarioPage() {
     deleteProduct, 
     breadLogs, 
     logBreadProduction, 
-    logBreadDiscard 
+    logBreadDiscard,
+    logBreadConversion
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showProductModal, setShowProductModal] = useState(false);
   const [showBreadModal, setShowBreadModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'list' | 'mermas'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'mermas' | 'kardex'>('list');
 
   // --- FORM STATES FOR PRODUCT CRUD ---
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -35,9 +36,11 @@ export default function InventarioPage() {
   // --- FORM STATES FOR PRODUCTION/DISCARD LOGS ---
   const [logProductId, setLogProductId] = useState('');
   const [logVariant, setLogVariant] = useState('');
-  const [logType, setLogType] = useState<'produccion' | 'descarte'>('produccion');
+  const [logType, setLogType] = useState<'produccion' | 'descarte' | 'conversion'>('produccion');
   const [logQty, setLogQty] = useState('');
   const [logReason, setLogReason] = useState('Ingreso inicial de producción diaria');
+  const [logConvDest, setLogConvDest] = useState('');     // Para conversión: producto destino
+  const [logCostoEst, setLogCostoEst] = useState('');    // Costo estimado del insumo
 
   const filteredProducts = products.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -104,7 +107,7 @@ export default function InventarioPage() {
     setShowProductModal(false);
   };
 
-  // --- PRODUCTION & DISCARD SUBMIT ---
+  // --- PRODUCTION, DISCARD & CONVERSION SUBMIT ---
   const handleBreadLogSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const pId = parseInt(logProductId);
@@ -113,6 +116,9 @@ export default function InventarioPage() {
 
     if (logType === 'produccion') {
       logBreadProduction(pId, qty, logVariant || null);
+    } else if (logType === 'conversion') {
+      if (!logConvDest.trim()) return;
+      logBreadConversion(pId, qty, logConvDest, logCostoEst ? parseFloat(logCostoEst) : undefined, logVariant || null);
     } else {
       logBreadDiscard(pId, qty, logReason, logVariant || null);
     }
@@ -122,6 +128,8 @@ export default function InventarioPage() {
     setLogVariant('');
     setLogQty('');
     setLogReason('Ingreso inicial de producción diaria');
+    setLogConvDest('');
+    setLogCostoEst('');
   };
 
   const handleProductChangeForLogs = (id: string) => {
@@ -133,37 +141,24 @@ export default function InventarioPage() {
 
   return (
     <div className="screen active">
-      {/* TABS SELECTOR */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '18px', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
         <button 
           onClick={() => setActiveTab('list')}
-          style={{
-            padding: '8px 16px',
-            border: 'none',
-            borderRadius: '20px',
-            background: activeTab === 'list' ? 'var(--accent-bg)' : 'transparent',
-            color: activeTab === 'list' ? 'var(--accent)' : 'var(--text-3)',
-            fontWeight: '700',
-            fontSize: '12.5px',
-            cursor: 'pointer'
-          }}
+          style={{ padding: '8px 16px', border: 'none', borderRadius: '20px', background: activeTab === 'list' ? 'var(--accent-bg)' : 'transparent', color: activeTab === 'list' ? 'var(--accent)' : 'var(--text-3)', fontWeight: '700', fontSize: '12.5px', cursor: 'pointer' }}
         >
           📦 Catálogo e Inventario
         </button>
         <button 
           onClick={() => setActiveTab('mermas')}
-          style={{
-            padding: '8px 16px',
-            border: 'none',
-            borderRadius: '20px',
-            background: activeTab === 'mermas' ? 'var(--accent-bg)' : 'transparent',
-            color: activeTab === 'mermas' ? 'var(--accent)' : 'var(--text-3)',
-            fontWeight: '700',
-            fontSize: '12.5px',
-            cursor: 'pointer'
-          }}
+          style={{ padding: '8px 16px', border: 'none', borderRadius: '20px', background: activeTab === 'mermas' ? 'var(--accent-bg)' : 'transparent', color: activeTab === 'mermas' ? 'var(--accent)' : 'var(--text-3)', fontWeight: '700', fontSize: '12.5px', cursor: 'pointer' }}
         >
-          🥖 Control de Panes y Descartes (Mermas)
+          🥖 Control de Panes y Descartes
+        </button>
+        <button 
+          onClick={() => setActiveTab('kardex')}
+          style={{ padding: '8px 16px', border: 'none', borderRadius: '20px', background: activeTab === 'kardex' ? 'var(--accent-bg)' : 'transparent', color: activeTab === 'kardex' ? 'var(--accent)' : 'var(--text-3)', fontWeight: '700', fontSize: '12.5px', cursor: 'pointer' }}
+        >
+          📊 Kardex — Trazabilidad Completa
         </button>
       </div>
 
@@ -317,6 +312,90 @@ export default function InventarioPage() {
         </div>
       )}
 
+      {/* --- TAB 3: KARDEX COMPLETO --- */}
+      {activeTab === 'kardex' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontFamily: 'DM Serif Display', fontSize: '20px', color: 'var(--text)' }}>Kardex de Inventario</h3>
+              <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-3)', marginTop: '2px' }}>Trazabilidad completa: ventas, compras, producción y descartes unificados.</p>
+            </div>
+            <div style={{ display: 'flex', gap: '6px', fontSize: '11px', flexWrap: 'wrap' }}>
+              <span className="tag tg-ok">➕ Producción</span>
+              <span className="tag tg-blue">📥 Compra</span>
+              <span className="tag tg-warn">💰 Venta</span>
+              <span className="tag tg-err">⚠️ Descarte</span>
+              <span className="tag" style={{ background: 'rgba(20,184,166,0.1)', color: '#0d9488', border: '1px solid rgba(20,184,166,0.3)' }}>♻️ Conversión</span>
+            </div>
+          </div>
+
+          <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left' }}>Fecha y Hora</th>
+                  <th style={{ textAlign: 'left' }}>Producto</th>
+                  <th style={{ textAlign: 'left' }}>Tipo</th>
+                  <th style={{ textAlign: 'left' }}>Cantidad</th>
+                  <th style={{ textAlign: 'left' }}>Detalle / Origen</th>
+                  <th style={{ textAlign: 'left' }}>Cajero</th>
+                  <th style={{ textAlign: 'left' }}>Ref.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {breadLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '50px', color: 'var(--text-3)', fontWeight: '600' }}>
+                      <div style={{ fontSize: '40px', marginBottom: '8px' }}>📊</div>
+                      Sin movimientos aún. Aparecerán aquí cuando realices ventas, compras o ingresos de producción.
+                    </td>
+                  </tr>
+                ) : (
+                  breadLogs.map((log) => {
+                    const typeMap: Record<string, { label: string; cls: string; sign: string; color: string }> = {
+                      produccion: { label: 'Producción',  cls: 'tg-ok',  sign: '+', color: 'var(--green)' },
+                      compra:     { label: 'Compra',      cls: 'tg-blue', sign: '+', color: 'var(--blue)'  },
+                      venta:      { label: 'Venta POS',   cls: 'tg-warn', sign: '-', color: '#f59e0b'      },
+                      descarte:   { label: 'Descarte',    cls: 'tg-err',  sign: '-', color: 'var(--red)'   },
+                      conversion: { label: '♻️ Conv.',    cls: '',        sign: '-', color: '#0d9488'      }
+                    };
+                    const tm = typeMap[log.type] || typeMap.produccion;
+                    const isConversion = log.type === 'conversion';
+                    return (
+                      <tr key={log.id} style={{ background: isConversion ? 'rgba(20,184,166,0.04)' : undefined }}>
+                        <td style={{ fontSize: '11.5px', color: 'var(--text-3)' }}>{log.d}</td>
+                        <td style={{ fontWeight: '700', color: 'var(--text)', fontSize: '13px' }}>{log.prodName}</td>
+                        <td>
+                          {isConversion ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px', borderRadius: '20px', background: 'rgba(20,184,166,0.1)', color: '#0d9488', fontWeight: '700', fontSize: '11px', border: '1px solid rgba(20,184,166,0.3)' }}>
+                              ♻️ Conversión
+                            </span>
+                          ) : (
+                            <span className={`tag ${tm.cls}`}>{tm.label}</span>
+                          )}
+                        </td>
+                        <td style={{ fontWeight: '800', color: tm.color, fontSize: '14px' }}>{tm.sign}{log.qty} und.</td>
+                        <td style={{ color: 'var(--text-2)', fontSize: '12px' }}>
+                          {log.reason}
+                          {isConversion && log.destino && (
+                            <span style={{ display: 'block', color: '#0d9488', fontSize: '11px', fontWeight: '600', marginTop: '2px' }}>→ Para: {log.destino}</span>
+                          )}
+                          {isConversion && log.costoEstimado && (
+                            <span style={{ display: 'block', color: 'var(--text-3)', fontSize: '10px' }}>Costo est.: S/. {log.costoEstimado.toFixed(2)}</span>
+                          )}
+                        </td>
+                        <td style={{ fontSize: '11.5px', color: 'var(--text-3)' }}>{log.cajero || '—'}</td>
+                        <td style={{ fontSize: '10px', color: 'var(--text-3)', fontFamily: 'monospace' }}>{log.ref_id || '—'}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* MODAL 1: PRODUCTO (CRUD + VARIANTES) */}
       {showProductModal && (
         <div className="modal-overlay open">
@@ -413,26 +492,24 @@ export default function InventarioPage() {
         </div>
       )}
 
-      {/* MODAL 2: REGISTRO DE PRODUCCION Y DESCARTE DE PANES */}
       {showBreadModal && (
         <div className="modal-overlay open">
           <div className="modal-card" style={{ width: '480px' }}>
             <span className="mc-icon">🥖</span>
-            <div className="mc-title">Producción / Descarte de Panes</div>
-            <p className="mc-sub">Control diario de vitrina</p>
+            <div className="mc-title">Producción / Descarte / Conversión</div>
+            <p className="mc-sub">Registro de movimientos diarios de vitrina y reaprovechamiento</p>
 
             <form onSubmit={handleBreadLogSubmit}>
               <div className="inp-group">
-                <label>Selecciona el Pan</label>
+                <label>Selecciona el Pan u Origen</label>
                 <select value={logProductId} onChange={(e) => handleProductChangeForLogs(e.target.value)} required>
-                  <option value="">-- Seleccionar pan --</option>
+                  <option value="">-- Seleccionar producto --</option>
                   {breadProducts.map(p => (
                     <option key={p.id} value={p.id}>{p.em} {p.name}</option>
                   ))}
                 </select>
               </div>
 
-              {/* Si el pan seleccionado tiene variantes, mostramos selector */}
               {selectedBreadProd && selectedBreadProd.versions && selectedBreadProd.versions.length > 0 && (
                 <div className="inp-group">
                   <label>Presentación / Versión</label>
@@ -446,12 +523,28 @@ export default function InventarioPage() {
               )}
 
               <div className="inp-group">
-                <label>Tipo de Registro</label>
-                <select value={logType} onChange={(e) => { setLogType(e.target.value as 'produccion' | 'descarte'); setLogReason(e.target.value === 'produccion' ? 'Ingreso inicial de producción diaria' : 'Quemado'); }}>
-                  <option value="produccion">➕ Registrar Producción (Ingreso)</option>
-                  <option value="descarte">⚠️ Registrar Descarte / Merma (Salida)</option>
+                <label>Tipo de Movimiento</label>
+                <select
+                  value={logType}
+                  onChange={(e) => {
+                    const t = e.target.value as 'produccion' | 'descarte' | 'conversion';
+                    setLogType(t);
+                    setLogReason(t === 'produccion' ? 'Ingreso inicial de producción diaria' : t === 'descarte' ? 'Quemado' : '');
+                    setLogConvDest('');
+                  }}
+                >
+                  <option value="produccion">➕ Producción — Ingreso de panes al día</option>
+                  <option value="descarte">⚠️ Descarte / Merma — Pérdida definitiva</option>
+                  <option value="conversion">♻️ Conversión a Insumo — Pan reutilizado para otro producto</option>
                 </select>
               </div>
+
+              {/* Explicación contextual */}
+              {logType === 'conversion' && (
+                <div style={{ background: 'linear-gradient(135deg, rgba(176,125,46,0.08), transparent)', border: '1px solid rgba(176,125,46,0.2)', borderRadius: '10px', padding: '10px 14px', marginBottom: '12px', fontSize: '12px', color: 'var(--text-2)' }}>
+                  ♻️ <strong>Conversión a Insumo:</strong> El pan se da de baja del stock y se registra como materia prima invertida. No es pérdida pura — es un costo de producción del producto destino.
+                </div>
+              )}
 
               <div className="inp-group">
                 <label>Cantidad (unidades)</label>
@@ -460,21 +553,52 @@ export default function InventarioPage() {
                 </div>
               </div>
 
-              {logType === 'descarte' ? (
+              {logType === 'conversion' ? (
+                <>
+                  <div className="inp-group">
+                    <label>Producto Destino (¿Para qué se usa?)</label>
+                    <div className="inp-wrap">
+                      <span className="inp-icon">🎂</span>
+                      <input
+                        type="text"
+                        value={logConvDest}
+                        onChange={e => setLogConvDest(e.target.value)}
+                        placeholder="Ej: Budín de pan, Torta húmeda, Pastel de yema..."
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="inp-group">
+                    <label>Costo Estimado del Insumo (S/.) — Opcional</label>
+                    <div className="inp-wrap">
+                      <span className="inp-icon">💰</span>
+                      <input
+                        type="number"
+                        step="0.10"
+                        min="0"
+                        value={logCostoEst}
+                        onChange={e => setLogCostoEst(e.target.value)}
+                        placeholder="0.00 (para costeo del producto final)"
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : logType === 'descarte' ? (
                 <div className="inp-group">
-                  <label>Motivo de Merma</label>
+                  <label>Motivo de Merma / Baja</label>
                   <select value={logReason} onChange={(e) => setLogReason(e.target.value)}>
                     <option value="Quemado">🔥 Quemado en Horno</option>
-                    <option value="Seco / Duro">🥖 Seco o Duro (Días anteriores)</option>
+                    <option value="Seco / Duro">🥖 Seco o Duro — días anteriores</option>
                     <option value="Dañado / Caído">🧹 Caído al suelo / Dañado</option>
                     <option value="Devolución">↩ Devolución de cliente</option>
+                    <option value="Vencido">⏰ Vencido / No apto para venta</option>
                   </select>
                 </div>
               ) : (
                 <div className="inp-group">
-                  <label>Detalle</label>
+                  <label>Detalle de Producción</label>
                   <div className="inp-wrap">
-                    <input type="text" value={logReason} onChange={(e) => setLogReason(e.target.value)} placeholder="Detalles de producción..." />
+                    <input type="text" value={logReason} onChange={(e) => setLogReason(e.target.value)} placeholder="Detalle del ingreso..." />
                   </div>
                 </div>
               )}
@@ -482,7 +606,7 @@ export default function InventarioPage() {
               <div className="mc-btns" style={{ marginTop: '20px' }}>
                 <button type="button" className="mc-sec" onClick={() => setShowBreadModal(false)}>Cancelar</button>
                 <button type="submit" className="mc-pri">
-                  Registrar Movimiento
+                  {logType === 'conversion' ? '♻️ Registrar Conversión' : logType === 'descarte' ? '⚠️ Registrar Merma' : '✅ Registrar Producción'}
                 </button>
               </div>
             </form>

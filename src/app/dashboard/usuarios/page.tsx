@@ -1,24 +1,102 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp, User } from '@/context/AppContext';
+
+interface SystemPermission {
+  key: string;
+  label: string;
+  icon: string;
+  desc: string;
+}
+
+interface CustomRole {
+  id: string;
+  name: string;
+  desc: string;
+  permissions: string[];
+}
+
+const SYSTEM_PERMISSIONS: SystemPermission[] = [
+  { key: 'pos_ventas', label: 'Registrar Ventas (POS)', icon: '🛒', desc: 'Permite ingresar a la vitrina y procesar cobros de panadería' },
+  { key: 'caja_operaciones', label: 'Operaciones de Caja', icon: '💰', desc: 'Permite abrir turnos de caja, ingresar fondo inicial y realizar arqueos' },
+  { key: 'caja_auditoria', label: 'Auditar Cuadre de Cajas', icon: '🔍', desc: 'Permite auditar balances de caja, ver sobrantes/faltantes y observaciones de auditoría' },
+  { key: 'inventario_ver', label: 'Visualizar Inventario', icon: '📦', desc: 'Permite visualizar stock actual de productos y variantes' },
+  { key: 'inventario_editar', label: 'Mantenimiento de Insumos/Stock', icon: '🛠️', desc: 'Permite crear o eliminar productos, cambiar precios y registrar mermas o descartes' },
+  { key: 'estadisticas_ver', label: 'Estadísticas y KPIs', icon: '📈', desc: 'Acceso a tableros de analítica avanzada, facturación diaria/mensual y flujos contables' },
+  { key: 'personal_gestionar', label: 'Gestión de Personal', icon: '👥', desc: 'Acceso a la creación, edición, activación y control de roles de trabajadores' },
+];
 
 export default function PersonalPage() {
   const { usersList, saveUser, toggleUserStatus } = useApp();
 
-  const [showModal, setShowModal] = useState(false);
-  const [editingId, setEditingId] = useState<number | string | null>(null);
+  const [activeSubTab, setActiveSubTab] = useState<'personal' | 'roles'>('personal');
 
-  // Form states
+  // --- LOCAL PERSISTED ROLES LIST STATE ---
+  const [rolesList, setRolesList] = useState<CustomRole[]>([]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('snack_custom_roles_v1');
+    if (stored) {
+      setRolesList(JSON.parse(stored));
+    } else {
+      const defaultRoles: CustomRole[] = [
+        {
+          id: 'Administrador',
+          name: 'Administrador',
+          desc: 'Control total de la panadería con acceso sin restricciones a todos los módulos.',
+          permissions: SYSTEM_PERMISSIONS.map(p => p.key)
+        },
+        {
+          id: 'Cajero',
+          name: 'Cajero',
+          desc: 'Operador de caja estándar encargado de cobros al detalle y arqueo de turnos básicos.',
+          permissions: ['pos_ventas', 'caja_operaciones', 'inventario_ver']
+        },
+        {
+          id: 'Contador',
+          name: 'Contador',
+          desc: 'Auditor contable enfocado en control fiscal, ingresos consolidados y reportes mensuales.',
+          permissions: ['caja_auditoria', 'estadisticas_ver']
+        },
+        {
+          id: 'Supervisor',
+          name: 'Supervisor',
+          desc: 'Encargado del local. Habilitado para auditar cajas, gestionar descartes de panes y stock.',
+          permissions: ['pos_ventas', 'caja_operaciones', 'caja_auditoria', 'inventario_ver', 'inventario_editar', 'estadisticas_ver']
+        }
+      ];
+      setRolesList(defaultRoles);
+      localStorage.setItem('snack_custom_roles_v1', JSON.stringify(defaultRoles));
+    }
+  }, []);
+
+  const saveRolesToStorage = (updated: CustomRole[]) => {
+    setRolesList(updated);
+    localStorage.setItem('snack_custom_roles_v1', JSON.stringify(updated));
+  };
+
+  // --- MODALS STATES ---
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [showRoleModal, setShowRoleModal] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<number | string | null>(null);
+  const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
+
+  // --- USER FORM STATES ---
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('Cajero');
+  const [selectedUserRole, setSelectedUserRole] = useState('Cajero');
 
-  // --- PASSWORD & USERNAME STRENGTH INDICATORS ---
+  // --- ROLE FORM STATES ---
+  const [roleName, setRoleName] = useState('');
+  const [roleDesc, setRoleDesc] = useState('');
+  const [rolePermissions, setRolePermissions] = useState<string[]>([]);
+
+  // --- VALIDATORS ---
   const isUsernameValid = username.length >= 5 && /^[a-zA-Z0-9]+$/.test(username);
   
   const hasMinLength = password.length >= 8;
@@ -26,123 +104,312 @@ export default function PersonalPage() {
   const hasLowercase = /[a-z]/.test(password);
   const hasNumber = /[0-9]/.test(password);
   const hasSpecial = /[@$!%*?&]/.test(password);
-
   const isPasswordSecure = hasMinLength && hasUppercase && hasLowercase && hasNumber && hasSpecial;
 
-  // El formulario es válido si el usuario y la contraseña cumplen todos los requisitos de seguridad
-  const isFormValid = firstName && lastName && email && isUsernameValid && isPasswordSecure;
+  const isUserFormValid = firstName && lastName && email && isUsernameValid && isPasswordSecure;
+  const isRoleFormValid = roleName.trim().length >= 3 && roleDesc.trim().length >= 8 && rolePermissions.length > 0;
 
-  const handleOpenNew = () => {
-    setEditingId(null);
+  // --- USER HANDLERS ---
+  const handleOpenNewUser = () => {
+    setEditingUserId(null);
     setFirstName('');
     setLastName('');
     setUsername('');
     setEmail('');
     setPhone('');
     setPassword('');
-    setRole('Cajero');
-    setShowModal(true);
+    setSelectedUserRole(rolesList[0]?.id || 'Cajero');
+    setShowUserModal(true);
   };
 
-  const handleOpenEdit = (u: User) => {
-    setEditingId(u.id);
-    
-    // Separamos nombres y apellidos del nombre guardado
+  const handleOpenEditUser = (u: User) => {
+    setEditingUserId(u.id);
     const nameParts = u.n.split(' ');
     setFirstName(nameParts[0] || '');
     setLastName(nameParts.slice(1).join(' ') || '');
-    
     setUsername(u.u);
     setEmail(u.email || '');
     setPhone(u.phone || '');
-    setPassword(u.p || '1234'); // Para el mock
-    setRole(u.rs[0] || 'Cajero');
-    setShowModal(true);
+    setPassword(u.p || '12345678'); 
+    setSelectedUserRole(u.rs[0] || 'Cajero');
+    setShowUserModal(true);
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleUserFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isFormValid) return;
+    if (!isUserFormValid) return;
 
     const userObj = {
-      id: editingId,
+      id: editingUserId,
       n: `${firstName} ${lastName}`,
       u: username,
       p: password,
-      role,
+      role: selectedUserRole,
       email,
       phone: phone || '-'
     };
 
     saveUser(userObj);
-    setShowModal(false);
+    setShowUserModal(false);
   };
 
-  const activeCount = usersList.filter(u => u.st === 'act').length;
+  // --- ROLE HANDLERS ---
+  const handleOpenNewRole = () => {
+    setEditingRoleId(null);
+    setRoleName('');
+    setRoleDesc('');
+    setRolePermissions([]);
+    setShowRoleModal(true);
+  };
+
+  const handleOpenEditRole = (r: CustomRole) => {
+    if (r.id === 'Administrador') return; // Bloqueado
+    setEditingRoleId(r.id);
+    setRoleName(r.name);
+    setRoleDesc(r.desc);
+    setRolePermissions(r.permissions);
+    setShowRoleModal(true);
+  };
+
+  const handleRoleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isRoleFormValid) return;
+
+    if (editingRoleId) {
+      // Editar rol existente
+      const updated = rolesList.map(r => r.id === editingRoleId ? { ...r, name: roleName, desc: roleDesc, permissions: rolePermissions } : r);
+      saveRolesToStorage(updated);
+    } else {
+      // Crear nuevo rol
+      const newId = roleName.replace(/\s+/g, '');
+      const newRole: CustomRole = {
+        id: newId,
+        name: roleName,
+        desc: roleDesc,
+        permissions: rolePermissions
+      };
+      saveRolesToStorage([...rolesList, newRole]);
+    }
+    setShowRoleModal(false);
+  };
+
+  const handleTogglePermission = (key: string) => {
+    if (rolePermissions.includes(key)) {
+      setRolePermissions(rolePermissions.filter(p => p !== key));
+    } else {
+      setRolePermissions([...rolePermissions, key]);
+    }
+  };
+
+  const handleDeleteRole = (id: string) => {
+    if (id === 'Administrador' || id === 'Cajero') return;
+    const updated = rolesList.filter(r => r.id !== id);
+    saveRolesToStorage(updated);
+  };
+
+  const getRolePermissionsCount = (roleId: string) => {
+    const roleObj = rolesList.find(r => r.id === roleId);
+    return roleObj ? roleObj.permissions.length : 0;
+  };
 
   return (
     <div className="screen active">
-      {/* TOOLBAR & METRICS */}
-      <div className="tb-bar">
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ padding: '6px 14px', background: 'var(--accent-bg)', border: '1px solid var(--border)', borderRadius: '20px', fontSize: '11px', fontWeight: '700', color: 'var(--accent)' }}>
-            Total: <span>{usersList.length}</span>
-          </div>
-          <div style={{ padding: '6px 14px', background: 'var(--green-bg)', border: '1px solid rgba(74,140,92,0.2)', borderRadius: '20px', fontSize: '11px', fontWeight: '700', color: 'var(--green)' }}>
-            Activos: <span>{activeCount}</span>
-          </div>
-        </div>
-        <button className="btn-new" onClick={handleOpenNew}>+ Agregar personal</button>
+      {/* SEGMENTED TAB CONTROLLER */}
+      <div style={{ display: 'flex', gap: '8px', background: 'var(--bg-2)', padding: '4px', borderRadius: '999px', border: '1px solid var(--border)', width: 'fit-content', margin: '0 auto 24px auto' }}>
+        <button 
+          onClick={() => setActiveSubTab('personal')} 
+          style={{
+            border: 'none',
+            padding: '10px 24px',
+            borderRadius: '999px',
+            fontSize: '12.5px',
+            fontWeight: '800',
+            cursor: 'pointer',
+            background: activeSubTab === 'personal' ? 'var(--bg-card)' : 'transparent',
+            color: activeSubTab === 'personal' ? 'var(--accent)' : 'var(--text-3)',
+            boxShadow: activeSubTab === 'personal' ? '0 4px 12px rgba(176,125,46,0.12)' : 'none',
+            transition: 'all 0.22s var(--ease)'
+          }}
+        >
+          👥 Colaboradores ({usersList.length})
+        </button>
+        <button 
+          onClick={() => setActiveSubTab('roles')} 
+          style={{
+            border: 'none',
+            padding: '10px 24px',
+            borderRadius: '999px',
+            fontSize: '12.5px',
+            fontWeight: '800',
+            cursor: 'pointer',
+            background: activeSubTab === 'roles' ? 'var(--bg-card)' : 'transparent',
+            color: activeSubTab === 'roles' ? 'var(--accent)' : 'var(--text-3)',
+            boxShadow: activeSubTab === 'roles' ? '0 4px 12px rgba(176,125,46,0.12)' : 'none',
+            transition: 'all 0.22s var(--ease)'
+          }}
+        >
+          🔑 Roles &amp; Permisos ({rolesList.length})
+        </button>
       </div>
 
-      {/* USER CARDS GRID */}
-      <div className="user-cards">
-        {usersList.map((u) => (
-          <div className="uc" key={u.id}>
-            <div className="uc-av">{u.n ? u.n[0].toUpperCase() : '👤'}</div>
-            <div className="uc-name">{u.n}</div>
-            <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>@{u.u}</div>
-            
-            <div style={{ fontSize: '11px', color: 'var(--text-2)', marginTop: '4px', textAlign: 'center' }}>
-              📧 {u.email || 'sin correo'}<br />
-              📞 {u.phone || 'sin teléfono'}
+      {activeSubTab === 'personal' ? (
+        <>
+          {/* PERSONAL TAB VIEW */}
+          <div className="tb-bar">
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ padding: '6px 14px', background: 'var(--accent-bg)', border: '1px solid var(--border)', borderRadius: '20px', fontSize: '11px', fontWeight: '700', color: 'var(--accent)' }}>
+                Total: <span>{usersList.length}</span>
+              </div>
+              <div style={{ padding: '6px 14px', background: 'var(--green-bg)', border: '1px solid rgba(74,140,92,0.2)', borderRadius: '20px', fontSize: '11px', fontWeight: '700', color: 'var(--green)' }}>
+                Activos: <span>{usersList.filter(u => u.st === 'act').length}</span>
+              </div>
             </div>
+            <button className="btn-new" onClick={handleOpenNewUser}>+ Agregar personal</button>
+          </div>
 
-            <div className="uc-roles" style={{ marginTop: '8px' }}>
-              {u.rs.map(r => (
-                <span key={r} className={`role-tag ${r === 'Administrador' ? 'rt-a' : 'rt-c'}`}>
-                  {r}
-                </span>
-              ))}
+          <div className="user-cards">
+            {usersList.map((u) => {
+              const matchedRole = rolesList.find(r => r.id === u.rs[0]);
+              return (
+                <div className="uc" key={u.id}>
+                  <div className="uc-av">{u.n ? u.n[0].toUpperCase() : '👤'}</div>
+                  <div className="uc-name">{u.n}</div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-3)', fontWeight: '600' }}>@{u.u}</div>
+                  
+                  <div style={{ fontSize: '11px', color: 'var(--text-2)', marginTop: '6px', textAlign: 'center', lineHeight: '1.4' }}>
+                    📧 {u.email || 'sin correo'}<br />
+                    📞 {u.phone || 'sin teléfono'}
+                  </div>
+
+                  <div className="uc-roles" style={{ marginTop: '10px' }}>
+                    {u.rs.map(r => (
+                      <span key={r} className={`role-tag ${r === 'Administrador' ? 'rt-a' : 'rt-c'}`} style={{ fontSize: '10px' }}>
+                        {r}
+                      </span>
+                    ))}
+                  </div>
+
+                  {matchedRole && (
+                    <div style={{ marginTop: '8px', fontSize: '10px', color: 'var(--text-3)', fontWeight: '500', background: 'var(--bg-hover)', padding: '4px 8px', borderRadius: '6px' }}>
+                      🔑 {matchedRole.permissions.length === SYSTEM_PERMISSIONS.length ? 'Acceso Total' : `${matchedRole.permissions.length} privilegios`}
+                    </div>
+                  )}
+
+                  <div className={`uc-status ${u.st === 'act' ? 'on' : 'off'}`} style={{ marginTop: '8px', fontSize: '11px' }}>
+                    {u.st === 'act' ? '● Activo' : '○ Inactivo'}
+                  </div>
+
+                  <div className="uc-btns" style={{ marginTop: '14px' }}>
+                    <button className="uc-btn" onClick={() => handleOpenEditUser(u)}>Editar</button>
+                    <button 
+                      className="uc-btn" 
+                      style={{ color: u.st === 'act' ? 'var(--red)' : 'var(--green)', borderColor: u.st === 'act' ? 'rgba(192,72,58,0.2)' : 'rgba(74,140,92,0.2)', transition: 'all 0.2s' }}
+                      onClick={() => toggleUserStatus(u.id)}
+                    >
+                      {u.st === 'act' ? 'Desactivar' : 'Activar'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        <>
+          {/* ROLES & PERMISSIONS TAB VIEW */}
+          <div className="tb-bar">
+            <div>
+              <h3 style={{ fontFamily: 'DM Serif Display', fontSize: '18px', color: 'var(--text)' }}>Configuración de Perfiles</h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '2px' }}>Define los privilegios de tu personal sin modificar código.</p>
             </div>
+            <button className="btn-new" onClick={handleOpenNewRole}>+ Crear Nuevo Rol</button>
+          </div>
 
-            <div className={`uc-status ${u.st === 'act' ? 'on' : 'off'}`} style={{ marginTop: '6px' }}>
-              {u.st === 'act' ? '● Activo' : '○ Inactivo'}
-            </div>
-
-            <div className="uc-btns" style={{ marginTop: '12px' }}>
-              <button className="uc-btn" onClick={() => handleOpenEdit(u)}>Editar</button>
-              <button 
-                className="uc-btn" 
-                style={{ color: u.st === 'act' ? 'var(--red)' : 'var(--green)', borderColor: u.st === 'act' ? 'rgba(192,72,58,0.2)' : 'rgba(74,140,92,0.2)' }}
-                onClick={() => toggleUserStatus(u.id)}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
+            {rolesList.map((r) => (
+              <div 
+                key={r.id} 
+                className="panel" 
+                style={{ 
+                  padding: '20px 24px', 
+                  border: '1.5px solid var(--border)', 
+                  background: 'var(--bg-card)', 
+                  borderRadius: '16px',
+                  boxShadow: '0 4px 15px rgba(46, 26, 10, 0.02)',
+                  position: 'relative'
+                }}
               >
-                {u.st === 'act' ? 'Desactivar' : 'Activar'}
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <h4 style={{ fontSize: '15.5px', fontWeight: '800', color: 'var(--text)' }}>{r.name}</h4>
+                      <span className={`role-tag ${r.id === 'Administrador' ? 'rt-a' : 'rt-c'}`} style={{ fontSize: '9px', padding: '2px 8px' }}>
+                        ID: {r.id}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '12.5px', color: 'var(--text-2)', marginTop: '6px', maxWidth: '680px', lineHeight: '1.4' }}>
+                      {r.desc}
+                    </p>
+                  </div>
+                  
+                  {r.id !== 'Administrador' && r.id !== 'Cajero' ? (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button className="uc-btn" style={{ padding: '6px 12px' }} onClick={() => handleOpenEditRole(r)}>⚙️ Configurar</button>
+                      <button className="uc-btn" style={{ padding: '6px 12px', color: 'var(--red)', borderColor: 'rgba(192,72,58,0.2)' }} onClick={() => handleDeleteRole(r.id)}>🗑️ Borrar</button>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: '11px', color: 'var(--text-3)', fontStyle: 'italic', background: 'var(--bg-hover)', padding: '4px 10px', borderRadius: '6px', fontWeight: '600' }}>
+                      🔒 Protegido del Sistema
+                    </span>
+                  )}
+                </div>
 
-      {/* USER COLLABORATOR MODAL WITH STRENGTH CHECKLIST */}
-      {showModal && (
+                <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                    Permisos Asignados ({r.permissions.length}):
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {r.permissions.map(pKey => {
+                      const pObj = SYSTEM_PERMISSIONS.find(sp => sp.key === pKey);
+                      return pObj ? (
+                        <span 
+                          key={pKey} 
+                          title={pObj.desc}
+                          style={{ 
+                            fontSize: '11px', 
+                            padding: '4px 10px', 
+                            background: 'var(--bg-card2)', 
+                            border: '1px solid var(--border)', 
+                            borderRadius: '8px', 
+                            color: 'var(--text)',
+                            fontWeight: '600',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <span>{pObj.icon}</span>
+                          <span>{pObj.label}</span>
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* --- USER COLLABORATOR MODAL --- */}
+      {showUserModal && (
         <div className="modal-overlay open">
           <div className="modal-card" style={{ width: '520px' }}>
             <div className="mc-title" style={{ textAlign: 'left', marginBottom: '20px' }}>
-              {editingId ? 'Editar Colaborador' : 'Nuevo Colaborador'}
+              {editingUserId ? 'Editar Colaborador' : 'Nuevo Colaborador'}
             </div>
 
-            <form onSubmit={handleFormSubmit}>
+            <form onSubmit={handleUserFormSubmit}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 
                 <div className="inp-group">
@@ -156,18 +423,21 @@ export default function PersonalPage() {
                 </div>
 
                 <div className="inp-group">
-                  <label>Usuario (login - alfanumérico)</label>
+                  <label>Usuario (login)</label>
                   <input type="text" placeholder="Ej: arodriguez" value={username} onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))} required />
                   <div style={{ fontSize: '10px', color: isUsernameValid ? 'var(--green)' : 'var(--text-3)', marginTop: '4px', fontWeight: '500' }}>
-                    {isUsernameValid ? '🟢 Válido' : '⚪ Min. 5 caracteres, sin espacios ni símbolos'}
+                    {isUsernameValid ? '🟢 Válido' : '⚪ Min. 5 caracteres, alfanumérico'}
                   </div>
                 </div>
 
                 <div className="inp-group">
-                  <label>Rol</label>
-                  <select value={role} onChange={(e) => setRole(e.target.value)}>
-                    <option value="Cajero">🛒 Cajero</option>
-                    <option value="Administrador">⚙️ Administrador</option>
+                  <label>Rol Asignado</label>
+                  <select value={selectedUserRole} onChange={(e) => setSelectedUserRole(e.target.value)}>
+                    {rolesList.map(r => (
+                      <option key={r.id} value={r.id}>
+                        {r.name} ({r.permissions.length} per.)
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -186,7 +456,7 @@ export default function PersonalPage() {
                   <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required />
                 </div>
 
-                {/* VISUAL PASSWORD STRENGTH CHECKLIST */}
+                {/* PASSWORD CHECKLIST */}
                 <div style={{ gridColumn: 'span 2', background: 'var(--bg-card2)', padding: '14px', borderRadius: '12px', border: '1.5px solid var(--border)', marginBottom: '10px' }}>
                   <div style={{ fontSize: '10.5px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '8px', letterSpacing: '0.5px' }}>
                     🔒 Validación de Contraseña Segura:
@@ -216,14 +486,126 @@ export default function PersonalPage() {
               </div>
 
               <div className="mc-btns" style={{ marginTop: '22px' }}>
-                <button type="button" className="mc-sec" onClick={() => setShowModal(false)}>Cancelar</button>
+                <button type="button" className="mc-sec" onClick={() => setShowUserModal(false)}>Cancelar</button>
                 <button 
                   type="submit" 
                   className="mc-pri" 
-                  disabled={!isFormValid}
-                  style={{ opacity: isFormValid ? 1 : 0.6, cursor: isFormValid ? 'pointer' : 'not-allowed' }}
+                  disabled={!isUserFormValid}
+                  style={{ opacity: isUserFormValid ? 1 : 0.6, cursor: isUserFormValid ? 'pointer' : 'not-allowed' }}
                 >
-                  {editingId ? 'Guardar Cambios' : 'Registrar Colaborador'}
+                  {editingUserId ? 'Guardar Cambios' : 'Registrar Colaborador'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- ROLE CREATION & EDIT MODAL --- */}
+      {showRoleModal && (
+        <div className="modal-overlay open">
+          <div className="modal-card" style={{ width: '560px', maxHeight: '90vh' }}>
+            <div className="mc-title" style={{ textAlign: 'left', marginBottom: '8px' }}>
+              {editingRoleId ? 'Configurar Rol' : 'Crear Nuevo Rol'}
+            </div>
+            <p style={{ fontSize: '12px', color: 'var(--text-3)', marginBottom: '20px' }}>
+              Asigna permisos específicos. Los usuarios asignados a este rol tendrán estos accesos de forma instantánea.
+            </p>
+
+            <form onSubmit={handleRoleFormSubmit}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                
+                <div className="inp-group">
+                  <label>Nombre del Rol</label>
+                  <input 
+                    type="text" 
+                    placeholder="Ej: Contador, Supervisor, Panadero" 
+                    value={roleName} 
+                    onChange={(e) => setRoleName(e.target.value)} 
+                    required 
+                    disabled={!!editingRoleId} // El ID no se cambia
+                  />
+                </div>
+
+                <div className="inp-group">
+                  <label>Descripción Operativa</label>
+                  <textarea 
+                    placeholder="Describe las responsabilidades de este rol..." 
+                    value={roleDesc} 
+                    onChange={(e) => setRoleDesc(e.target.value)} 
+                    required
+                    style={{
+                      width: '100%',
+                      minHeight: '60px',
+                      background: 'var(--bg-card2)',
+                      border: '1.5px solid var(--border)',
+                      borderRadius: '11px',
+                      padding: '11px 15px',
+                      fontFamily: 'inherit',
+                      fontSize: '13px',
+                      color: 'var(--text)',
+                      outline: 'none',
+                      resize: 'vertical'
+                    }}
+                  />
+                  <div style={{ fontSize: '10px', color: roleDesc.trim().length >= 8 ? 'var(--green)' : 'var(--text-3)', marginTop: '4px', fontWeight: '500' }}>
+                    {roleDesc.trim().length >= 8 ? '🟢 Descripción adecuada' : '⚪ Min. 8 caracteres descriptivos'}
+                  </div>
+                </div>
+
+                <div className="inp-group">
+                  <label style={{ marginBottom: '8px' }}>Lista de Privilegios / Accesos</label>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '240px', overflowY: 'auto', paddingRight: '4px' }}>
+                    {SYSTEM_PERMISSIONS.map(p => {
+                      const hasPerm = rolePermissions.includes(p.key);
+                      return (
+                        <div 
+                          key={p.key}
+                          onClick={() => handleTogglePermission(p.key)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            padding: '10px 14px',
+                            background: hasPerm ? 'var(--accent-bg)' : 'var(--bg-card2)',
+                            border: `1.5px solid ${hasPerm ? 'var(--border2)' : 'var(--border)'}`,
+                            borderRadius: '12px',
+                            cursor: 'pointer',
+                            transition: 'all 0.18s var(--ease)'
+                          }}
+                        >
+                          <div style={{ fontSize: '20px' }}>{p.icon}</div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '12.5px', fontWeight: '700', color: 'var(--text)' }}>{p.label}</div>
+                            <div style={{ fontSize: '10.5px', color: 'var(--text-2)', marginTop: '2px', lineHeight: '1.3' }}>{p.desc}</div>
+                          </div>
+                          <input 
+                            type="checkbox" 
+                            checked={hasPerm}
+                            onChange={() => {}} // Manejado por el click del div
+                            style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--accent)' }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ fontSize: '10.5px', color: rolePermissions.length > 0 ? 'var(--green)' : 'var(--text-3)', marginTop: '6px', fontWeight: '600' }}>
+                    {rolePermissions.length > 0 ? `🟢 ${rolePermissions.length} privilegios seleccionados` : '⚪ Selecciona al menos 1 privilegio'}
+                  </div>
+                </div>
+
+              </div>
+
+              <div className="mc-btns" style={{ marginTop: '22px' }}>
+                <button type="button" className="mc-sec" onClick={() => setShowRoleModal(false)}>Cancelar</button>
+                <button 
+                  type="submit" 
+                  className="mc-pri" 
+                  disabled={!isRoleFormValid}
+                  style={{ opacity: isRoleFormValid ? 1 : 0.6, cursor: isRoleFormValid ? 'pointer' : 'not-allowed' }}
+                >
+                  {editingRoleId ? 'Guardar Cambios' : 'Crear Perfil'}
                 </button>
               </div>
             </form>

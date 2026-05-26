@@ -1580,6 +1580,14 @@ tr:last-child td { border-bottom: none; }
   }
 }
 
+/* Hide mobile-only layout elements by default on desktop */
+.mobile-top-header,
+.mobile-bottom-nav,
+.mobile-drawer-overlay,
+.mobile-pos-tabs {
+  display: none !important;
+}
+
 @media (max-width: 768px) {
   /* --- HIDE DESKTOP INTERFACE ELEMENTS --- */
   .sidebar {
