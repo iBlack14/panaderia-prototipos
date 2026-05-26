@@ -9,8 +9,17 @@ export default function ComprasPage() {
   const [showModal, setShowModal] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState('');
   
+  interface BuyItem {
+    id: number;
+    productId: number;
+    name: string;
+    qty: number;
+    cost: number;
+    version: string | null;
+  }
+
   // Lista de items que se están comprando en este registro
-  const [itemsToBuy, setItemsToBuy] = useState([]);
+  const [itemsToBuy, setItemsToBuy] = useState<BuyItem[]>([]);
   
   // Estados para añadir un item de compra
   const [prodId, setProdId] = useState('');
@@ -30,7 +39,7 @@ export default function ComprasPage() {
     const prod = products.find(p => p.id === pId);
     if (!prod) return;
 
-    const newItem = {
+    const newItem: BuyItem = {
       id: Date.now(),
       productId: pId,
       name: prod.name + (vName ? ` (${vName})` : ''),
@@ -48,7 +57,7 @@ export default function ComprasPage() {
     setCost('');
   };
 
-  const handleRemovePurchaseItem = (id) => {
+  const handleRemovePurchaseItem = (id: number) => {
     setItemsToBuy(itemsToBuy.filter(x => x.id !== id));
   };
 
@@ -62,14 +71,19 @@ export default function ComprasPage() {
     setShowModal(true);
   };
 
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const provId = parseInt(selectedProvider);
     if (isNaN(provId) || itemsToBuy.length === 0) return;
 
     registerPurchase({
       providerId: provId,
-      items: itemsToBuy
+      items: itemsToBuy.map(item => ({
+        productId: item.productId,
+        qty: item.qty,
+        cost: item.cost,
+        version: item.version
+      }))
     });
 
     setShowModal(false);
@@ -109,7 +123,7 @@ export default function ComprasPage() {
           <tbody>
             {purchases.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: '600' }}>
+                <td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: '600' }}>
                   Aún no se han registrado compras.
                 </td>
               </tr>
@@ -120,7 +134,11 @@ export default function ComprasPage() {
                   <td>{p.d}</td>
                   <td style={{ fontWeight: '600', color: 'var(--text)' }}>{p.prov}</td>
                   <td style={{ color: 'var(--text-2)', fontSize: '12.5px' }}>
-                    {p.items ? p.items.map(i => `${i.name} x${i.qty}`).join(', ') : 'Insumos varios'}
+                    {p.items ? p.items.map(i => {
+                      const prodRef = products.find(prod => prod.id === i.productId);
+                      const displayName = prodRef ? (prodRef.name + (i.version ? ` (${i.version})` : '')) : 'Producto';
+                      return `${displayName} x${i.qty}`;
+                    }).join(', ') : 'Insumos varios'}
                   </td>
                   <td>{p.subTotal}</td>
                   <td>{p.igv}</td>
@@ -163,18 +181,18 @@ export default function ComprasPage() {
                     <select value={prodId} onChange={(e) => setProdId(e.target.value)}>
                       <option value="">-- Elegir producto --</option>
                       {products.map(p => (
-                        <option key={p.id} value={p.id}>{p.em} {p.name}</option>
+                        <option key={p.id} value={String(p.id)}>{p.em} {p.name}</option>
                       ))}
                     </select>
                   </div>
 
                   {/* Selector de variantes si aplica */}
-                  <div className="inp-group" style={{ margin: 0, opacity: selectedProduct?.versions?.length > 0 ? 1 : 0.5 }}>
+                  <div className="inp-group" style={{ margin: 0, opacity: (selectedProduct && selectedProduct.versions && selectedProduct.versions.length > 0) ? 1 : 0.5 }}>
                     <label style={{ fontSize: '9px' }}>Variante</label>
                     <select 
                       value={vName} 
                       onChange={(e) => setVName(e.target.value)}
-                      disabled={!selectedProduct?.versions?.length}
+                      disabled={!(selectedProduct && selectedProduct.versions && selectedProduct.versions.length > 0)}
                     >
                       <option value="">-- Ninguna --</option>
                       {selectedProduct?.versions?.map(v => (

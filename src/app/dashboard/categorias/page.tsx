@@ -8,7 +8,13 @@ export default function CategoriasPage() {
   const [catName, setCatName] = useState('');
   const [catStatus, setCatStatus] = useState('1');
 
-  const [localCategories, setLocalCategories] = useState([
+  interface Category {
+    id: number;
+    name: string;
+    status: string;
+  }
+
+  const [localCategories, setLocalCategories] = useState<Category[]>([
     { id: 1, name: 'Panes', status: '1' },
     { id: 2, name: 'Tortas', status: '1' },
     { id: 3, name: 'Dulces', status: '1' },
@@ -19,11 +25,11 @@ export default function CategoriasPage() {
     c.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleAddCategory = (e) => {
+  const handleAddCategory = (e: React.FormEvent) => {
     e.preventDefault();
     if (!catName) return;
 
-    const newCat = {
+    const newCat: Category = {
       id: Date.now(),
       name: catName,
       status: catStatus

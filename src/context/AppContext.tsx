@@ -1,49 +1,209 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
-const AppContext = createContext();
+// --- TYPES & INTERFACES ---
+export interface ProductVersion {
+  id: number;
+  name: string;
+  price: number;
+  stock: number;
+}
+
+export interface Product {
+  id: number;
+  name: string;
+  cat: string;
+  price: number;
+  stock: number;
+  em?: string;
+  versions: ProductVersion[];
+}
+
+export interface User {
+  id: number | string;
+  u: string;
+  p?: string;
+  n: string;
+  rs: string[];
+  st: string;
+  email: string;
+  phone: string;
+}
+
+export interface Provider {
+  id: number | string;
+  ruc: string;
+  name: string;
+  phone: string;
+  address: string;
+  active: boolean;
+}
+
+export interface PaymentMethod {
+  id: number;
+  name: string;
+  desc: string;
+  active: boolean;
+}
+
+export interface CartItem {
+  id: number;
+  cartId?: string;
+  name: string;
+  price: number;
+  qty: number;
+  version: string | null;
+}
+
+export interface CashSession {
+  id: number | string;
+  fec_apertura: string | Date;
+  date?: string;
+  tot_saldo_inicial: number;
+  tot_ventas_efectivo: number;
+  tot_ventas_otros: number;
+  estado: 'abierto' | 'cerrado';
+  cajero?: string;
+  turno?: string;
+}
+
+export interface CashHistoryRecord {
+  id: number | string;
+  fec_apertura: string;
+  fec_cierre: string;
+  monto_inicial: number;
+  monto_final: number;
+  ventas_efectivo: number;
+  ventas_otros: number;
+  diferencia?: number;
+  estado: 'cerrado';
+  cajero?: string;
+  date?: string;
+  turno?: string;
+  observaciones?: string;
+}
+
+export interface BreadLog {
+  id: number;
+  d: string;
+  prodName: string;
+  type: 'produccion' | 'descarte';
+  qty: number;
+  reason: string;
+}
+
+export interface Sale {
+  id: number;
+  n: number;
+  items: CartItem[];
+  total: number;
+  method: string;
+  d: string;
+  t: string;
+  cajero: string;
+}
+
+export interface PurchaseItem {
+  productId: number;
+  qty: number;
+  cost: number;
+  version?: string | null;
+}
+
+export interface Purchase {
+  id: string;
+  d: string;
+  prov: string;
+  subTotal: string;
+  igv: string;
+  total: string;
+  items: PurchaseItem[];
+}
+
+export interface AppContextType {
+  user: User | null;
+  role: string | null;
+  loading: boolean;
+  products: Product[];
+  usersList: User[];
+  providers: Provider[];
+  paymentMethods: PaymentMethod[];
+  sales: Sale[];
+  purchases: Purchase[];
+  cart: CartItem[];
+  cashSession: CashSession | null;
+  cashHistory: CashHistoryRecord[];
+  breadLogs: BreadLog[];
+  toastMsg: string;
+  toast: (msg: string) => void;
+  login: (uIn: string, pIn: string) => Promise<{ success: boolean; user?: User; message?: string }>;
+  logout: () => void;
+  sendRecoveryEmail: (emailIn: string) => Promise<{ success: boolean; online?: boolean; userId?: number | string; message?: string }>;
+  resetPasswordOffline: (userId: number | string, newPass: string) => void;
+  addToCart: (productName: string, price: number, em: any, id: number, versionObj?: ProductVersion | null) => void;
+  updateCartQty: (id: number, delta: number, version?: string | null) => void;
+  clearCart: () => void;
+  checkoutCart: (paymentMethodId: number) => Promise<Sale | undefined>;
+  saveUser: (uObj: any) => void;
+  toggleUserStatus: (userId: number | string) => void;
+  saveProvider: (pObj: any) => Promise<void>;
+  toggleProvider: (id: number | string) => void;
+  savePaymentMethod: (mObj: any) => void;
+  togglePaymentMethod: (id: number) => void;
+  registerPurchase: (pObj: { providerId: number | string; items: PurchaseItem[] }) => Promise<void>;
+  openCashSession: (initialAmount: string | number, shift: string) => Promise<void>;
+  closeCashSession: (countedAmount: string | number, observaciones: string) => Promise<void>;
+  saveProduct: (pObj: any) => void;
+  deleteProduct: (id: number) => void;
+  logBreadProduction: (prodId: number, qty: number, version?: string | null) => void;
+  logBreadDiscard: (prodId: number, qty: number, reason: string, version?: string | null) => void;
+}
+
+const AppContext = createContext<AppContextType | undefined>(undefined);
 
 // --- SEED DATA FALLBACKS ---
-const DEFAULT_PRODUCTS = [];
+const DEFAULT_PRODUCTS: Product[] = [];
 
-const DEFAULT_USERS = [
+const DEFAULT_USERS: User[] = [
   { id: 1, u: 'admin', p: '1234', n: 'Administrador', rs: ['Administrador'], st: 'act', email: 'admin@snackroque.com', phone: '' },
+  { id: 2, u: 'carlos', p: '1234', n: 'Carlos Mendoza', rs: ['Cajero'], st: 'act', email: 'carlos@snackroque.com', phone: '987654321' },
+  { id: 3, u: 'maria', p: '1234', n: 'María Sánchez', rs: ['Cajero'], st: 'act', email: 'maria@snackroque.com', phone: '912345678' }
 ];
 
-const DEFAULT_PAYMENT_METHODS = [
+const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
   { id: 1, name: 'Efectivo', desc: 'Pago tradicional en caja', active: true },
   { id: 2, name: 'Yape', desc: 'Pago QR digital BCP', active: true },
   { id: 3, name: 'Plin', desc: 'Pago QR digital Interbank/BBVA', active: true },
   { id: 4, name: 'Tarjeta Crédito/Débito', desc: 'Terminal POS Visa/Mastercard', active: true }
 ];
 
-const DEFAULT_PROVIDERS = [];
+const DEFAULT_PROVIDERS: Provider[] = [];
 
-export function AppProvider({ children }) {
+export function AppProvider({ children }: { children: ReactNode }) {
   // --- STATE VARIABLES ---
-  const [user, setUser] = useState(null);
-  const [role, setRole] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
+  const [role, setRole] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  const [products, setProducts] = useState([]);
-  const [usersList, setUsersList] = useState([]);
-  const [providers, setProviders] = useState([]);
-  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [usersList, setUsersList] = useState<User[]>([]);
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   
-  const [sales, setSales] = useState([]);
-  const [purchases, setPurchases] = useState([]);
-  const [cart, setCart] = useState([]);
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
   
-  const [cashSession, setCashSession] = useState(null);
-  const [cashHistory, setCashHistory] = useState([]);
-  const [breadLogs, setBreadLogs] = useState([]);
+  const [cashSession, setCashSession] = useState<CashSession | null>(null);
+  const [cashHistory, setCashHistory] = useState<CashHistoryRecord[]>([]);
+  const [breadLogs, setBreadLogs] = useState<BreadLog[]>([]);
 
-  const [toastMsg, setToastMsg] = useState('');
+  const [toastMsg, setToastMsg] = useState<string>('');
 
   // --- SHOW TOAST HELPER ---
-  const toast = (msg) => {
+  const toast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(''), 3000);
   };
@@ -75,14 +235,14 @@ export function AppProvider({ children }) {
           // 1. Productos
           const { data: prods } = await supabase.from('productos').select('*, producto_versiones(*)').eq('estado', 1);
           if (prods) {
-            setProducts(prods.map(p => ({
+            setProducts((prods as any[]).map(p => ({
               id: p.id_producto,
               name: p.nombre,
               cat: p.id_categoria === 1 ? 'Panes' : p.id_categoria === 2 ? 'Tortas' : p.id_categoria === 3 ? 'Dulces' : 'Bebidas',
               price: parseFloat(p.precio_unitario),
               stock: p.num_stock,
               em: p.em,
-              versions: p.producto_versiones ? p.producto_versiones.map(v => ({
+              versions: p.producto_versiones ? (p.producto_versiones as any[]).map(v => ({
                 id: v.id_version,
                 name: v.nombre_version,
                 price: parseFloat(v.precio_unitario),
@@ -94,7 +254,7 @@ export function AppProvider({ children }) {
           // 2. Proveedores
           const { data: provs } = await supabase.from('proveedores').select('*');
           if (provs) {
-            setProviders(provs.map(pr => ({
+            setProviders((provs as any[]).map(pr => ({
               id: pr.id_proveedor,
               ruc: pr.ruc,
               name: pr.nombre_empresa,
@@ -107,7 +267,7 @@ export function AppProvider({ children }) {
           // 3. Métodos de Pago
           const { data: paym } = await supabase.from('metodos_pago').select('*');
           if (paym) {
-            setPaymentMethods(paym.map(pm => ({
+            setPaymentMethods((paym as any[]).map(pm => ({
               id: pm.id_metodo_pago,
               name: pm.tipo_pago,
               desc: 'Método configurado en la nube',
@@ -131,7 +291,7 @@ export function AppProvider({ children }) {
           // 5. Historial de Cajas
           const { data: cashHist } = await supabase.from('cierres_caja').select('*').eq('estado', 'cerrado').order('fec_cierre', { ascending: false });
           if (cashHist) {
-            setCashHistory(cashHist.map(h => ({
+            setCashHistory((cashHist as any[]).map(h => ({
               id: h.id_cierre_caja,
               fec_apertura: new Date(h.fec_apertura).toLocaleDateString(),
               fec_cierre: new Date(h.fec_cierre).toLocaleDateString(),
@@ -175,14 +335,14 @@ export function AppProvider({ children }) {
   }, []);
 
   // --- SAVE LOCALSTORAGE HELPER ---
-  const saveOffline = (key, data) => {
+  const saveOffline = (key: string, data: any) => {
     if (!isSupabaseConfigured) {
       localStorage.setItem(key, JSON.stringify(data));
     }
   };
 
   // --- AUTH OPERATIONS ---
-  const login = async (uIn, pIn) => {
+  const login = async (uIn: string, pIn: string) => {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -192,9 +352,11 @@ export function AppProvider({ children }) {
         if (error) throw error;
         
         // Obtener perfil asociado
-        const { data: prof } = await supabase.from('profiles').select('*, roles(nombre)').eq('id', data.user.id).single();
+        const { data: prof, error: profErr } = await supabase.from('profiles').select('*, roles(nombre)').eq('id', data.user.id).single();
+        if (profErr) throw profErr;
+        
         if (prof) {
-          const userObj = {
+          const userObj: User = {
             id: prof.id,
             u: prof.username,
             n: prof.nombre + ' ' + prof.apellido_paterno,
@@ -208,7 +370,8 @@ export function AppProvider({ children }) {
           toast(`✨ ¡Bienvenido, ${prof.nombre}!`);
           return { success: true, user: userObj };
         }
-      } catch (err) {
+        return { success: false, message: 'Perfil no encontrado' };
+      } catch (err: any) {
         toast(`❌ Error de login: ${err.message}`);
         return { success: false, message: err.message };
       }
@@ -235,7 +398,7 @@ export function AppProvider({ children }) {
   };
 
   // --- PASSWORD RECOVERY ---
-  const sendRecoveryEmail = async (emailIn) => {
+  const sendRecoveryEmail = async (emailIn: string) => {
     if (isSupabaseConfigured && supabase) {
       const { error } = await supabase.auth.resetPasswordForEmail(emailIn, {
         redirectTo: `${window.location.origin}/recovery`,
@@ -257,7 +420,7 @@ export function AppProvider({ children }) {
     }
   };
 
-  const resetPasswordOffline = (userId, newPass) => {
+  const resetPasswordOffline = (userId: number | string, newPass: string) => {
     const updated = usersList.map(u => {
       if (u.id === userId) {
         return { ...u, p: newPass };
@@ -270,7 +433,7 @@ export function AppProvider({ children }) {
   };
 
   // --- POS BASICS ---
-  const addToCart = (productName, price, em, id, versionObj = null) => {
+  const addToCart = (productName: string, price: number, em: any, id: number, versionObj: ProductVersion | null = null) => {
     // Verificar sesión de caja obligatoria
     if (!cashSession) {
       toast('⚠️ Debe iniciar caja para realizar ventas.');
@@ -316,7 +479,7 @@ export function AppProvider({ children }) {
     toast('🥐 Añadido al carrito');
   };
 
-  const updateCartQty = (id, delta, version = null) => {
+  const updateCartQty = (id: number, delta: number, version: string | null = null) => {
     const cartId = version ? `${id}-${version}` : null;
     const item = cart.find(x => version ? x.cartId === cartId : (x.id === id && !x.version));
     if (!item) return;
@@ -327,7 +490,7 @@ export function AppProvider({ children }) {
     if (delta > 0) {
       if (version) {
         const vObj = prod.versions.find(v => v.name === version);
-        if (item.qty >= vObj.stock) return;
+        if (vObj && item.qty >= vObj.stock) return;
       } else {
         if (item.qty >= prod.stock) return;
       }
@@ -346,11 +509,50 @@ export function AppProvider({ children }) {
 
   const clearCart = () => setCart([]);
 
-  const checkoutCart = async (paymentMethodId) => {
+  const checkoutCart = async (paymentMethodId: number): Promise<Sale | undefined> => {
     if (cart.length === 0) return;
-    if (!cashSession) {
-      toast('⚠️ Debe iniciar caja para realizar ventas.');
-      return;
+    
+    let activeSession = cashSession;
+    const isAdmin = user?.rs?.includes('Administrador');
+
+    if (!activeSession) {
+      if (isAdmin) {
+        // Auto-crear turno virtual administrativo en el acto
+        const newSession: CashSession = {
+          id: Date.now(),
+          fec_apertura: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          date: new Date().toLocaleDateString(),
+          tot_saldo_inicial: 0,
+          tot_ventas_efectivo: 0,
+          tot_ventas_otros: 0,
+          estado: 'abierto',
+          cajero: user ? user.n : 'Administrador',
+          turno: 'Administrativo'
+        };
+        setCashSession(newSession);
+        saveOffline('snack_session', newSession);
+        
+        if (isSupabaseConfigured && supabase) {
+          try {
+            const { data } = await supabase.from('cierres_caja').insert({
+              id_usuario: user?.id,
+              tot_saldo_inicial: 0,
+              estado: 'abierto'
+            }).select().single();
+            if (data) {
+              newSession.id = data.id_cierre_caja;
+              setCashSession(newSession);
+            }
+          } catch (err) {
+            console.error('Error al auto-abrir caja administrativa', err);
+          }
+        }
+        activeSession = newSession;
+        toast('💼 Turno Administrativo auto-inicializado para esta venta.');
+      } else {
+        toast('⚠️ Debe iniciar caja para realizar ventas.');
+        return;
+      }
     }
 
     const sub = cart.reduce((a, b) => a + (b.price * b.qty), 0);
@@ -387,15 +589,15 @@ export function AppProvider({ children }) {
     // Sumar a la caja activa
     const isEfectivo = methodStr.toLowerCase().includes('efectivo');
     const updatedSession = {
-      ...cashSession,
-      tot_ventas_efectivo: cashSession.tot_ventas_efectivo + (isEfectivo ? tot : 0),
-      tot_ventas_otros: cashSession.tot_ventas_otros + (!isEfectivo ? tot : 0),
+      ...activeSession,
+      tot_ventas_efectivo: activeSession.tot_ventas_efectivo + (isEfectivo ? tot : 0),
+      tot_ventas_otros: activeSession.tot_ventas_otros + (!isEfectivo ? tot : 0),
     };
     setCashSession(updatedSession);
     saveOffline('snack_session', updatedSession);
 
     // Registrar Venta
-    const saleObj = {
+    const saleObj: Sale = {
       id: Date.now(),
       n: sales.length + 501,
       items: [...cart],
@@ -415,8 +617,8 @@ export function AppProvider({ children }) {
       try {
         const { data: vData } = await supabase.from('ventas').insert({
           id_cliente: 1,
-          id_usuario: user.id,
-          id_cierre_caja: cashSession.id,
+          id_usuario: user?.id,
+          id_cierre_caja: activeSession.id,
           id_metodo_pago: paymentMethodId,
           sub_total: sub,
           igv,
@@ -426,7 +628,7 @@ export function AppProvider({ children }) {
         if (vData) {
           const detailRows = cart.map(item => {
             const prodRef = products.find(p => p.id === item.id);
-            const vRef = item.version ? prodRef.versions.find(v => v.name === item.version) : null;
+            const vRef = (item.version && prodRef) ? prodRef.versions.find(v => v.name === item.version) : null;
             return {
               id_venta: vData.id_venta,
               id_producto: item.id,
@@ -448,7 +650,7 @@ export function AppProvider({ children }) {
   };
 
   // --- CRUD GESTION USUARIOS ---
-  const saveUser = (uObj) => {
+  const saveUser = (uObj: any) => {
     let updated;
     if (uObj.id) {
       updated = usersList.map(u => u.id === uObj.id ? { ...u, ...uObj } : u);
@@ -462,7 +664,7 @@ export function AppProvider({ children }) {
     saveOffline('snack_users', updated);
   };
 
-  const toggleUserStatus = (userId) => {
+  const toggleUserStatus = (userId: number | string) => {
     const updated = usersList.map(u => u.id === userId ? { ...u, st: u.st === 'act' ? 'ina' : 'act' } : u);
     setUsersList(updated);
     saveOffline('snack_users', updated);
@@ -470,7 +672,7 @@ export function AppProvider({ children }) {
   };
 
   // --- CRUD GESTION PROVEEDORES ---
-  const saveProvider = async (pObj) => {
+  const saveProvider = async (pObj: any) => {
     if (isSupabaseConfigured && supabase) {
       try {
         if (pObj.id) {
@@ -492,7 +694,7 @@ export function AppProvider({ children }) {
         // Recargar datos de proveedores
         const { data } = await supabase.from('proveedores').select('*');
         if (data) {
-          setProviders(data.map(pr => ({
+          setProviders((data as any[]).map(pr => ({
             id: pr.id_proveedor,
             ruc: pr.ruc,
             name: pr.nombre_empresa,
@@ -501,7 +703,7 @@ export function AppProvider({ children }) {
             active: pr.estado === 1
           })));
         }
-      } catch (err) {
+      } catch (err: any) {
         toast(`❌ Error en Supabase: ${err.message}`);
       }
     } else {
@@ -510,7 +712,7 @@ export function AppProvider({ children }) {
         updated = providers.map(p => p.id === pObj.id ? { ...p, ...pObj } : p);
         toast('🏭 Proveedor actualizado');
       } else {
-        const newProv = { ...pObj, id: Date.now(), active: true };
+        const newProv: Provider = { ...pObj, id: Date.now(), active: true };
         updated = [...providers, newProv];
         toast('🏭 Proveedor registrado');
       }
@@ -519,7 +721,7 @@ export function AppProvider({ children }) {
     }
   };
 
-  const toggleProvider = (id) => {
+  const toggleProvider = (id: number | string) => {
     const updated = providers.map(p => p.id === id ? { ...p, active: !p.active } : p);
     setProviders(updated);
     saveOffline('snack_providers', updated);
@@ -527,7 +729,7 @@ export function AppProvider({ children }) {
   };
 
   // --- CRUD METODOS DE PAGO ---
-  const savePaymentMethod = (mObj) => {
+  const savePaymentMethod = (mObj: any) => {
     let updated;
     if (mObj.id) {
       updated = paymentMethods.map(m => m.id === mObj.id ? { ...m, ...mObj } : m);
@@ -541,7 +743,7 @@ export function AppProvider({ children }) {
     saveOffline('snack_methods', updated);
   };
 
-  const togglePaymentMethod = (id) => {
+  const togglePaymentMethod = (id: number) => {
     const updated = paymentMethods.map(m => m.id === id ? { ...m, active: !m.active } : m);
     setPaymentMethods(updated);
     saveOffline('snack_methods', updated);
@@ -549,7 +751,7 @@ export function AppProvider({ children }) {
   };
 
   // --- COMPRAS (STOCK INTEGRATION) ---
-  const registerPurchase = async (pObj) => {
+  const registerPurchase = async (pObj: { providerId: number | string; items: PurchaseItem[] }) => {
     // pObj format: { providerId, items: [{ productId, qty, cost, version }] }
     const sub = pObj.items.reduce((a, b) => a + (b.qty * b.cost), 0);
     const igv = sub * 0.18;
@@ -580,7 +782,7 @@ export function AppProvider({ children }) {
     setProducts(updatedProds);
     saveOffline('snack_products', updatedProds);
 
-    const purchaseRec = {
+    const purchaseRec: Purchase = {
       id: `COM-${Date.now()}`,
       d: new Date().toLocaleDateString(),
       prov: provName,
@@ -597,9 +799,9 @@ export function AppProvider({ children }) {
   };
 
   // --- CONTROL DE CAJA (APERTURA Y CIERRE) ---
-  const openCashSession = async (initialAmount) => {
-    const parsedInit = parseFloat(initialAmount) || 0;
-    const newSession = {
+  const openCashSession = async (initialAmount: string | number, shift: string) => {
+    const parsedInit = typeof initialAmount === 'string' ? parseFloat(initialAmount) || 0 : initialAmount;
+    const newSession: CashSession = {
       id: Date.now(),
       fec_apertura: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       date: new Date().toLocaleDateString(),
@@ -607,7 +809,8 @@ export function AppProvider({ children }) {
       tot_ventas_efectivo: 0,
       tot_ventas_otros: 0,
       estado: 'abierto',
-      cajero: user ? user.n : 'Carlos Mendoza'
+      cajero: user ? user.n : 'Carlos Mendoza',
+      turno: shift
     };
 
     setCashSession(newSession);
@@ -616,7 +819,7 @@ export function AppProvider({ children }) {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data } = await supabase.from('cierres_caja').insert({
-          id_usuario: user.id,
+          id_usuario: user?.id,
           tot_saldo_inicial: parsedInit,
           estado: 'abierto'
         }).select().single();
@@ -630,19 +833,19 @@ export function AppProvider({ children }) {
         console.error('Error al abrir caja en Supabase', err);
       }
     }
-    toast('💰 Caja abierta. Ventas habilitadas.');
+    toast(`💰 Caja abierta en turno ${shift}. Ventas habilitadas.`);
   };
 
-  const closeCashSession = async (countedAmount) => {
+  const closeCashSession = async (countedAmount: string | number, observaciones: string) => {
     if (!cashSession) return;
 
-    const parsedCounted = parseFloat(countedAmount) || 0;
+    const parsedCounted = typeof countedAmount === 'string' ? parseFloat(countedAmount) || 0 : countedAmount;
     const expected = cashSession.tot_saldo_inicial + cashSession.tot_ventas_efectivo;
     const diff = parsedCounted - expected;
 
-    const closedRecord = {
+    const closedRecord: CashHistoryRecord = {
       id: cashSession.id,
-      fec_apertura: cashSession.fec_apertura,
+      fec_apertura: typeof cashSession.fec_apertura === 'string' ? cashSession.fec_apertura : cashSession.fec_apertura.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       fec_cierre: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       date: cashSession.date || new Date().toLocaleDateString(),
       monto_inicial: cashSession.tot_saldo_inicial,
@@ -651,7 +854,9 @@ export function AppProvider({ children }) {
       ventas_otros: cashSession.tot_ventas_otros,
       diferencia: diff,
       estado: 'cerrado',
-      cajero: cashSession.cajero
+      cajero: cashSession.cajero,
+      turno: cashSession.turno,
+      observaciones: observaciones
     };
 
     const newHistory = [closedRecord, ...cashHistory];
@@ -681,7 +886,7 @@ export function AppProvider({ children }) {
   };
 
   // --- CONTROL DE PANES (PRODUCCION Y DESCARTE) ---
-  const saveProduct = (pObj) => {
+  const saveProduct = (pObj: any) => {
     let updated;
     if (pObj.id) {
       updated = products.map(p => p.id === pObj.id ? { ...p, ...pObj } : p);
@@ -695,14 +900,14 @@ export function AppProvider({ children }) {
     saveOffline('snack_products', updated);
   };
 
-  const deleteProduct = (id) => {
+  const deleteProduct = (id: number) => {
     const updated = products.filter(p => p.id !== id);
     setProducts(updated);
     saveOffline('snack_products', updated);
     toast('🗑 Producto eliminado');
   };
 
-  const logBreadProduction = (prodId, qty, version = null) => {
+  const logBreadProduction = (prodId: number, qty: number, version: string | null = null) => {
     const updated = products.map(p => {
       if (p.id === prodId) {
         if (version) {
@@ -720,10 +925,10 @@ export function AppProvider({ children }) {
     setProducts(updated);
     saveOffline('snack_products', updated);
 
-    const log = {
+    const log: BreadLog = {
       id: Date.now(),
       d: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
-      prodName: products.find(x => x.id === prodId)?.name + (version ? ` (${version})` : ''),
+      prodName: (products.find(x => x.id === prodId)?.name || 'Producto') + (version ? ` (${version})` : ''),
       type: 'produccion',
       qty,
       reason: 'Ingreso inicial de producción diaria'
@@ -735,7 +940,7 @@ export function AppProvider({ children }) {
     toast('➕ Producción de panes registrada');
   };
 
-  const logBreadDiscard = (prodId, qty, reason, version = null) => {
+  const logBreadDiscard = (prodId: number, qty: number, reason: string, version: string | null = null) => {
     const updated = products.map(p => {
       if (p.id === prodId) {
         if (version) {
@@ -753,10 +958,10 @@ export function AppProvider({ children }) {
     setProducts(updated);
     saveOffline('snack_products', updated);
 
-    const log = {
+    const log: BreadLog = {
       id: Date.now(),
       d: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
-      prodName: products.find(x => x.id === prodId)?.name + (version ? ` (${version})` : ''),
+      prodName: (products.find(x => x.id === prodId)?.name || 'Producto') + (version ? ` (${version})` : ''),
       type: 'descarte',
       qty,
       reason
@@ -814,5 +1019,9 @@ export function AppProvider({ children }) {
 }
 
 export function useApp() {
-  return useContext(AppContext);
+  const context = useContext(AppContext);
+  if (context === undefined) {
+    throw new Error('useApp must be used within an AppProvider');
+  }
+  return context;
 }

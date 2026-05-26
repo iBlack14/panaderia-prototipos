@@ -4,7 +4,22 @@ import React, { useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
 
 export default function DashboardHome() {
-  const { sales, products, user } = useApp();
+  const { sales, products } = useApp();
+
+  interface DisplaySaleItem {
+    name: string;
+    qty: number;
+  }
+
+  interface DisplaySale {
+    id: number | string;
+    n: number;
+    d: string;
+    t: string;
+    cajero: string;
+    total: number;
+    items: DisplaySaleItem[];
+  }
 
   // --- REACTIVE CALCULATIONS FOR TODAY'S METRICS ---
   const stats = useMemo(() => {
@@ -23,9 +38,20 @@ export default function DashboardHome() {
     const lowStockCount = products.filter(p => p.stock < 10).length;
 
     // Ventas recientes
-    let recentSalesList = [];
+    let recentSalesList: DisplaySale[] = [];
     if (hasRealSales) {
-      recentSalesList = todaySales.slice(-5).reverse();
+      recentSalesList = todaySales.slice(-5).reverse().map(s => ({
+        id: s.id,
+        n: s.n,
+        d: s.d,
+        t: s.t,
+        cajero: s.cajero,
+        total: s.total,
+        items: s.items.map(item => ({
+          name: item.name,
+          qty: item.qty
+        }))
+      }));
     } else {
       // Mock de datos demo premium
       recentSalesList = [
@@ -120,7 +146,7 @@ export default function DashboardHome() {
                   </td>
                   <td><span className="tag tg-blue">{sale.t || 'Hoy'}</span></td>
                   <td>{sale.cajero}</td>
-                  <td style={{ fontWeight: '800', color: 'var(--green)' }}>S/. {parseFloat(sale.total).toFixed(2)}</td>
+                  <td style={{ fontWeight: '800', color: 'var(--green)' }}>S/. {sale.total.toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>

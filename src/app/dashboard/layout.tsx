@@ -1,14 +1,15 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 
-export default function DashboardLayout({ children }) {
+export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, role, logout, loading } = useApp();
   const [timeStr, setTimeStr] = useState('');
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 
   // --- AUTH SECURITY GUARD ---
   useEffect(() => {
@@ -41,8 +42,16 @@ export default function DashboardLayout({ children }) {
     );
   }
 
+  interface NavItem {
+    label: string;
+    path?: string;
+    icon?: string;
+    type: 'section' | 'item';
+    adminOnly?: boolean;
+  }
+
   // --- NAVIGATION LINKS ---
-  const navItems = [
+  const navItems: NavItem[] = [
     { label: 'Principal', type: 'section' },
     { label: 'Dashboard', path: '/dashboard', icon: '📊', type: 'item' },
     { label: 'Clientes', path: '/dashboard/clientes', icon: '👥', type: 'item' },
@@ -70,7 +79,7 @@ export default function DashboardLayout({ children }) {
   const filteredNavItems = navItems.filter(item => !item.adminOnly || isAdmin);
 
   // --- DYNAMIC HEADER TITLE & SUBTITLE ---
-  const pageDetails = {
+  const pageDetails: Record<string, { title: string; sub: string }> = {
     '/dashboard': { title: 'Dashboard', sub: 'Resumen de operaciones · Hoy' },
     '/dashboard/clientes': { title: 'Gestión de Clientes', sub: 'Listado y registro de clientes frecuentes' },
     '/dashboard/ventas': { title: 'Punto de Venta (POS)', sub: 'Registrar nueva venta al detalle' },
@@ -88,12 +97,27 @@ export default function DashboardLayout({ children }) {
 
   return (
     <div className="app-wrap" style={{ display: 'block' }}>
+      
+      {/* MOBILE TOP HEADER */}
+      <div className="mobile-top-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <img src="/asset/logo.png" alt="Logo" className="mobile-logo-img" onError={(e) => { (e.target as HTMLImageElement).src = "https://cdn-icons-png.flaticon.com/512/992/992747.png"; }} />
+          <span className="mobile-brand-title">Snack Roque</span>
+        </div>
+        <div className="sb-av">{user?.n ? user.n[0].toUpperCase() : '👤'}</div>
+      </div>
+
       <div className="app-body">
         
-        {/* SIDEBAR NAVIGATION */}
+        {/* SIDEBAR NAVIGATION (Desktop Only - hidden on mobile via CSS) */}
         <div className="sidebar">
           <div className="sb-brand" onClick={() => router.push('/dashboard')} style={{ cursor: 'pointer' }}>
-            <img src="/asset/logo.png" alt="Logo" className="sb-logo" onError={(e) => { e.target.src = "https://cdn-icons-png.flaticon.com/512/992/992747.png"; }} />
+            <img 
+              src="/asset/logo.png" 
+              alt="Logo" 
+              className="sb-logo" 
+              onError={(e) => { (e.target as HTMLImageElement).src = "https://cdn-icons-png.flaticon.com/512/992/992747.png"; }} 
+            />
             <p>Snack Roque</p>
             <div className="sb-brand-sub">Panadería &amp; Pastelería</div>
           </div>
@@ -113,7 +137,7 @@ export default function DashboardLayout({ children }) {
                 <div 
                   key={item.path} 
                   className={`sb-item ${active ? 'active' : ''}`}
-                  onClick={() => router.push(item.path)}
+                  onClick={() => item.path && router.push(item.path)}
                 >
                   <span className="sb-icon">{item.icon}</span> {item.label}
                 </div>
@@ -163,6 +187,85 @@ export default function DashboardLayout({ children }) {
         </div>
 
       </div>
+
+      {/* MOBILE BOTTOM NAVIGATION BAR */}
+      <div className="mobile-bottom-nav">
+        <div className={`mb-item ${pathname === '/dashboard' ? 'active' : ''}`} onClick={() => router.push('/dashboard')}>
+          <span className="mb-icon">📊</span>
+          <span className="mb-label">Dashboard</span>
+        </div>
+        <div className={`mb-item ${pathname === '/dashboard/ventas' ? 'active' : ''}`} onClick={() => router.push('/dashboard/ventas')}>
+          <span className="mb-icon">🛒</span>
+          <span className="mb-label">Ventas</span>
+        </div>
+        <div className={`mb-item ${pathname === '/dashboard/caja' ? 'active' : ''}`} onClick={() => router.push('/dashboard/caja')}>
+          <span className="mb-icon">💰</span>
+          <span className="mb-label">Caja</span>
+        </div>
+        <div className={`mb-item ${pathname === '/dashboard/productos' ? 'active' : ''}`} onClick={() => router.push('/dashboard/productos')}>
+          <span className="mb-icon">📦</span>
+          <span className="mb-label">Inventario</span>
+        </div>
+        <div className={`mb-item ${isMoreMenuOpen ? 'active' : ''}`} onClick={() => setIsMoreMenuOpen(true)}>
+          <span className="mb-icon">☰</span>
+          <span className="mb-label">Más</span>
+        </div>
+      </div>
+
+      {/* MOBILE SLIDE-UP DRAWER OVERLAY */}
+      {isMoreMenuOpen && (
+        <div className="mobile-drawer-overlay open" onClick={() => setIsMoreMenuOpen(false)}>
+          <div className="mobile-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="md-head">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '18px' }}>🥐</span>
+                <span style={{ fontWeight: '800', color: 'var(--text)', fontSize: '14.5px' }}>Menú de Administración</span>
+              </div>
+              <button className="md-close" onClick={() => setIsMoreMenuOpen(false)}>✕</button>
+            </div>
+            
+            <div className="md-body">
+              <div className="md-grid">
+                <div className="md-item-btn" onClick={() => { router.push('/dashboard/clientes'); setIsMoreMenuOpen(false); }}>
+                  <span className="md-btn-icon">👥</span>
+                  <span className="md-btn-lbl">Clientes</span>
+                </div>
+                <div className="md-item-btn" onClick={() => { router.push('/dashboard/proveedores'); setIsMoreMenuOpen(false); }}>
+                  <span className="md-btn-icon">🏭</span>
+                  <span className="md-btn-lbl">Proveedores</span>
+                </div>
+                <div className="md-item-btn" onClick={() => { router.push('/dashboard/compras'); setIsMoreMenuOpen(false); }}>
+                  <span className="md-btn-icon">📥</span>
+                  <span className="md-btn-lbl">Compras</span>
+                </div>
+                <div className="md-item-btn" onClick={() => { router.push('/dashboard/categorias'); setIsMoreMenuOpen(false); }}>
+                  <span className="md-btn-icon">🏷️</span>
+                  <span className="md-btn-lbl">Categorías</span>
+                </div>
+                <div className="md-item-btn" onClick={() => { router.push('/dashboard/metodos'); setIsMoreMenuOpen(false); }}>
+                  <span className="md-btn-icon">💳</span>
+                  <span className="md-btn-lbl">Pagos</span>
+                </div>
+                <div className="md-item-btn" onClick={() => { router.push('/dashboard/reportes'); setIsMoreMenuOpen(false); }}>
+                  <span className="md-btn-icon">📈</span>
+                  <span className="md-btn-lbl">Reportes</span>
+                </div>
+                {isAdmin && (
+                  <div className="md-item-btn" onClick={() => { router.push('/dashboard/usuarios'); setIsMoreMenuOpen(false); }}>
+                    <span className="md-btn-icon">👤</span>
+                    <span className="md-btn-lbl">Personal</span>
+                  </div>
+                )}
+                <div className="md-item-btn md-btn-logout" onClick={() => { logout(); router.push('/'); setIsMoreMenuOpen(false); }}>
+                  <span className="md-btn-icon">↩</span>
+                  <span className="md-btn-lbl">Salir</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

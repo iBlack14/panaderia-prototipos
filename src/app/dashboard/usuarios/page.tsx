@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useApp } from '@/context/AppContext';
+import { useApp, User } from '@/context/AppContext';
 
 export default function PersonalPage() {
   const { usersList, saveUser, toggleUserStatus } = useApp();
 
   const [showModal, setShowModal] = useState(false);
-  const [editingId, setEditingId] = useState(null);
+  const [editingId, setEditingId] = useState<number | string | null>(null);
 
   // Form states
   const [firstName, setFirstName] = useState('');
@@ -44,7 +44,7 @@ export default function PersonalPage() {
     setShowModal(true);
   };
 
-  const handleOpenEdit = (u) => {
+  const handleOpenEdit = (u: User) => {
     setEditingId(u.id);
     
     // Separamos nombres y apellidos del nombre guardado
@@ -60,7 +60,7 @@ export default function PersonalPage() {
     setShowModal(true);
   };
 
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid) return;
 

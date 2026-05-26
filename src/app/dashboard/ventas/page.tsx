@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useApp } from '@/context/AppContext';
+import { useApp, Product, ProductVersion, Sale } from '@/context/AppContext';
 
 export default function PointOfSalePage() {
   const router = useRouter();
@@ -14,26 +14,30 @@ export default function PointOfSalePage() {
     clearCart, 
     checkoutCart, 
     cashSession, 
-    paymentMethods 
+    paymentMethods,
+    user
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
   
+  // Mobile sub-tab toggle state
+  const [activeMobileTab, setActiveMobileTab] = useState<'vitrina' | 'pedido'>('vitrina');
+
   // Checkout & Receipt Modal states
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [lastReceipt, setLastReceipt] = useState(null);
+  const [lastReceipt, setLastReceipt] = useState<Sale | null>(null);
 
   // Variant selector states
   const [showVariantModal, setShowVariantModal] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   // Filtered active products
   const filteredProducts = products.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleProductClick = (prod) => {
+  const handleProductClick = (prod: Product) => {
     if (prod.versions && prod.versions.length > 0) {
       setSelectedProduct(prod);
       setShowVariantModal(true);
@@ -42,7 +46,7 @@ export default function PointOfSalePage() {
     }
   };
 
-  const handleVariantSelect = (v) => {
+  const handleVariantSelect = (v: ProductVersion) => {
     if (selectedProduct) {
       addToCart(selectedProduct.name, v.price, selectedProduct.em, selectedProduct.id, v);
       setShowVariantModal(false);
@@ -54,7 +58,7 @@ export default function PointOfSalePage() {
     setShowCheckoutModal(true);
   };
 
-  const handleConfirmPayment = async (methodId) => {
+  const handleConfirmPayment = async (methodId: number) => {
     const receipt = await checkoutCart(methodId);
     if (receipt) {
       setLastReceipt(receipt);
@@ -70,8 +74,9 @@ export default function PointOfSalePage() {
 
   const activeMethods = paymentMethods.filter(m => m.active);
 
-  // --- 1. BLOQUEO SI LA CAJA ESTÁ CERRADA ---
-  if (!cashSession) {
+  // --- 1. BLOQUEO SI LA CAJA ESTÁ CERRADA (ADMIN TIENE ACCESO DIRECTO) ---
+  const isAdmin = user?.rs?.includes('Administrador');
+  if (!cashSession && !isAdmin) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
         <div className="panel" style={{ width: '480px', textAlign: 'center', padding: '40px', border: '1.5px solid var(--border2)' }}>
@@ -94,12 +99,30 @@ export default function PointOfSalePage() {
     );
   }
 
+  const totalCartCount = cart.reduce((a, b) => a + b.qty, 0);
+
   return (
     <div className="screen active">
+      {/* MOBILE POS TABS TOGGLE BAR (Visible only on mobile via CSS) */}
+      <div className="mobile-pos-tabs">
+        <button 
+          className={`mpt-btn ${activeMobileTab === 'vitrina' ? 'active' : ''}`}
+          onClick={() => setActiveMobileTab('vitrina')}
+        >
+          🛍️ Vitrina de Productos
+        </button>
+        <button 
+          className={`mpt-btn ${activeMobileTab === 'pedido' ? 'active' : ''}`}
+          onClick={() => setActiveMobileTab('pedido')}
+        >
+          🛒 Mi Pedido ({totalCartCount})
+        </button>
+      </div>
+
       <div className="pos-2col">
         
         {/* CATALOG SIDE */}
-        <div className="cat-side">
+        <div className={`cat-side ${activeMobileTab === 'vitrina' ? 'mobile-active' : 'mobile-hidden'}`}>
           <div className="cat-search">
             <span>🔍</span>
             <input 
@@ -152,10 +175,10 @@ export default function PointOfSalePage() {
         </div>
 
         {/* SHOPPING CART / ORDER PANEL */}
-        <div className="order-panel">
+        <div className={`order-panel ${activeMobileTab === 'pedido' ? 'mobile-active' : 'mobile-hidden'}`}>
           <div className="op-head">
             <h3>Pedido Actual</h3>
-            <span>{cart.reduce((a, b) => a + b.qty, 0)} items</span>
+            <span>{totalCartCount} items</span>
           </div>
 
           <div id="orderList">
@@ -231,7 +254,7 @@ export default function PointOfSalePage() {
                 </div>
               ) : (
                 activeMethods.map((m) => {
-                  const icons = { Efectivo: '💵', Yape: '📱', Plin: '📱', 'Tarjeta Crédito/Débito': '💳', Tarjeta: '💳' };
+                  const icons: Record<string, string> = { Efectivo: '💵', Yape: '📱', Plin: '📱', 'Tarjeta Crédito/Débito': '💳', Tarjeta: '💳' };
                   return (
                     <button
                       key={m.id}

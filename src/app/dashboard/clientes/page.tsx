@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useApp } from '@/context/AppContext';
 
 export default function ClientesPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -11,8 +10,16 @@ export default function ClientesPage() {
   const [clientEmail, setClientEmail] = useState('');
   const [clientStatus, setClientStatus] = useState('1');
 
+  interface Client {
+    id: number;
+    name: string;
+    phone: string;
+    email: string;
+    status: string;
+  }
+
   // Para modo offline, manejamos clientes dinámicos
-  const [localClients, setLocalClients] = useState([
+  const [localClients, setLocalClients] = useState<Client[]>([
     { id: 1, name: 'Público General', phone: '-', email: '-', status: '1' },
     { id: 2, name: 'Juan Pérez', phone: '987654321', email: 'juan.perez@email.com', status: '1' },
     { id: 3, name: 'María López', phone: '912345678', email: 'maria.lopez@email.com', status: '1' },
@@ -23,11 +30,11 @@ export default function ClientesPage() {
     c.phone.includes(searchTerm)
   );
 
-  const handleAddClient = (e) => {
+  const handleAddClient = (e: React.FormEvent) => {
     e.preventDefault();
     if (!clientName) return;
 
-    const newClient = {
+    const newClient: Client = {
       id: Date.now(),
       name: clientName,
       phone: clientPhone || '-',

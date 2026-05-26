@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useApp } from '@/context/AppContext';
+import { useApp, Provider } from '@/context/AppContext';
 
 export default function ProveedoresPage() {
   const { providers, saveProvider, toggleProvider } = useApp();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [editingId, setEditingId] = useState(null);
+  const [editingId, setEditingId] = useState<number | string | null>(null);
   
   // Form states
   const [ruc, setRuc] = useState('');
@@ -33,7 +33,7 @@ export default function ProveedoresPage() {
     setShowModal(true);
   };
 
-  const handleOpenEdit = (prov) => {
+  const handleOpenEdit = (prov: Provider) => {
     setEditingId(prov.id);
     setRuc(prov.ruc);
     setName(prov.name);
@@ -43,7 +43,7 @@ export default function ProveedoresPage() {
     setShowModal(true);
   };
 
-  const handleFormSubmit = async (e) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // RUC Validation (Exactly 11 digits and numeric)
@@ -98,7 +98,7 @@ export default function ProveedoresPage() {
           <tbody>
             {filteredProviders.length === 0 ? (
               <tr>
-                <td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: '600' }}>
+                <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: '600' }}>
                   Sin proveedores registrados.
                 </td>
               </tr>

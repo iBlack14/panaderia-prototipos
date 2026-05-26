@@ -6,6 +6,19 @@ import { useApp } from '@/context/AppContext';
 export default function ReportesEstadisticasPage() {
   const { sales } = useApp();
 
+  interface HistoryItem {
+    id: number | string;
+    n: number;
+    d: string;
+    t?: string;
+    cajero: string;
+    method: string;
+    total: number;
+    itemsStr?: string;
+    items?: { name: string; qty: number }[];
+    status?: string;
+  }
+
   const reportMetrics = useMemo(() => {
     const hasSales = sales.length > 0;
     
@@ -17,14 +30,24 @@ export default function ReportesEstadisticasPage() {
 
     // Métricas
     const tvStr = hasSales ? `S/. ${tv.toFixed(2)}` : 'S/. 5,284.00';
-    const trStr = hasSales ? tr : '214';
-    const unStr = hasSales ? un : '863';
+    const trStr = hasSales ? String(tr) : '214';
+    const unStr = hasSales ? String(un) : '863';
     const avStr = hasSales ? `S/. ${av.toFixed(2)}` : 'S/. 24.69';
 
     // Historial
-    let historyList = [];
+    let historyList: HistoryItem[] = [];
     if (hasSales) {
-      historyList = [...sales].reverse();
+      historyList = [...sales].reverse().map(s => ({
+        id: s.id,
+        n: s.n,
+        d: s.d,
+        t: s.t,
+        cajero: s.cajero,
+        method: s.method,
+        total: s.total,
+        items: s.items.map(item => ({ name: item.name, qty: item.qty })),
+        status: 'Pagado'
+      }));
     } else {
       historyList = [
         { id: 1, n: 538, d: 'Lun 14/05', cajero: 'Carlos Mendoza', method: 'Efectivo', total: 22.00, itemsStr: 'Pan de yema ×4, Alfajor ×2', status: 'Pagado' },
@@ -130,25 +153,25 @@ export default function ReportesEstadisticasPage() {
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '4px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '28px', height: '28px', background: 'linear-gradient(135deg,#FBBF24,#F59E0B)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifycontent: 'center', fontSize: '13px', fontWeight: '800', color: 'white', justifyContent: 'center' }}>1</div>
+              <div style={{ width: '28px', height: '28px', background: 'linear-gradient(135deg,#FBBF24,#F59E0B)', borderRadius: '8px', display: 'flex', alignItems: 'center', fontSize: '13px', fontWeight: '800', color: 'white', justifyContent: 'center' }}>1</div>
               <div style={{ flex: 1 }}><div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)' }}>Croissant</div><div style={{ fontSize: '11px', color: 'var(--text-3)' }}>278 unidades</div></div>
               <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--green)' }}>S/. 695</div>
             </div>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '28px', height: '28px', background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifycontent: 'center', fontSize: '13px', fontWeight: '800', color: 'var(--text-2)', justifyContent: 'center' }}>2</div>
+              <div style={{ width: '28px', height: '28px', background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: '8px', display: 'flex', alignItems: 'center', fontSize: '13px', fontWeight: '800', color: 'var(--text-2)', justifyContent: 'center' }}>2</div>
               <div style={{ flex: 1 }}><div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)' }}>Pan especial</div><div style={{ fontSize: '11px', color: 'var(--text-3)' }}>196 unidades</div></div>
               <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--green)' }}>S/. 490</div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '28px', height: '28px', background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifycontent: 'center', fontSize: '13px', fontWeight: '800', color: 'var(--text-2)', justifyContent: 'center' }}>3</div>
+              <div style={{ width: '28px', height: '28px', background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: '8px', display: 'flex', alignItems: 'center', fontSize: '13px', fontWeight: '800', color: 'var(--text-2)', justifyContent: 'center' }}>3</div>
               <div style={{ flex: 1 }}><div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)' }}>Torta chocolate</div><div style={{ fontSize: '11px', color: 'var(--text-3)' }}>142 unidades</div></div>
               <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--green)' }}>S/. 638</div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '28px', height: '28px', background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifycontent: 'center', fontSize: '13px', fontWeight: '800', color: 'var(--text-2)', justifyContent: 'center' }}>4</div>
+              <div style={{ width: '28px', height: '28px', background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: '8px', display: 'flex', alignItems: 'center', fontSize: '13px', fontWeight: '800', color: 'var(--text-2)', justifyContent: 'center' }}>4</div>
               <div style={{ flex: 1 }}><div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)' }}>Empanada</div><div style={{ fontSize: '11px', color: 'var(--text-3)' }}>118 unidades</div></div>
               <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--green)' }}>S/. 414</div>
             </div>
@@ -177,13 +200,13 @@ export default function ReportesEstadisticasPage() {
             {reportMetrics.historyList.map((h, idx) => (
               <tr key={h.id || idx}>
                 <td><strong style={{ color: 'var(--accent)' }}>#B-{h.n}</strong></td>
-                <td>{h.d} {h.t}</td>
+                <td>{h.d} {h.t || ''}</td>
                 <td style={{ color: 'var(--text-2)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {h.itemsStr || h.items.map(item => `${item.name} x${item.qty}`).join(', ')}
+                  {h.itemsStr || (h.items ? h.items.map(item => `${item.name} x${item.qty}`).join(', ') : 'Insumos')}
                 </td>
                 <td>{h.cajero}</td>
                 <td><span className="tag tg-blue">{h.method}</span></td>
-                <td style={{ fontWeight: '800', color: 'var(--green)' }}>S/. {parseFloat(h.total).toFixed(2)}</td>
+                <td style={{ fontWeight: '800', color: 'var(--green)' }}>S/. {h.total.toFixed(2)}</td>
                 <td>
                   <span className={`tag ${h.status === 'Pendiente' ? 'tg-warn' : 'tg-ok'}`}>
                     {h.status || 'Pagado'}

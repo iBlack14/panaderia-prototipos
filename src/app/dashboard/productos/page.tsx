@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useApp } from '@/context/AppContext';
+import { useApp, Product, ProductVersion } from '@/context/AppContext';
 
 export default function InventarioPage() {
   const { 
@@ -16,10 +16,10 @@ export default function InventarioPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showProductModal, setShowProductModal] = useState(false);
   const [showBreadModal, setShowBreadModal] = useState(false);
-  const [activeTab, setActiveTab] = useState('list'); // 'list' o 'mermas'
+  const [activeTab, setActiveTab] = useState<'list' | 'mermas'>('list');
 
   // --- FORM STATES FOR PRODUCT CRUD ---
-  const [editingId, setEditingId] = useState(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [cat, setCat] = useState('Panes');
   const [em, setEm] = useState('🥐');
@@ -27,7 +27,7 @@ export default function InventarioPage() {
   const [stock, setStock] = useState('0');
   
   // Variants states
-  const [variantsList, setVariantsList] = useState([]);
+  const [variantsList, setVariantsList] = useState<ProductVersion[]>([]);
   const [vName, setVName] = useState('');
   const [vPrice, setVPrice] = useState('');
   const [vStock, setVStock] = useState('0');
@@ -35,7 +35,7 @@ export default function InventarioPage() {
   // --- FORM STATES FOR PRODUCTION/DISCARD LOGS ---
   const [logProductId, setLogProductId] = useState('');
   const [logVariant, setLogVariant] = useState('');
-  const [logType, setLogType] = useState('produccion'); // 'produccion' o 'descarte'
+  const [logType, setLogType] = useState<'produccion' | 'descarte'>('produccion');
   const [logQty, setLogQty] = useState('');
   const [logReason, setLogReason] = useState('Ingreso inicial de producción diaria');
 
@@ -48,7 +48,7 @@ export default function InventarioPage() {
   // --- VARIANT LOGIC IN MODAL ---
   const handleAddVariant = () => {
     if (!vName || !vPrice) return;
-    const newV = {
+    const newV: ProductVersion = {
       id: Date.now(),
       name: vName,
       price: parseFloat(vPrice),
@@ -60,7 +60,7 @@ export default function InventarioPage() {
     setVStock('0');
   };
 
-  const handleRemoveVariant = (id) => {
+  const handleRemoveVariant = (id: number) => {
     setVariantsList(variantsList.filter(x => x.id !== id));
   };
 
@@ -75,18 +75,18 @@ export default function InventarioPage() {
     setShowProductModal(true);
   };
 
-  const handleOpenEdit = (p) => {
+  const handleOpenEdit = (p: Product) => {
     setEditingId(p.id);
     setName(p.name);
     setCat(p.cat);
-    setEm(p.em);
-    setPrice(p.price);
-    setStock(p.stock);
+    setEm(p.em || '🥐');
+    setPrice(String(p.price));
+    setStock(String(p.stock));
     setVariantsList(p.versions || []);
     setShowProductModal(true);
   };
 
-  const handleProductSubmit = (e) => {
+  const handleProductSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name) return;
 
@@ -105,7 +105,7 @@ export default function InventarioPage() {
   };
 
   // --- PRODUCTION & DISCARD SUBMIT ---
-  const handleBreadLogSubmit = (e) => {
+  const handleBreadLogSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const pId = parseInt(logProductId);
     const qty = parseInt(logQty);
@@ -124,7 +124,7 @@ export default function InventarioPage() {
     setLogReason('Ingreso inicial de producción diaria');
   };
 
-  const handleProductChangeForLogs = (id) => {
+  const handleProductChangeForLogs = (id: string) => {
     setLogProductId(id);
     setLogVariant('');
   };
@@ -201,16 +201,13 @@ export default function InventarioPage() {
               </thead>
               <tbody>
                 {filteredProducts.map((p) => {
-                  const catColor = { 'Panes': 'tg-blue', 'Tortas': 'tg-blue', 'Dulces': 'tg-warn', 'Bebidas': 'tg-ok' };
+                  const catColor: Record<string, string> = { 'Panes': 'tg-blue', 'Tortas': 'tg-blue', 'Dulces': 'tg-warn', 'Bebidas': 'tg-ok' };
                   const totalStock = p.versions.length > 0 
                     ? p.versions.reduce((a, b) => a + b.stock, 0)
                     : p.stock;
                   
-                  const stTag = totalStock <= 0 
-                    ? '<span class="tag tg-err">Agotado</span>'
-                    : totalStock < 10 
-                      ? '<span class="tag tg-warn">Stock bajo</span>'
-                      : '<span class="tag tg-ok">Disponible</span>';
+                  const isAgotado = totalStock <= 0;
+                  const isBajoStock = totalStock < 10;
 
                   return (
                     <tr key={p.id}>
@@ -239,7 +236,15 @@ export default function InventarioPage() {
                           : 'Sin variantes'
                         }
                       </td>
-                      <td dangerouslySetInnerHTML={{ __html: stTag }}></td>
+                      <td>
+                        {isAgotado ? (
+                          <span className="tag tg-err">Agotado</span>
+                        ) : isBajoStock ? (
+                          <span className="tag tg-warn">Stock bajo</span>
+                        ) : (
+                          <span className="tag tg-ok">Disponible</span>
+                        )}
+                      </td>
                       <td>
                         <div className="act-row">
                           <button className="act-btn" onClick={() => handleOpenEdit(p)} title="Editar">✏️</button>
@@ -285,7 +290,7 @@ export default function InventarioPage() {
               <tbody>
                 {breadLogs.length === 0 ? (
                   <tr>
-                    <td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: '600' }}>
+                    <td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: '600' }}>
                       No se han registrado movimientos de panes hoy.
                     </td>
                   </tr>
@@ -320,7 +325,7 @@ export default function InventarioPage() {
               {editingId ? 'Editar Producto' : 'Nuevo Producto'}
             </div>
 
-            <form onSubmit={handleProductChangeForLogs} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+            <form onSubmit={handleProductSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
               <div className="inp-group" style={{ gridColumn: 'span 2' }}>
                 <label>Nombre del Producto</label>
                 <div className="inp-wrap">
@@ -341,7 +346,7 @@ export default function InventarioPage() {
               <div className="inp-group">
                 <label>Ícono (emoji)</label>
                 <div className="inp-wrap">
-                  <input type="text" value={em} onChange={(e) => setEm(e.target.value)} maxLength="2" placeholder="🥐" />
+                  <input type="text" value={em} onChange={(e) => setEm(e.target.value)} maxLength={2} placeholder="🥐" />
                 </div>
               </div>
 
@@ -390,7 +395,7 @@ export default function InventarioPage() {
                     {variantsList.map((v, idx) => (
                       <div key={v.id || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12.5px' }}>
                         <span>
-                          <strong>{v.name}</strong> · S/. {parseFloat(v.price).toFixed(2)} · <span style={{ color: 'var(--text-3)' }}>{v.stock} und.</span>
+                          <strong>{v.name}</strong> · S/. {v.price.toFixed(2)} · <span style={{ color: 'var(--text-3)' }}>{v.stock} und.</span>
                         </span>
                         <span onClick={() => handleRemoveVariant(v.id)} style={{ color: 'var(--red)', fontWeight: '700', cursor: 'pointer' }}>✕</span>
                       </div>
@@ -401,7 +406,7 @@ export default function InventarioPage() {
 
               <div className="mc-btns" style={{ gridColumn: 'span 2', marginTop: '18px' }}>
                 <button type="button" className="mc-sec" onClick={() => setShowProductModal(false)}>Cancelar</button>
-                <button type="button" className="mc-pri" onClick={handleProductSubmit}>Guardar Producto</button>
+                <button type="submit" className="mc-pri">Guardar Producto</button>
               </div>
             </form>
           </div>
@@ -442,7 +447,7 @@ export default function InventarioPage() {
 
               <div className="inp-group">
                 <label>Tipo de Registro</label>
-                <select value={logType} onChange={(e) => { setLogType(e.target.value); setLogReason(e.target.value === 'produccion' ? 'Ingreso inicial de producción diaria' : 'Quemado'); }}>
+                <select value={logType} onChange={(e) => { setLogType(e.target.value as 'produccion' | 'descarte'); setLogReason(e.target.value === 'produccion' ? 'Ingreso inicial de producción diaria' : 'Quemado'); }}>
                   <option value="produccion">➕ Registrar Producción (Ingreso)</option>
                   <option value="descarte">⚠️ Registrar Descarte / Merma (Salida)</option>
                 </select>

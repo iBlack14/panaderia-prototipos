@@ -2,11 +2,11 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useApp } from '@/context/AppContext';
+import { useApp, User } from '@/context/AppContext';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, sendRecoveryEmail, resetPasswordOffline, usersList } = useApp();
+  const { login, sendRecoveryEmail, resetPasswordOffline } = useApp();
 
   // --- FORM STATES ---
   const [username, setUsername] = useState('');
@@ -17,7 +17,7 @@ export default function LoginPage() {
   const [recUsername, setRecUsername] = useState('');
   const [recEmail, setRecEmail] = useState('');
   const [isVerified, setIsVerified] = useState(false);
-  const [verifiedUserId, setVerifiedUserId] = useState(null);
+  const [verifiedUserId, setVerifiedUserId] = useState<number | string | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [recoverySent, setRecoverySent] = useState(false);
@@ -44,16 +44,16 @@ export default function LoginPage() {
 
   // Multi-role selection step
   const [roleStep, setRoleStep] = useState(false);
-  const [loggedInUser, setLoggedInUser] = useState(null);
-  const [selectedRole, setSelectedRole] = useState(null);
+  const [loggedInUser, setLoggedInUser] = useState<User | null>(null);
+  const [selectedRole, setSelectedRole] = useState<string | null>(null);
 
   // --- HANDLERS ---
-  const handleLoginSubmit = async (e) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) return;
 
     const res = await login(username, password);
-    if (res && res.success) {
+    if (res && res.success && res.user) {
       const u = res.user;
       if (u.rs.length === 1) {
         // Un solo rol -> Redirigir de inmediato a /dashboard
@@ -73,7 +73,7 @@ export default function LoginPage() {
     }
   };
 
-  const handleRecoverySubmit = async (e) => {
+  const handleRecoverySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!recEmail) return;
 
@@ -90,12 +90,14 @@ export default function LoginPage() {
         setRecoverySent(true);
       } else {
         setIsVerified(true);
-        setVerifiedUserId(res.userId);
+        if (res.userId !== undefined) {
+          setVerifiedUserId(res.userId);
+        }
       }
     }
   };
 
-  const handleResetSubmit = (e) => {
+  const handleResetSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPassword || newPassword !== confirmPassword) {
       alert("Las contraseñas no coinciden");
@@ -109,7 +111,9 @@ export default function LoginPage() {
       return;
     }
 
-    resetPasswordOffline(verifiedUserId, newPassword);
+    if (verifiedUserId !== null) {
+      resetPasswordOffline(verifiedUserId, newPassword);
+    }
     
     // Regresar al login
     setShowRecovery(false);
@@ -130,7 +134,12 @@ export default function LoginPage() {
         {!roleStep && (
           <div className="login-left">
             <div className="ll-top">
-              <img src="/asset/logo.png" alt="Logo Snack Roque" className="bread-icon" onError={(e) => { e.target.src = "https://cdn-icons-png.flaticon.com/512/992/992747.png"; }} />
+              <img 
+                src="/asset/logo.png" 
+                alt="Logo Snack Roque" 
+                className="bread-icon" 
+                onError={(e) => { (e.target as HTMLImageElement).src = "https://cdn-icons-png.flaticon.com/512/992/992747.png"; }} 
+              />
               <div className="ll-features">
                 <div className="feature"><div className="f-dot">🥖</div>Pan artesanal y atención al instante</div>
                 <div className="feature"><div className="f-dot">📊</div>Dashboard en tiempo real con métricas clave</div>
@@ -206,8 +215,8 @@ export default function LoginPage() {
               <p className="lr-sub">Hola <strong>{loggedInUser.n}</strong>, elige cómo ingresar hoy</p>
               
               <div className="roles-stack" style={{ margin: '20px 0' }}>
-                {loggedInUser.rs.map((r, idx) => {
-                  const icons = { Administrador: '👑', Cajero: '🛒', Panadero: '🥖' };
+                {loggedInUser.rs.map((r) => {
+                  const icons: Record<string, string> = { Administrador: '👑', Cajero: '🛒', Panadero: '🥖' };
                   return (
                     <div 
                       key={r}

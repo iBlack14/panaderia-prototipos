@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
@@ -23,7 +23,7 @@ export default function RecoveryPage() {
 
   const isFormValid = hasMinLength && hasUppercase && hasLowercase && hasNumber && hasSpecial && isMatch;
 
-  const handlePasswordUpdate = async (e) => {
+  const handlePasswordUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid) return;
 
@@ -40,7 +40,7 @@ export default function RecoveryPage() {
         setTimeout(() => {
           router.push('/');
         }, 3000);
-      } catch (err) {
+      } catch (err: any) {
         setErrorMsg(`❌ Error al actualizar: ${err.message}`);
       }
     } else {

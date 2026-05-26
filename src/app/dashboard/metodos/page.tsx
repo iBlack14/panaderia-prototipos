@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useApp } from '@/context/AppContext';
+import { useApp, PaymentMethod } from '@/context/AppContext';
 
 export default function MetodosPagoPage() {
   const { paymentMethods, savePaymentMethod, togglePaymentMethod } = useApp();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [editingId, setEditingId] = useState(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   
   // Form states
   const [name, setName] = useState('');
@@ -25,14 +25,14 @@ export default function MetodosPagoPage() {
     setShowModal(true);
   };
 
-  const handleOpenEdit = (method) => {
+  const handleOpenEdit = (method: PaymentMethod) => {
     setEditingId(method.id);
     setName(method.name);
     setDesc(method.desc || '');
     setShowModal(true);
   };
 
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name) return;
 
@@ -78,7 +78,7 @@ export default function MetodosPagoPage() {
           <tbody>
             {filteredMethods.length === 0 ? (
               <tr>
-                <td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: '600' }}>
+                <td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: '600' }}>
                   Sin métodos de pago configurados.
                 </td>
               </tr>
