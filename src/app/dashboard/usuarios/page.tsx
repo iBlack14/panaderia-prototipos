@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp, User } from '@/context/AppContext';
 
 interface SystemPermission {
@@ -85,11 +86,23 @@ export default function PersonalPage() {
   // --- USER FORM STATES ---
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [dni, setDni] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [selectedUserRole, setSelectedUserRole] = useState('Cajero');
+
+  // --- EMAIL OTP VERIFICATION STATES ---
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [otpError, setOtpError] = useState(false);
+  const [otpResendTimer, setOtpResendTimer] = useState(0);
 
   // --- ROLE FORM STATES ---
   const [roleName, setRoleName] = useState('');
@@ -98,6 +111,12 @@ export default function PersonalPage() {
 
   // --- VALIDATORS ---
   const isUsernameValid = username.length >= 5 && /^[a-zA-Z0-9]+$/.test(username);
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const isPhoneValid = /^9\d{8}$/.test(phone);
+  const isDniValid = /^\d{8}$/.test(dni);
+  
+  const isUsernameTaken = usersList.some(u => u.u === username && u.id !== editingUserId);
+  const isEmailTaken = usersList.some(u => u.email === email && u.id !== editingUserId);
   
   const hasMinLength = password.length >= 8;
   const hasUppercase = /[A-Z]/.test(password);
@@ -105,8 +124,20 @@ export default function PersonalPage() {
   const hasNumber = /[0-9]/.test(password);
   const hasSpecial = /[@$!%*?&]/.test(password);
   const isPasswordSecure = hasMinLength && hasUppercase && hasLowercase && hasNumber && hasSpecial;
+  const isPasswordMatch = password === confirmPassword;
 
-  const isUserFormValid = firstName && lastName && email && isUsernameValid && isPasswordSecure;
+  const isUserFormValid = 
+    firstName.trim().length >= 2 && 
+    lastName.trim().length >= 2 && 
+    isDniValid &&
+    isEmailValid && 
+    emailVerified &&
+    !isEmailTaken &&
+    isUsernameValid && 
+    !isUsernameTaken &&
+    isPasswordSecure && 
+    isPasswordMatch && 
+    isPhoneValid;
   const isRoleFormValid = roleName.trim().length >= 3 && roleDesc.trim().length >= 8 && rolePermissions.length > 0;
 
   // --- USER HANDLERS ---
@@ -114,11 +145,18 @@ export default function PersonalPage() {
     setEditingUserId(null);
     setFirstName('');
     setLastName('');
+    setDni('');
     setUsername('');
     setEmail('');
     setPhone('');
     setPassword('');
+    setConfirmPassword('');
+    setShowPassword(false);
+    setShowConfirmPassword(false);
     setSelectedUserRole(rolesList[0]?.id || 'Cajero');
+    setEmailVerified(false);
+    setOtpCode('');
+    setOtpError(false);
     setShowUserModal(true);
   };
 
@@ -127,12 +165,65 @@ export default function PersonalPage() {
     const nameParts = u.n.split(' ');
     setFirstName(nameParts[0] || '');
     setLastName(nameParts.slice(1).join(' ') || '');
+    setDni((u as any).dni || '');
     setUsername(u.u);
     setEmail(u.email || '');
     setPhone(u.phone || '');
     setPassword(u.p || '12345678'); 
+    setConfirmPassword(u.p || '12345678');
     setSelectedUserRole(u.rs[0] || 'Cajero');
+    setEmailVerified(true); // Al editar, el correo ya fue verificado antes
+    setShowPassword(false);
+    setShowConfirmPassword(false);
     setShowUserModal(true);
+  };
+
+  // OTP helpers
+  const startResendTimer = () => {
+    setOtpResendTimer(60);
+    const interval = setInterval(() => {
+      setOtpResendTimer(prev => {
+        if (prev <= 1) { clearInterval(interval); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleSendOtp = () => {
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    setGeneratedOtp(code);
+    setOtpCode('');
+    setOtpError(false);
+    console.log(`[OTP Simulado] Código para ${email}: ${code}`);
+    setShowOtpModal(true);
+    startResendTimer();
+  };
+
+  const handleVerifyOtp = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otpCode === generatedOtp) {
+      setEmailVerified(true);
+      setOtpError(false);
+      setShowOtpModal(false);
+    } else {
+      setOtpError(true);
+      setOtpCode('');
+    }
+  };
+
+  const handleResendOtp = () => {
+    if (otpResendTimer > 0) return;
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    setGeneratedOtp(code);
+    setOtpCode('');
+    setOtpError(false);
+    console.log(`[OTP Reenviado] Código para ${email}: ${code}`);
+    startResendTimer();
+  };
+
+  const handleEmailChange = (val: string) => {
+    setEmail(val.trim());
+    if (emailVerified) setEmailVerified(false); // Si cambia el correo, requiere re-verificar
   };
 
   const handleUserFormSubmit = (e: React.FormEvent) => {
@@ -146,7 +237,8 @@ export default function PersonalPage() {
       p: password,
       role: selectedUserRole,
       email,
-      phone: phone || '-'
+      phone: phone || '-',
+      dni
     };
 
     saveUser(userObj);
@@ -276,7 +368,10 @@ export default function PersonalPage() {
                   <div className="uc-name">{u.n}</div>
                   <div style={{ fontSize: '11.5px', color: 'var(--text-3)', fontWeight: '600' }}>@{u.u}</div>
                   
-                  <div style={{ fontSize: '11px', color: 'var(--text-2)', marginTop: '6px', textAlign: 'center', lineHeight: '1.4' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-2)', marginTop: '6px', textAlign: 'center', lineHeight: '1.6' }}>
+                    {(u as any).dni && (
+                      <><span style={{ fontWeight: '700', color: 'var(--text-3)' }}>🪪 DNI:</span> {(u as any).dni}<br /></>
+                    )}
                     📧 {u.email || 'sin correo'}<br />
                     📞 {u.phone || 'sin teléfono'}
                   </div>
@@ -404,7 +499,7 @@ export default function PersonalPage() {
       {/* --- USER COLLABORATOR MODAL --- */}
       {showUserModal && (
         <div className="modal-overlay open">
-          <div className="modal-card" style={{ width: '520px' }}>
+          <div className="modal-card" style={{ width: '520px', maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="mc-title" style={{ textAlign: 'left', marginBottom: '20px' }}>
               {editingUserId ? 'Editar Colaborador' : 'Nuevo Colaborador'}
             </div>
@@ -422,11 +517,19 @@ export default function PersonalPage() {
                   <input type="text" placeholder="Ej: Rodríguez López" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
                 </div>
 
+                {/* DNI */}
                 <div className="inp-group">
-                  <label>Usuario (login)</label>
-                  <input type="text" placeholder="Ej: arodriguez" value={username} onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))} required />
-                  <div style={{ fontSize: '10px', color: isUsernameValid ? 'var(--green)' : 'var(--text-3)', marginTop: '4px', fontWeight: '500' }}>
-                    {isUsernameValid ? '🟢 Válido' : '⚪ Min. 5 caracteres, alfanumérico'}
+                  <label>DNI</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: 12345678"
+                    value={dni}
+                    onChange={(e) => setDni(e.target.value.replace(/\D/g, ''))}
+                    maxLength={8}
+                    required
+                  />
+                  <div style={{ fontSize: '10px', color: isDniValid ? 'var(--green)' : 'var(--text-3)', marginTop: '4px', fontWeight: '500' }}>
+                    {dni === '' ? '⚪ 8 dígitos numéricos' : isDniValid ? '🟢 DNI válido' : '❌ Debe tener exactamente 8 dígitos'}
                   </div>
                 </div>
 
@@ -441,19 +544,124 @@ export default function PersonalPage() {
                   </select>
                 </div>
 
-                <div className="inp-group">
+                {/* CORREO + VERIFICACIÓN OTP */}
+                <div className="inp-group" style={{ gridColumn: 'span 2' }}>
                   <label>Correo Electrónico</label>
-                  <input type="email" placeholder="aro@snackroque.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1 }}>
+                      <input
+                        type="email"
+                        placeholder="aro@snackroque.com"
+                        value={email}
+                        onChange={(e) => handleEmailChange(e.target.value)}
+                        required
+                        style={{ borderColor: emailVerified ? 'var(--green)' : isEmailTaken ? 'var(--red)' : undefined }}
+                      />
+                      <div style={{ fontSize: '10px', marginTop: '4px', fontWeight: '500', color: emailVerified ? 'var(--green)' : isEmailTaken ? 'var(--red)' : isEmailValid ? 'var(--text-3)' : 'var(--red)' }}>
+                        {email === '' ? '⚪ Formato de correo' :
+                          isEmailTaken ? '❌ Este correo ya está registrado' :
+                          emailVerified ? '✅ Correo verificado' :
+                          isEmailValid ? '⚠️ Correo válido — pendiente de verificar' :
+                          '❌ Correo inválido'}
+                      </div>
+                    </div>
+                    {!editingUserId && (
+                      <button
+                        type="button"
+                        onClick={handleSendOtp}
+                        disabled={!isEmailValid || isEmailTaken || emailVerified}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: '1.5px solid var(--border)',
+                          background: emailVerified ? 'var(--green-bg)' : 'var(--accent-bg)',
+                          color: emailVerified ? 'var(--green)' : 'var(--accent)',
+                          fontSize: '11.5px',
+                          fontWeight: '700',
+                          cursor: (!isEmailValid || isEmailTaken || emailVerified) ? 'not-allowed' : 'pointer',
+                          opacity: (!isEmailValid || isEmailTaken) ? 0.5 : 1,
+                          whiteSpace: 'nowrap',
+                          transition: 'all 0.18s',
+                          flexShrink: 0,
+                          marginTop: '0px'
+                        }}
+                      >
+                        {emailVerified ? '✅ Verificado' : '📨 Verificar correo'}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="inp-group">
                   <label>Número de Teléfono</label>
-                  <input type="text" placeholder="Ej: 987654321" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                  <input 
+                    type="text" 
+                    placeholder="Ej: 987654321" 
+                    value={phone} 
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))} 
+                    maxLength={9}
+                    required 
+                  />
+                  <div style={{ fontSize: '10px', color: isPhoneValid ? 'var(--green)' : 'var(--red)', marginTop: '4px', fontWeight: '500' }}>
+                    {phone === '' ? '⚪ 9 dígitos (inicia con 9)' : isPhoneValid ? '🟢 Teléfono válido' : '❌ Debe iniciar con 9 y tener 9 dígitos'}
+                  </div>
                 </div>
 
-                <div className="inp-group" style={{ gridColumn: 'span 2' }}>
+                <div className="inp-group">
+                  <label>Usuario (login)</label>
+                  <input type="text" placeholder="Ej: arodriguez" value={username} onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))} required />
+                  <div style={{ fontSize: '10px', color: isUsernameTaken ? 'var(--red)' : isUsernameValid ? 'var(--green)' : 'var(--text-3)', marginTop: '4px', fontWeight: '500' }}>
+                    {isUsernameTaken ? '❌ Este usuario ya está en uso' : isUsernameValid ? '🟢 Válido' : '⚪ Min. 5 caracteres, alfanumérico'}
+                  </div>
+                </div>
+
+                <div className="inp-group">
                   <label>Contraseña Acceso</label>
-                  <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      style={{ paddingRight: '42px' }}
+                    />
+                    <button
+                      type="button"
+                      className="eye-btn"
+                      onClick={() => setShowPassword(v => !v)}
+                      tabIndex={-1}
+                      aria-label={showPassword ? 'Ocultar' : 'Ver'}
+                    >
+                      {showPassword ? '🙈' : '👁️'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="inp-group">
+                  <label>Confirmar Contraseña</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                      style={{ paddingRight: '42px' }}
+                    />
+                    <button
+                      type="button"
+                      className="eye-btn"
+                      onClick={() => setShowConfirmPassword(v => !v)}
+                      tabIndex={-1}
+                      aria-label={showConfirmPassword ? 'Ocultar' : 'Ver'}
+                    >
+                      {showConfirmPassword ? '🙈' : '👁️'}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: '10px', color: isPasswordMatch ? 'var(--green)' : 'var(--red)', marginTop: '4px', fontWeight: '500' }}>
+                    {confirmPassword === '' ? '⚪ Repite la contraseña' : isPasswordMatch ? '🟢 Las contraseñas coinciden' : '❌ Las contraseñas no coinciden'}
+                  </div>
                 </div>
 
                 {/* PASSWORD CHECKLIST */}
@@ -499,6 +707,132 @@ export default function PersonalPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* --- OTP EMAIL VERIFICATION MODAL (portal → body) --- */}
+      {showOtpModal && typeof document !== 'undefined' && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(46,26,10,0.55)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+          }}
+        >
+          <div
+            style={{
+              background: 'white',
+              borderRadius: '24px',
+              padding: '36px 32px',
+              width: '400px',
+              maxWidth: '92vw',
+              textAlign: 'center',
+              boxShadow: '0 20px 60px rgba(138,95,26,0.22), 0 0 0 1.5px rgba(176,125,46,0.18)',
+              animation: 'popIn 0.3s cubic-bezier(0.34,1.56,0.64,1)',
+            }}
+          >
+            <div style={{ fontSize: '52px', marginBottom: '10px' }}>📨</div>
+            <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: '22px', color: 'var(--text)', marginBottom: '6px' }}>
+              Verificar Correo
+            </div>
+            <p style={{ fontSize: '12.5px', color: 'var(--text-3)', marginBottom: '22px', lineHeight: '1.6' }}>
+              Ingresa el código de 6 dígitos enviado a<br />
+              <strong style={{ color: 'var(--text)', fontSize: '13px' }}>{email}</strong>
+            </p>
+
+            <form onSubmit={handleVerifyOtp}>
+              <div style={{ marginBottom: '10px' }}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="_ _ _ _ _ _"
+                  value={otpCode}
+                  onChange={(e) => { setOtpCode(e.target.value.replace(/\D/g, '')); setOtpError(false); }}
+                  autoFocus
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '16px 20px',
+                    background: otpError ? 'rgba(192,72,58,0.04)' : 'rgba(255,255,255,0.9)',
+                    border: `2px solid ${otpError ? 'var(--red)' : 'var(--border)'}`,
+                    borderRadius: '14px',
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '28px',
+                    fontWeight: '800',
+                    color: 'var(--text)',
+                    textAlign: 'center',
+                    letterSpacing: '12px',
+                    outline: 'none',
+                    transition: 'all 0.2s',
+                    animation: otpError ? 'shake 0.35s ease' : 'none',
+                  }}
+                />
+                {otpError && (
+                  <p style={{ fontSize: '11px', color: 'var(--red)', fontWeight: '600', marginTop: '8px' }}>
+                    ❌ Código incorrecto. Inténtalo de nuevo.
+                  </p>
+                )}
+              </div>
+
+              <div style={{ marginBottom: '20px', minHeight: '20px' }}>
+                {otpResendTimer > 0 ? (
+                  <span style={{ fontSize: '12px', color: 'var(--text-3)', fontWeight: '500' }}>
+                    Reenviar en <strong style={{ color: 'var(--accent)' }}>{otpResendTimer}s</strong>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    style={{ background: 'none', border: 'none', fontSize: '12px', color: 'var(--accent)', fontWeight: '700', cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    ¿No recibiste el código? Reenviar
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowOtpModal(false)}
+                  style={{
+                    flex: 1, padding: '12px', borderRadius: '12px',
+                    border: '1.5px solid var(--border)', background: 'var(--bg-card2)',
+                    fontFamily: 'Inter, sans-serif', fontSize: '13.5px', fontWeight: '600',
+                    color: 'var(--text-2)', cursor: 'pointer',
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={otpCode.length !== 6}
+                  style={{
+                    flex: 1, padding: '12px', borderRadius: '12px',
+                    border: 'none',
+                    background: otpCode.length === 6
+                      ? 'linear-gradient(135deg, var(--accent), var(--accent-dark))'
+                      : 'var(--border)',
+                    fontFamily: 'Inter, sans-serif', fontSize: '13.5px', fontWeight: '700',
+                    color: 'white', cursor: otpCode.length === 6 ? 'pointer' : 'not-allowed',
+                    opacity: otpCode.length === 6 ? 1 : 0.6,
+                    transition: 'all 0.2s',
+                    boxShadow: otpCode.length === 6 ? '0 4px 14px rgba(176,125,46,0.3)' : 'none',
+                  }}
+                >
+                  Confirmar →
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* --- ROLE CREATION & EDIT MODAL --- */}

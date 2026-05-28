@@ -9,6 +9,8 @@ export default function RecoveryPage() {
   
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -56,8 +58,20 @@ export default function RecoveryPage() {
 
       <div className="login-container" style={{ gridTemplateColumns: '1fr', maxWidth: '480px' }}>
         <div className="login-right" style={{ padding: '40px' }}>
-          <div className="lr-title">Restablecer Contraseña</div>
-          <p className="lr-sub">Configura tu nueva contraseña segura en la nube</p>
+          {/* Brand Header */}
+          <div className="mobile-brand-header" style={{ display: 'flex' }}>
+            <img 
+              src="/asset/logo.png" 
+              alt="Logo Snack Roque" 
+              className="mobile-bread-icon" 
+              onError={(e) => { (e.target as HTMLImageElement).src = "https://cdn-icons-png.flaticon.com/512/992/992747.png"; }} 
+            />
+            <span className="mobile-brand-title">Snack Roque</span>
+            <span className="mobile-brand-subtitle">Panadería &amp; Pastelería</span>
+          </div>
+
+          <div className="lr-title" style={{ marginTop: '16px', textAlign: 'center' }}>Restablecer Contraseña</div>
+          <p className="lr-sub" style={{ textAlign: 'center', marginBottom: '24px' }}>Configura tu nueva contraseña segura en la nube</p>
 
           {successMsg && (
             <div style={{ background: 'var(--green-bg)', color: 'var(--green)', padding: '12px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px', fontWeight: '600' }}>
@@ -77,12 +91,21 @@ export default function RecoveryPage() {
               <div className="inp-wrap">
                 <span className="inp-icon">🔐</span>
                 <input 
-                  type="password" 
+                  type={showNewPassword ? 'text' : 'password'}
                   placeholder="••••••••" 
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   required 
                 />
+                <button
+                  type="button"
+                  className="eye-btn"
+                  onClick={() => setShowNewPassword(v => !v)}
+                  tabIndex={-1}
+                  aria-label={showNewPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                >
+                  {showNewPassword ? '🙈' : '👁️'}
+                </button>
               </div>
             </div>
 
@@ -91,12 +114,21 @@ export default function RecoveryPage() {
               <div className="inp-wrap">
                 <span className="inp-icon">🔐</span>
                 <input 
-                  type="password" 
+                  type={showConfirmPassword ? 'text' : 'password'}
                   placeholder="••••••••" 
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required 
                 />
+                <button
+                  type="button"
+                  className="eye-btn"
+                  onClick={() => setShowConfirmPassword(v => !v)}
+                  tabIndex={-1}
+                  aria-label={showConfirmPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                >
+                  {showConfirmPassword ? '🙈' : '👁️'}
+                </button>
               </div>
             </div>
 

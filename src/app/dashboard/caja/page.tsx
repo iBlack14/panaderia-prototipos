@@ -178,26 +178,18 @@ export default function ControlCajaPage() {
 
   // --- REPORTE DE AUDITORÍA MULTITURNO (ADMINISTRADOR) ---
   const auditReports = useMemo(() => {
-    const defaultHistory: CashHistoryRecord[] = [
-      { id: 101, date: '25/05/2026', cajero: 'Carlos Mendoza', turno: 'Mañana', fec_apertura: '06:00', fec_cierre: '14:02', monto_inicial: 100, monto_final: 420, ventas_efectivo: 320, ventas_otros: 180, diferencia: 0, estado: 'cerrado', observaciones: 'Cuadre perfecto. Sin novedades.' },
-      { id: 102, date: '25/05/2026', cajero: 'María Sánchez', turno: 'Tarde', fec_apertura: '14:15', fec_cierre: '22:05', monto_inicial: 150, monto_final: 685, ventas_efectivo: 540, ventas_otros: 310, diferencia: -5, estado: 'cerrado', observaciones: 'Faltaron S/. 5.00 en gaveta. Posible error al dar vuelto en hora punta.' },
-      { id: 103, date: '24/05/2026', cajero: 'Carlos Mendoza', turno: 'Mañana', fec_apertura: '06:00', fec_cierre: '14:00', monto_inicial: 100, monto_final: 395, ventas_efectivo: 290, ventas_otros: 120, diferencia: 5, estado: 'cerrado', observaciones: 'Sobraron S/. 5.00. Cliente se retiró antes de recibir su sencillo completo.' },
-      { id: 104, date: '24/05/2026', cajero: 'María Sánchez', turno: 'Tarde', fec_apertura: '14:05', fec_cierre: '22:00', monto_inicial: 100, monto_final: 710, ventas_efectivo: 610, ventas_otros: 280, diferencia: 0, estado: 'cerrado', observaciones: 'Cierre del día cuadrado.' }
-    ];
-
-    const finalHistory = cashHistory.length > 0 ? cashHistory : defaultHistory;
+    // Sin datos demo — solo historial real
+    const finalHistory = cashHistory;
 
     // Métricas por cajero
     const cajeroMetrics: Record<string, { totalVendido: number; discrepanciaTotal: number; turnosOperados: number }> = {};
     
-    // Métricas por turno (basadas dinámicamente en los turnos registrados)
+    // Métricas por turno
     const shiftMetrics: Record<string, { totalVendido: number; transacciones: number }> = {};
     
     shiftsList.forEach(s => {
       shiftMetrics[s.id] = { totalVendido: 0, transacciones: 0 };
     });
-    
-    // Añadimos comodín para turnos administrativos
     shiftMetrics['Administrativo'] = { totalVendido: 0, transacciones: 0 };
 
     finalHistory.forEach(h => {
@@ -206,7 +198,6 @@ export default function ControlCajaPage() {
       const ventaTotal = h.ventas_efectivo + h.ventas_otros;
       const disc = h.diferencia || 0;
 
-      // Por Cajero
       if (!cajeroMetrics[cajero]) {
         cajeroMetrics[cajero] = { totalVendido: 0, discrepanciaTotal: 0, turnosOperados: 0 };
       }
@@ -214,7 +205,6 @@ export default function ControlCajaPage() {
       cajeroMetrics[cajero].discrepanciaTotal += disc;
       cajeroMetrics[cajero].turnosOperados += 1;
 
-      // Por Turno (dinámico)
       if (!shiftMetrics[turno]) {
         shiftMetrics[turno] = { totalVendido: 0, transacciones: 0 };
       }
@@ -456,6 +446,12 @@ export default function ControlCajaPage() {
                     🧑‍💼 Flujo de Ventas por Colaborador ({reportTimeframe === 'diario' ? 'Hoy' : 'Este Mes'})
                   </span>
                   
+                  {Object.keys(auditReports.cajeroMetrics).length === 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 0', gap: '8px', color: 'var(--text-3)' }}>
+                      <span style={{ fontSize: '28px', opacity: 0.35 }}>🧑‍💼</span>
+                      <span style={{ fontSize: '12px', fontWeight: '600' }}>Sin cierres registrados aún</span>
+                    </div>
+                  ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {Object.keys(auditReports.cajeroMetrics).map((cajero) => {
                       const m = auditReports.cajeroMetrics[cajero];
@@ -477,7 +473,6 @@ export default function ControlCajaPage() {
                               </div>
                             </div>
                           </div>
-
                           <div style={{ textAlign: 'right' }}>
                             <div style={{ fontWeight: '800', color: 'var(--green)', fontSize: '13px' }}>
                               S/. {totalVentas.toFixed(2)}
@@ -490,36 +485,34 @@ export default function ControlCajaPage() {
                       );
                     })}
                   </div>
+                  )}
                 </div>
 
                 {/* Rendimiento por Turno */}
                 <div>
                   <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-3)', textTransform: 'uppercase', display: 'block', marginBottom: '10px' }}>
-                    🌅 Rendimiento Comparativo por Turno (Gráfico de Barras)
+                    🌅 Rendimiento Comparativo por Turno
                   </span>
 
+                  {Object.values(auditReports.shiftMetrics).every(m => m.totalVendido === 0) ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 0', gap: '8px', color: 'var(--text-3)' }}>
+                      <span style={{ fontSize: '28px', opacity: 0.35 }}>📊</span>
+                      <span style={{ fontSize: '12px', fontWeight: '600' }}>Sin datos de turnos aún</span>
+                    </div>
+                  ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '6px' }}>
                     {Object.keys(auditReports.shiftMetrics).map((turno) => {
                       const m = auditReports.shiftMetrics[turno];
                       const factor = reportTimeframe === 'diario' ? 0.35 : 1;
                       const totalVendido = m.totalVendido * factor;
-                      
-                      // Emojis y colores dinámicos por turno
                       const sObj = shiftsList.find(s => s.id === turno) || (turno === 'Administrativo' ? { emoji: '💼', color: '#4f46e5' } : { emoji: '⏰', color: 'var(--text-3)' });
-                      
-                      // Cálculo matemático real del porcentaje del gráfico
                       const maxVal = Math.max(...Object.values(auditReports.shiftMetrics).map(sm => sm.totalVendido * factor)) || 1;
                       const pct = Math.max(8, (totalVendido / maxVal) * 100);
-
                       return (
                         <div key={turno} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                            <span style={{ fontWeight: '700', color: 'var(--text)' }}>
-                              {sObj.emoji} Turno {turno}
-                            </span>
-                            <strong style={{ color: 'var(--text)' }}>
-                              S/. {totalVendido.toFixed(2)}
-                            </strong>
+                            <span style={{ fontWeight: '700', color: 'var(--text)' }}>{sObj.emoji} Turno {turno}</span>
+                            <strong style={{ color: 'var(--text)' }}>S/. {totalVendido.toFixed(2)}</strong>
                           </div>
                           <div style={{ height: '6px', background: 'var(--bg)', borderRadius: '3px', width: '100%' }}>
                             <div style={{ height: '100%', width: `${pct}%`, background: sObj.color, borderRadius: '3px', transition: 'width 0.4s ease' }}></div>
@@ -528,9 +521,10 @@ export default function ControlCajaPage() {
                       );
                     })}
                   </div>
+                  )}
 
                   <div style={{ marginTop: '16px', background: 'rgba(79,70,229,0.03)', border: '1.5px dashed var(--accent)', padding: '10px', borderRadius: '10px', fontSize: '11px', color: 'var(--text-2)', lineHeight: '1.4' }}>
-                    💡 <strong>Consejo de Cuadre:</strong> Puedes configurar nuevos turnos operativos para tu personal en la pestaña de <strong>Configurar Turnos</strong> del panel superior.
+                    💡 <strong>Consejo:</strong> Configura los turnos de tu personal en la pestaña <strong>Configurar Turnos</strong>.
                   </div>
                 </div>
               </div>
@@ -556,7 +550,17 @@ export default function ControlCajaPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {auditReports.history.map((h, idx) => {
+                  {auditReports.history.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: 'center', padding: '40px 20px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', color: 'var(--text-3)' }}>
+                          <span style={{ fontSize: '36px', opacity: 0.35 }}>📋</span>
+                          <span style={{ fontSize: '13px', fontWeight: '600' }}>Sin cierres de caja registrados</span>
+                          <span style={{ fontSize: '11.5px', fontWeight: '400' }}>Los cierres de turno aparecerán aquí automáticamente</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : auditReports.history.map((h, idx) => {
                     const diff = h.diferencia !== undefined ? h.diferencia : 0;
                     const isPerfect = diff === 0;
                     const matchedShift = shiftsList.find(s => s.id === h.turno);

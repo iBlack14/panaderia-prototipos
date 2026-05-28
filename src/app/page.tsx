@@ -11,35 +11,62 @@ export default function LoginPage() {
   // --- FORM STATES ---
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  
+  const [showPassword, setShowPassword] = useState(false);
+
   // Recovery states
   const [showRecovery, setShowRecovery] = useState(false);
-  const [recUsername, setRecUsername] = useState('');
   const [recEmail, setRecEmail] = useState('');
+  const [recEmailValid, setRecEmailValid] = useState<boolean | null>(null);
   const [isVerified, setIsVerified] = useState(false);
   const [verifiedUserId, setVerifiedUserId] = useState<number | string | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [recoverySent, setRecoverySent] = useState(false);
 
-  // Security Captcha states
-  const [captchaNum1, setCaptchaNum1] = useState(0);
-  const [captchaNum2, setCaptchaNum2] = useState(0);
-  const [captchaAnswer, setCaptchaAnswer] = useState('');
-  const [captchaError, setCaptchaError] = useState(false);
+  // OTP states
+  const [otpStep, setOtpStep] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [otpError, setOtpError] = useState(false);
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpResendTimer, setOtpResendTimer] = useState(0);
 
-  const generateCaptcha = () => {
-    setCaptchaNum1(Math.floor(Math.random() * 9) + 1);
-    setCaptchaNum2(Math.floor(Math.random() * 9) + 1);
-    setCaptchaAnswer('');
-    setCaptchaError(false);
+  const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  const handleEmailChange = (val: string) => {
+    setRecEmail(val);
+    setRecEmailValid(val.length > 0 ? validateEmail(val) : null);
+  };
+
+  const startResendTimer = () => {
+    setOtpResendTimer(60);
+    const interval = setInterval(() => {
+      setOtpResendTimer(prev => {
+        if (prev <= 1) { clearInterval(interval); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const generateAndSendOtp = () => {
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    setGeneratedOtp(code);
+    setOtpCode('');
+    setOtpError(false);
+    // En modo offline simulamos el envío mostrando el código en consola
+    console.log(`[OTP Simulado] Código para ${recEmail}: ${code}`);
+    return code;
   };
 
   const handleOpenRecovery = () => {
     setShowRecovery(true);
     setIsVerified(false);
     setRecoverySent(false);
-    generateCaptcha();
+    setOtpStep(false);
+    setRecEmail('');
+    setRecEmailValid(null);
   };
 
   // Multi-role selection step
@@ -73,28 +100,46 @@ export default function LoginPage() {
     }
   };
 
-  const handleRecoverySubmit = async (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!recEmail) return;
+    if (!recEmail || !recEmailValid) return;
 
-    if (parseInt(captchaAnswer) !== (captchaNum1 + captchaNum2)) {
-      setCaptchaError(true);
-      generateCaptcha();
-      return;
-    }
+    setOtpSending(true);
 
-    setCaptchaError(false);
     const res = await sendRecoveryEmail(recEmail);
     if (res && res.success) {
       if (res.online) {
+        // Supabase envía el correo real
         setRecoverySent(true);
       } else {
-        setIsVerified(true);
+        // Modo offline: generamos OTP simulado
+        generateAndSendOtp();
+        setOtpStep(true);
+        startResendTimer();
         if (res.userId !== undefined) {
           setVerifiedUserId(res.userId);
         }
       }
     }
+    setOtpSending(false);
+  };
+
+  const handleVerifyOtp = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otpCode === generatedOtp) {
+      setOtpError(false);
+      setIsVerified(true);
+      setOtpStep(false);
+    } else {
+      setOtpError(true);
+      setOtpCode('');
+    }
+  };
+
+  const handleResendOtp = () => {
+    if (otpResendTimer > 0) return;
+    generateAndSendOtp();
+    startResendTimer();
   };
 
   const handleResetSubmit = (e: React.FormEvent) => {
@@ -156,17 +201,29 @@ export default function LoginPage() {
           {/* STEP 1: LOGIN FORM */}
           {!roleStep && !showRecovery && (
             <div>
+              {/* Responsive Brand Header (visible on mobile/tablet when left panel is hidden) */}
+              <div className="mobile-brand-header">
+                <img 
+                  src="/asset/logo.png" 
+                  alt="Logo Snack Roque" 
+                  className="mobile-bread-icon" 
+                  onError={(e) => { (e.target as HTMLImageElement).src = "https://cdn-icons-png.flaticon.com/512/992/992747.png"; }} 
+                />
+                <span className="mobile-brand-title">Snack Roque</span>
+                <span className="mobile-brand-subtitle">Panadería &amp; Pastelería</span>
+              </div>
+
               <div className="lr-title">Bienvenido de vuelta</div>
               <p className="lr-sub">Accede a tu estación de trabajo</p>
               
               <form onSubmit={handleLoginSubmit}>
                 <div className="inp-group">
-                  <label>Usuario</label>
+                  <label>Usuario o Correo</label>
                   <div className="inp-wrap">
-                    <span className="inp-icon">👤</span>
+                    <span className="inp-icon">{username.includes('@') ? '📧' : '👤'}</span>
                     <input 
                       type="text" 
-                      placeholder="Ej: admin" 
+                      placeholder="Ej: admin o correo@snackroque.com" 
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       required 
@@ -179,12 +236,21 @@ export default function LoginPage() {
                   <div className="inp-wrap">
                     <span className="inp-icon">🔐</span>
                     <input 
-                      type="password" 
+                      type={showPassword ? 'text' : 'password'}
                       placeholder="••••••••" 
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required 
                     />
+                    <button
+                      type="button"
+                      className="eye-btn"
+                      onClick={() => setShowPassword(v => !v)}
+                      tabIndex={-1}
+                      aria-label={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                    >
+                      {showPassword ? '🙈' : '👁️'}
+                    </button>
                   </div>
                 </div>
 
@@ -246,9 +312,22 @@ export default function LoginPage() {
           {/* STEP 3: PASSWORD RECOVERY VIEW */}
           {showRecovery && !isVerified && (
             <div>
-              <button className="btn-back-sm" onClick={() => { setShowRecovery(false); setRecoverySent(false); }}>← Volver al login</button>
-              <div className="lr-title">Recuperar Acceso</div>
+              <button className="btn-back-sm" onClick={() => { setShowRecovery(false); setRecoverySent(false); setOtpStep(false); }}>← Volver al login</button>
               
+              {/* Responsive Brand Header */}
+              <div className="mobile-brand-header">
+                <img 
+                  src="/asset/logo.png" 
+                  alt="Logo Snack Roque" 
+                  className="mobile-bread-icon" 
+                  onError={(e) => { (e.target as HTMLImageElement).src = "https://cdn-icons-png.flaticon.com/512/992/992747.png"; }} 
+                />
+                <span className="mobile-brand-title">Snack Roque</span>
+                <span className="mobile-brand-subtitle">Panadería &amp; Pastelería</span>
+              </div>
+
+              <div className="lr-title">Recuperar Acceso</div>
+
               {recoverySent ? (
                 <div style={{ marginTop: '20px', textAlign: 'center' }}>
                   <div style={{ fontSize: '48px', marginBottom: '16px' }}>📧</div>
@@ -265,47 +344,110 @@ export default function LoginPage() {
                     Volver al inicio de sesión
                   </button>
                 </div>
-              ) : (
+              ) : !otpStep ? (
+                /* SUB-STEP A: Ingresar correo */
                 <>
-                  <p className="lr-sub">Verifica tus datos de personal</p>
-                  <form onSubmit={handleRecoverySubmit}>
+                  <p className="lr-sub">Ingresa tu correo registrado y te enviaremos un código de verificación</p>
+                  <form onSubmit={handleSendOtp}>
                     <div className="inp-group">
                       <label>Correo Electrónico</label>
-                      <div className="inp-wrap">
+                      <div className={`inp-wrap ${recEmailValid === false ? 'inp-error' : recEmailValid === true ? 'inp-ok' : ''}`}>
                         <span className="inp-icon">📧</span>
                         <input 
                           type="email" 
-                          placeholder="correo@snackroque.com" 
+                          placeholder="correo@ejemplo.com" 
                           value={recEmail}
-                          onChange={(e) => setRecEmail(e.target.value)}
+                          onChange={(e) => handleEmailChange(e.target.value)}
                           required 
                         />
+                        {recEmailValid === true && <span className="inp-status-icon">✅</span>}
+                        {recEmailValid === false && <span className="inp-status-icon">❌</span>}
                       </div>
-                    </div>
-
-                    <div className="inp-group" style={{ marginBottom: '20px' }}>
-                      <label>Verificación de Seguridad</label>
-                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', background: 'rgba(0,0,0,0.02)', padding: '10px', borderRadius: '10px', border: '1.5px solid var(--border)' }}>
-                        <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-1)', padding: '0 8px', letterSpacing: '0.5px', userSelect: 'none' }}>
-                          ¿Cuánto es {captchaNum1} + {captchaNum2}?
+                      {recEmailValid === true && (
+                        <span style={{ fontSize: '11px', color: 'var(--green)', fontWeight: '600', marginTop: '5px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }}></span>
+                          Correo válido
                         </span>
-                        <input 
-                          type="number" 
-                          placeholder="Tu respuesta" 
-                          value={captchaAnswer}
-                          onChange={(e) => setCaptchaAnswer(e.target.value)}
-                          style={{ flex: 1, padding: '8px 12px', border: '1.5px solid var(--border)', borderRadius: '8px', fontSize: '13px', outline: 'none', background: 'var(--bg-card)', color: 'var(--text-1)' }}
-                          required 
-                        />
-                      </div>
-                      {captchaError && (
-                        <span style={{ fontSize: '11px', color: 'var(--red)', fontWeight: '600', marginTop: '6px', display: 'block' }}>
-                          ❌ El resultado es incorrecto. Inténtalo de nuevo.
+                      )}
+                      {recEmailValid === false && (
+                        <span style={{ fontSize: '11px', color: 'var(--red)', fontWeight: '600', marginTop: '5px', display: 'block' }}>
+                          Ingresa un correo electrónico válido
                         </span>
                       )}
                     </div>
 
-                    <button type="submit" className="btn-enter">Verificar datos →</button>
+                    <button 
+                      type="submit" 
+                      className="btn-enter"
+                      disabled={!recEmailValid || otpSending}
+                      style={{ opacity: recEmailValid ? 1 : 0.6, cursor: recEmailValid ? 'pointer' : 'not-allowed' }}
+                    >
+                      {otpSending ? 'Enviando código...' : 'Enviar código de verificación →'}
+                    </button>
+                  </form>
+                </>
+              ) : (
+                /* SUB-STEP B: Ingresar OTP */
+                <>
+                  <p className="lr-sub">
+                    Ingresa el código de 6 dígitos enviado a <strong>{recEmail}</strong>
+                  </p>
+                  <form onSubmit={handleVerifyOtp}>
+                    <div className="inp-group">
+                      <label>Código de Verificación</label>
+                      <div className="otp-wrap">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          placeholder="_ _ _ _ _ _"
+                          value={otpCode}
+                          onChange={(e) => { setOtpCode(e.target.value.replace(/\D/g, '')); setOtpError(false); }}
+                          className={`otp-input${otpError ? ' otp-input-error' : ''}`}
+                          autoFocus
+                          required
+                        />
+                      </div>
+                      {otpError && (
+                        <span style={{ fontSize: '11px', color: 'var(--red)', fontWeight: '600', marginTop: '6px', display: 'block' }}>
+                          ❌ Código incorrecto. Inténtalo de nuevo.
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+                      {otpResendTimer > 0 ? (
+                        <span style={{ fontSize: '12px', color: 'var(--text-3)', fontWeight: '500' }}>
+                          Reenviar código en <strong style={{ color: 'var(--accent)' }}>{otpResendTimer}s</strong>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleResendOtp}
+                          style={{ background: 'none', border: 'none', fontSize: '12px', color: 'var(--accent)', fontWeight: '700', cursor: 'pointer', textDecoration: 'underline' }}
+                        >
+                          ¿No recibiste el código? Reenviar
+                        </button>
+                      )}
+                    </div>
+
+                    <button 
+                      type="submit" 
+                      className="btn-enter"
+                      disabled={otpCode.length !== 6}
+                      style={{ opacity: otpCode.length === 6 ? 1 : 0.6, cursor: otpCode.length === 6 ? 'pointer' : 'not-allowed' }}
+                    >
+                      Verificar código →
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn-back-sm"
+                      onClick={() => { setOtpStep(false); setOtpCode(''); setOtpError(false); }}
+                      style={{ width: '100%', justifyContent: 'center', marginTop: '10px' }}
+                    >
+                      ← Cambiar correo
+                    </button>
                   </form>
                 </>
               )}
@@ -324,12 +466,21 @@ export default function LoginPage() {
                   <div className="inp-wrap">
                     <span className="inp-icon">🔐</span>
                     <input 
-                      type="password" 
+                      type={showNewPassword ? 'text' : 'password'}
                       placeholder="Mínimo 8 caracteres, 1 número, 1 símbolo" 
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       required 
                     />
+                    <button
+                      type="button"
+                      className="eye-btn"
+                      onClick={() => setShowNewPassword(v => !v)}
+                      tabIndex={-1}
+                      aria-label={showNewPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                    >
+                      {showNewPassword ? '🙈' : '👁️'}
+                    </button>
                   </div>
                 </div>
 
@@ -338,12 +489,21 @@ export default function LoginPage() {
                   <div className="inp-wrap">
                     <span className="inp-icon">🔐</span>
                     <input 
-                      type="password" 
+                      type={showConfirmPassword ? 'text' : 'password'}
                       placeholder="Repite la contraseña" 
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       required 
                     />
+                    <button
+                      type="button"
+                      className="eye-btn"
+                      onClick={() => setShowConfirmPassword(v => !v)}
+                      tabIndex={-1}
+                      aria-label={showConfirmPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                    >
+                      {showConfirmPassword ? '🙈' : '👁️'}
+                    </button>
                   </div>
                 </div>
 

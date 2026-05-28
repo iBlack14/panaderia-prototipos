@@ -364,6 +364,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
               estado: 'cerrado'
             })));
           }
+
+          // 6. Colaboradores / Perfiles de Usuario
+          const { data: profs } = await supabase.from('profiles').select('*, roles(nombre)');
+          if (profs) {
+            setUsersList((profs as any[]).map(p => ({
+              id: p.id,
+              u: p.username,
+              p: '••••', // Contraseña oculta en la nube
+              n: p.nombre + ' ' + (p.apellido_paterno || ''),
+              rs: [p.roles?.nombre || 'Cajero'],
+              st: p.estado,
+              email: p.correo,
+              phone: p.num_telefono || ''
+            })));
+          }
           
         } catch (err) {
           console.error('Error cargando datos de Supabase', err);
@@ -412,8 +427,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const login = async (uIn: string, pIn: string) => {
     if (isSupabaseConfigured && supabase) {
       try {
+        let emailToUse = uIn;
+
+        // Si es un nombre de usuario (no contiene @), buscamos su correo en la tabla public.profiles
+        if (!uIn.includes('@')) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('correo')
+            .eq('username', uIn)
+            .maybeSingle();
+
+          if (profile && profile.correo) {
+            emailToUse = profile.correo;
+          } else {
+            // Fallback por defecto si no lo encuentra en perfiles
+            emailToUse = `${uIn}@snackroque.com`;
+          }
+        }
+
         const { data, error } = await supabase.auth.signInWithPassword({
-          email: uIn.includes('@') ? uIn : `${uIn}@snackroque.com`,
+          email: emailToUse,
           password: pIn,
         });
         if (error) throw error;
@@ -444,7 +477,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     } else {
       // Login offline
-      const found = usersList.find(x => x.u === uIn && x.p === pIn && x.st === 'act');
+      const found = usersList.find(x => (x.u === uIn || x.email === uIn) && x.p === pIn && x.st === 'act');
       if (found) {
         setUser(found);
         setRole(found.rs[0]);
@@ -755,25 +788,99 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // --- CRUD GESTION USUARIOS ---
-  const saveUser = (uObj: any) => {
-    let updated;
-    if (uObj.id) {
-      updated = usersList.map(u => u.id === uObj.id ? { ...u, ...uObj } : u);
-      toast('👤 Colaborador actualizado');
+  const saveUser = async (uObj: any) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        if (uObj.id) {
+          // Obtener ID del rol correspondiente
+          let idRol = 2; // Cajero por defecto
+          if (uObj.role === 'Administrador') idRol = 1;
+          else if (uObj.role === 'Panadero') idRol = 3;
+
+          const { error } = await supabase.from('profiles').update({
+            username: uObj.u,
+            nombre: uObj.n.split(' ')[0] || uObj.n,
+            apellido_paterno: uObj.n.split(' ').slice(1).join(' ') || '',
+            correo: uObj.email,
+            num_telefono: uObj.phone,
+            id_rol: idRol
+          }).eq('id', uObj.id);
+
+          if (error) throw error;
+          toast('👤 Colaborador actualizado en la nube');
+        } else {
+          toast('⚠️ Los nuevos colaboradores se registran en la nube al iniciar sesión por primera vez.');
+        }
+
+        // Recargar lista desde Supabase
+        const { data: profs } = await supabase.from('profiles').select('*, roles(nombre)');
+        if (profs) {
+          setUsersList((profs as any[]).map(p => ({
+            id: p.id,
+            u: p.username,
+            p: '••••',
+            n: p.nombre + ' ' + (p.apellido_paterno || ''),
+            rs: [p.roles?.nombre || 'Cajero'],
+            st: p.estado,
+            email: p.correo,
+            phone: p.num_telefono || ''
+          })));
+        }
+      } catch (err: any) {
+        toast(`❌ Error en la nube: ${err.message}`);
+      }
     } else {
-      const newUser = { ...uObj, id: Date.now(), st: 'act', rs: [uObj.role] };
-      updated = [...usersList, newUser];
-      toast('👤 Colaborador registrado');
+      let updated;
+      if (uObj.id) {
+        updated = usersList.map(u => u.id === uObj.id ? { ...u, ...uObj } : u);
+        toast('👤 Colaborador actualizado');
+      } else {
+        const newUser = { ...uObj, id: Date.now(), st: 'act', rs: [uObj.role] };
+        updated = [...usersList, newUser];
+        toast('👤 Colaborador registrado');
+      }
+      setUsersList(updated);
+      saveOffline('snack_users', updated);
     }
-    setUsersList(updated);
-    saveOffline('snack_users', updated);
   };
 
-  const toggleUserStatus = (userId: number | string) => {
-    const updated = usersList.map(u => u.id === userId ? { ...u, st: u.st === 'act' ? 'ina' : 'act' } : u);
-    setUsersList(updated);
-    saveOffline('snack_users', updated);
-    toast('👤 Estado de usuario actualizado');
+  const toggleUserStatus = async (userId: number | string) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const u = usersList.find(x => x.id === userId);
+        if (!u) return;
+        const newSt = u.st === 'act' ? 'ina' : 'act';
+
+        const { error } = await supabase.from('profiles').update({
+          estado: newSt
+        }).eq('id', userId);
+
+        if (error) throw error;
+        toast('👤 Estado de usuario actualizado en la nube');
+
+        // Recargar lista desde Supabase
+        const { data: profs } = await supabase.from('profiles').select('*, roles(nombre)');
+        if (profs) {
+          setUsersList((profs as any[]).map(p => ({
+            id: p.id,
+            u: p.username,
+            p: '••••',
+            n: p.nombre + ' ' + (p.apellido_paterno || ''),
+            rs: [p.roles?.nombre || 'Cajero'],
+            st: p.estado,
+            email: p.correo,
+            phone: p.num_telefono || ''
+          })));
+        }
+      } catch (err: any) {
+        toast(`❌ Error al cambiar estado: ${err.message}`);
+      }
+    } else {
+      const updated = usersList.map(u => u.id === userId ? { ...u, st: u.st === 'act' ? 'ina' : 'act' } : u);
+      setUsersList(updated);
+      saveOffline('snack_users', updated);
+      toast('👤 Estado de usuario actualizado');
+    }
   };
 
   // --- CRUD GESTION PROVEEDORES ---

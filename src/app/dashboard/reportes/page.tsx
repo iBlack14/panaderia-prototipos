@@ -6,66 +6,74 @@ import { useApp } from '@/context/AppContext';
 export default function ReportesEstadisticasPage() {
   const { sales } = useApp();
 
-  interface HistoryItem {
-    id: number | string;
-    n: number;
-    d: string;
-    t?: string;
-    cajero: string;
-    method: string;
-    total: number;
-    itemsStr?: string;
-    items?: { name: string; qty: number }[];
-    status?: string;
-  }
-
   const reportMetrics = useMemo(() => {
     const hasSales = sales.length > 0;
-    
-    // Cálculos reactivos
+
     const tv = sales.reduce((a, b) => a + b.total, 0);
     const tr = sales.length;
     const un = sales.reduce((a, b) => a + b.items.reduce((acc, i) => acc + i.qty, 0), 0);
-    const av = tr > 0 ? (tv / tr) : 0;
+    const av = tr > 0 ? tv / tr : 0;
 
-    // Métricas
-    const tvStr = hasSales ? `S/. ${tv.toFixed(2)}` : 'S/. 5,284.00';
-    const trStr = hasSales ? String(tr) : '214';
-    const unStr = hasSales ? String(un) : '863';
-    const avStr = hasSales ? `S/. ${av.toFixed(2)}` : 'S/. 24.69';
+    // Historial completo (más reciente primero)
+    const historyList = [...sales].reverse().map(s => ({
+      id: s.id,
+      n: s.n,
+      d: s.d,
+      t: s.t,
+      cajero: s.cajero,
+      method: s.method,
+      total: s.total,
+      items: s.items.map(i => ({ name: i.name, qty: i.qty })),
+    }));
 
-    // Historial
-    let historyList: HistoryItem[] = [];
-    if (hasSales) {
-      historyList = [...sales].reverse().map(s => ({
-        id: s.id,
-        n: s.n,
-        d: s.d,
-        t: s.t,
-        cajero: s.cajero,
-        method: s.method,
-        total: s.total,
-        items: s.items.map(item => ({ name: item.name, qty: item.qty })),
-        status: 'Pagado'
-      }));
-    } else {
-      historyList = [
-        { id: 1, n: 538, d: 'Lun 14/05', cajero: 'Carlos Mendoza', method: 'Efectivo', total: 22.00, itemsStr: 'Pan de yema ×4, Alfajor ×2', status: 'Pagado' },
-        { id: 2, n: 539, d: 'Lun 14/05', cajero: 'María Sánchez', method: 'Yape', total: 57.50, itemsStr: 'Torta ×1, Croissant ×3', status: 'Pagado' },
-        { id: 3, n: 540, d: 'Mar 15/05', cajero: 'Carlos Mendoza', method: 'Tarjeta', total: 38.00, itemsStr: 'Empanada ×6, Café ×2', status: 'Pagado' },
-        { id: 4, n: 541, d: 'Mar 15/05', cajero: 'María Sánchez', method: 'Efectivo', total: 31.00, itemsStr: 'Queque ×2, Pan especial ×5', status: 'Pagado' },
-        { id: 5, n: 542, d: 'Mié 16/05', cajero: 'Carlos Mendoza', method: 'Plin', total: 16.00, itemsStr: 'Bizcocho ×8', status: 'Pendiente' }
-      ];
-    }
+    // Ventas por día de la semana actual (Lun–Dom)
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0=Dom, 1=Lun...
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const weekDays = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() + mondayOffset + i);
+      return d.toLocaleDateString();
+    });
+    const dayLabels = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+    const weekTotals = weekDays.map(dateStr =>
+      sales.filter(s => s.d === dateStr).reduce((a, b) => a + b.total, 0)
+    );
+    const maxWeekTotal = Math.max(...weekTotals, 1);
+
+    // Ranking de productos (todas las ventas)
+    const productMap: Record<string, { name: string; qty: number; revenue: number }> = {};
+    sales.forEach(s => {
+      s.items.forEach(item => {
+        if (!productMap[item.name]) {
+          productMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
+        }
+        productMap[item.name].qty += item.qty;
+        productMap[item.name].revenue += item.price * item.qty;
+      });
+    });
+    const topProducts = Object.values(productMap)
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 4);
 
     return {
-      tvStr,
-      trStr,
-      unStr,
-      avStr,
-      historyList
+      hasSales,
+      tv, tr, un, av,
+      historyList,
+      weekTotals,
+      weekDays,
+      dayLabels,
+      maxWeekTotal,
+      topProducts,
     };
   }, [sales]);
+
+  const rankColors = [
+    'linear-gradient(135deg,#FBBF24,#F59E0B)',
+    'var(--bg-card2)',
+    'var(--bg-card2)',
+    'var(--bg-card2)',
+  ];
 
   return (
     <div className="screen active">
@@ -74,148 +82,176 @@ export default function ReportesEstadisticasPage() {
         <div className="stat-tile">
           <div className="st-header">
             <div className="st-icon ic-lav">💰</div>
-            <div className="st-delta d-up">↑ 8%</div>
+            <div className="st-delta" style={{ background: 'var(--bg)', color: 'var(--text-3)', fontSize: '10px', padding: '3px 9px', borderRadius: '20px', fontWeight: '700' }}>Total</div>
           </div>
-          <div className="st-val">{reportMetrics.tvStr}</div>
+          <div className="st-val">{reportMetrics.hasSales ? `S/. ${reportMetrics.tv.toFixed(2)}` : 'S/. 0.00'}</div>
           <div className="st-lbl">Ventas registradas</div>
         </div>
 
         <div className="stat-tile">
           <div className="st-header">
             <div className="st-icon ic-blush">🛒</div>
-            <div className="st-delta d-up">↑ 3%</div>
+            <div className="st-delta" style={{ background: 'var(--bg)', color: 'var(--text-3)', fontSize: '10px', padding: '3px 9px', borderRadius: '20px', fontWeight: '700' }}>Total</div>
           </div>
-          <div className="st-val">{reportMetrics.trStr}</div>
+          <div className="st-val">{reportMetrics.tr}</div>
           <div className="st-lbl">Transacciones</div>
         </div>
 
         <div className="stat-tile">
           <div className="st-header">
             <div className="st-icon ic-peach">📦</div>
-            <div className="st-delta d-up">↑ 11%</div>
+            <div className="st-delta" style={{ background: 'var(--bg)', color: 'var(--text-3)', fontSize: '10px', padding: '3px 9px', borderRadius: '20px', fontWeight: '700' }}>Total</div>
           </div>
-          <div className="st-val">{reportMetrics.unStr}</div>
+          <div className="st-val">{reportMetrics.un}</div>
           <div className="st-lbl">Unidades vendidas</div>
         </div>
 
         <div className="stat-tile">
           <div className="st-header">
             <div className="st-icon ic-mint">💳</div>
-            <div className="st-delta d-up">↑ 5%</div>
+            <div className="st-delta" style={{ background: 'var(--bg)', color: 'var(--text-3)', fontSize: '10px', padding: '3px 9px', borderRadius: '20px', fontWeight: '700' }}>Prom.</div>
           </div>
-          <div className="st-val">{reportMetrics.avStr}</div>
+          <div className="st-val">{reportMetrics.hasSales ? `S/. ${reportMetrics.av.toFixed(2)}` : '—'}</div>
           <div className="st-lbl">Ticket Promedio</div>
         </div>
       </div>
 
-      {/* GRAPH + TOP PRODUCTS RANKING */}
+      {/* GRAPH + RANKING */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '16px', marginBottom: '16px' }}>
-        
+
         {/* CHART PANEL */}
         <div className="panel">
           <div className="p-title">
             <span>Ventas por Día — Semana Actual</span>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button style={{ padding: '4px 14px', borderRadius: '20px', border: '1.5px solid var(--accent)', background: 'var(--accent-bg)', color: 'var(--accent)', fontFamily: 'sans-serif', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>
-                Semana
-              </button>
-              <button style={{ padding: '4px 14px', borderRadius: '20px', border: '1.5px solid var(--border)', background: 'transparent', color: 'var(--text-3)', fontFamily: 'sans-serif', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>
-                Mes
-              </button>
+          </div>
+
+          {reportMetrics.hasSales ? (
+            <>
+              <div className="chart-wrap">
+                {reportMetrics.weekTotals.map((val, i) => {
+                  const pct = Math.max(val > 0 ? 8 : 0, (val / reportMetrics.maxWeekTotal) * 100);
+                  const isToday = reportMetrics.weekDays[i] === new Date().toLocaleDateString();
+                  return (
+                    <div className="bc" key={i}>
+                      <div
+                        className="bbar"
+                        style={{
+                          height: `${pct}%`,
+                          background: isToday
+                            ? 'linear-gradient(180deg, var(--accent), var(--accent-dark))'
+                            : undefined,
+                          opacity: val === 0 ? 0.2 : isToday ? 1 : 0.65,
+                        }}
+                      />
+                      <span className="blbl" style={{ color: isToday ? 'var(--accent)' : undefined, fontWeight: isToday ? '700' : undefined }}>
+                        {reportMetrics.dayLabels[i]}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ display: 'flex', gap: '10px', paddingTop: '10px' }}>
+                {reportMetrics.weekTotals.map((val, i) => {
+                  const isToday = reportMetrics.weekDays[i] === new Date().toLocaleDateString();
+                  return (
+                    <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: '11px', color: isToday ? 'var(--accent)' : 'var(--text-3)', fontWeight: isToday ? 700 : 400 }}>
+                      {val > 0 ? `S/. ${val.toFixed(0)}` : '—'}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 20px', gap: '10px', color: 'var(--text-3)' }}>
+              <span style={{ fontSize: '40px', opacity: 0.35 }}>📊</span>
+              <span style={{ fontSize: '13px', fontWeight: '600' }}>Sin ventas registradas esta semana</span>
+              <span style={{ fontSize: '11.5px', fontWeight: '400' }}>El gráfico se actualizará automáticamente con cada venta</span>
             </div>
-          </div>
-          
-          <div className="chart-wrap">
-            <div className="bc"><div className="bbar" style={{ height: '58%' }}></div><span className="blbl">Lun</span></div>
-            <div className="bc"><div className="bbar" style={{ height: '72%' }}></div><span className="blbl">Mar</span></div>
-            <div className="bc"><div className="bbar" style={{ height: '61%' }}></div><span className="blbl">Mié</span></div>
-            <div className="bc"><div className="bbar" style={{ height: '90%' }}></div><span className="blbl">Jue</span></div>
-            <div className="bc"><div className="bbar" style={{ height: '100%' }}></div><span className="blbl">Vie</span></div>
-            <div className="bc"><div className="bbar" style={{ height: '85%', background: 'linear-gradient(180deg,#A5B4FC,var(--accent))', opacity: 0.9 }}></div><span className="blbl">Sáb</span></div>
-            <div className="bc"><div className="bbar" style={{ height: '42%', opacity: 0.4 }}></div><span className="blbl">Dom</span></div>
-          </div>
-          
-          {/* Day labels with values */}
-          <div style={{ display: 'flex', gap: '10px', paddingTop: '10px' }}>
-            <div style={{ flex: 1, textAlign: 'center', fontSize: '11px', color: 'var(--text-3)' }}>S/. 640</div>
-            <div style={{ flex: 1, textAlign: 'center', fontSize: '11px', color: 'var(--text-3)' }}>S/. 795</div>
-            <div style={{ flex: 1, textAlign: 'center', fontSize: '11px', color: 'var(--text-3)' }}>S/. 672</div>
-            <div style={{ flex: 1, textAlign: 'center', fontSize: '11px', color: 'var(--text-3)' }}>S/. 990</div>
-            <div style={{ flex: 1, textAlign: 'center', fontSize: '11px', color: 'var(--accent)', fontWeight: 700 }}>S/. 1,102</div>
-            <div style={{ flex: 1, textAlign: 'center', fontSize: '11px', color: 'var(--accent)', fontWeight: 700 }}>S/. 938</div>
-            <div style={{ flex: 1, textAlign: 'center', fontSize: '11px', color: 'var(--text-3)' }}>S/. 147</div>
-          </div>
+          )}
         </div>
 
         {/* RANKING PANEL */}
         <div className="panel">
-          <div className="p-title" style={{ fontSize: '14px' }}>🥇 Ranking Semanal</div>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '4px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '28px', height: '28px', background: 'linear-gradient(135deg,#FBBF24,#F59E0B)', borderRadius: '8px', display: 'flex', alignItems: 'center', fontSize: '13px', fontWeight: '800', color: 'white', justifyContent: 'center' }}>1</div>
-              <div style={{ flex: 1 }}><div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)' }}>Croissant</div><div style={{ fontSize: '11px', color: 'var(--text-3)' }}>278 unidades</div></div>
-              <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--green)' }}>S/. 695</div>
-            </div>
-            
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '28px', height: '28px', background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: '8px', display: 'flex', alignItems: 'center', fontSize: '13px', fontWeight: '800', color: 'var(--text-2)', justifyContent: 'center' }}>2</div>
-              <div style={{ flex: 1 }}><div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)' }}>Pan especial</div><div style={{ fontSize: '11px', color: 'var(--text-3)' }}>196 unidades</div></div>
-              <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--green)' }}>S/. 490</div>
-            </div>
+          <div className="p-title" style={{ fontSize: '14px' }}>🥇 Ranking de Productos</div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '28px', height: '28px', background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: '8px', display: 'flex', alignItems: 'center', fontSize: '13px', fontWeight: '800', color: 'var(--text-2)', justifyContent: 'center' }}>3</div>
-              <div style={{ flex: 1 }}><div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)' }}>Torta chocolate</div><div style={{ fontSize: '11px', color: 'var(--text-3)' }}>142 unidades</div></div>
-              <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--green)' }}>S/. 638</div>
+          {reportMetrics.topProducts.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '4px' }}>
+              {reportMetrics.topProducts.map((p, i) => (
+                <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{
+                    width: '28px', height: '28px',
+                    background: rankColors[i] || 'var(--bg-card2)',
+                    border: i > 0 ? '1px solid var(--border)' : 'none',
+                    borderRadius: '8px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '13px', fontWeight: '800',
+                    color: i === 0 ? 'white' : 'var(--text-2)',
+                  }}>
+                    {i + 1}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
+                      {p.name}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>{p.qty} unidades</div>
+                  </div>
+                  <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--green)' }}>
+                    S/. {p.revenue.toFixed(2)}
+                  </div>
+                </div>
+              ))}
             </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '28px', height: '28px', background: 'var(--bg-card2)', border: '1px solid var(--border)', borderRadius: '8px', display: 'flex', alignItems: 'center', fontSize: '13px', fontWeight: '800', color: 'var(--text-2)', justifyContent: 'center' }}>4</div>
-              <div style={{ flex: 1 }}><div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)' }}>Empanada</div><div style={{ fontSize: '11px', color: 'var(--text-3)' }}>118 unidades</div></div>
-              <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--green)' }}>S/. 414</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '28px 0', gap: '8px', color: 'var(--text-3)' }}>
+              <span style={{ fontSize: '28px', opacity: 0.35 }}>🥇</span>
+              <span style={{ fontSize: '12px', fontWeight: '600' }}>Sin datos aún</span>
             </div>
-          </div>
+          )}
         </div>
-
       </div>
 
-      {/* TRANSACTION LOG HISTORY */}
+      {/* TRANSACTION HISTORY */}
       <div className="panel">
         <div className="p-title">Historial Completo de Transacciones</div>
-        
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: 'left' }}>Boleta</th>
-              <th style={{ textAlign: 'left' }}>Fecha y Hora</th>
-              <th style={{ textAlign: 'left' }}>Productos Detalle</th>
-              <th style={{ textAlign: 'left' }}>Cajero</th>
-              <th style={{ textAlign: 'left' }}>Método de Pago</th>
-              <th style={{ textAlign: 'left' }}>Total</th>
-              <th style={{ textAlign: 'left' }}>Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reportMetrics.historyList.map((h, idx) => (
-              <tr key={h.id || idx}>
-                <td><strong style={{ color: 'var(--accent)' }}>#B-{h.n}</strong></td>
-                <td>{h.d} {h.t || ''}</td>
-                <td style={{ color: 'var(--text-2)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {h.itemsStr || (h.items ? h.items.map(item => `${item.name} x${item.qty}`).join(', ') : 'Insumos')}
-                </td>
-                <td>{h.cajero}</td>
-                <td><span className="tag tg-blue">{h.method}</span></td>
-                <td style={{ fontWeight: '800', color: 'var(--green)' }}>S/. {h.total.toFixed(2)}</td>
-                <td>
-                  <span className={`tag ${h.status === 'Pendiente' ? 'tg-warn' : 'tg-ok'}`}>
-                    {h.status || 'Pagado'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+
+        {reportMetrics.historyList.length === 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 20px', gap: '10px', color: 'var(--text-3)' }}>
+            <span style={{ fontSize: '40px', opacity: 0.35 }}>🧾</span>
+            <span style={{ fontSize: '13px', fontWeight: '600' }}>Sin transacciones registradas</span>
+            <span style={{ fontSize: '11.5px', fontWeight: '400' }}>Las ventas del POS aparecerán aquí en tiempo real</span>
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left' }}>Boleta</th>
+                  <th style={{ textAlign: 'left' }}>Fecha y Hora</th>
+                  <th style={{ textAlign: 'left' }}>Productos</th>
+                  <th style={{ textAlign: 'left' }}>Cajero</th>
+                  <th style={{ textAlign: 'left' }}>Método</th>
+                  <th style={{ textAlign: 'left' }}>Total</th>
+                  <th style={{ textAlign: 'left' }}>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reportMetrics.historyList.map((h, idx) => (
+                  <tr key={h.id || idx}>
+                    <td><strong style={{ color: 'var(--accent)' }}>#B-{h.n}</strong></td>
+                    <td style={{ fontSize: '12px' }}>{h.d} {h.t || ''}</td>
+                    <td style={{ color: 'var(--text-2)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {h.items.map(i => `${i.name} ×${i.qty}`).join(', ')}
+                    </td>
+                    <td>{h.cajero}</td>
+                    <td><span className="tag tg-blue">{h.method}</span></td>
+                    <td style={{ fontWeight: '800', color: 'var(--green)' }}>S/. {h.total.toFixed(2)}</td>
+                    <td><span className="tag tg-ok">Pagado</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
