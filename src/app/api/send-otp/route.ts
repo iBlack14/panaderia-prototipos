@@ -1,32 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const sendgridKey = process.env.SENDGRID_API_KEY;
 const mailgunKey = process.env.MAILGUN_API_KEY;
 const mailgunDomain = process.env.MAILGUN_DOMAIN;
+const resendKey = process.env.RESEND_API_KEY;
 const emailFrom = process.env.EMAIL_FROM || 'no-reply@panaderia.blxkstudio.com';
 
-async function sendWithSupabaseAuth(email: string, subject: string, text: string, html: string) {
-  if (!supabaseUrl || !supabaseServiceKey) {
-    throw new Error('Supabase no está configurado correctamente (falta URL o Service Role Key)');
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-    auth: { persistSession: false }
+async function sendWithResend(email: string, subject: string, text: string, html: string) {
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${resendKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: emailFrom,
+      to: email,
+      subject,
+      html
+    })
   });
 
-  // Usar admin API para enviar email personalizado
-  const { error } = await supabase.auth.admin.sendRawEmail({
-    email,
-    html
-  });
-
-  if (error) {
-    throw new Error(`Error enviando email via Supabase: ${error.message}`);
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Resend error: ${response.status} ${body}`);
   }
 }
 
@@ -94,15 +91,15 @@ export async function POST(request: NextRequest) {
   const html = `<p>Tu código OTP es <strong>${code}</strong>.</p><p>Ingresa este código en la aplicación para verificar tu correo.</p>`;
 
   try {
-    // Intentar usar Supabase primero
-    if (supabaseServiceKey) {
-      await sendWithSupabaseAuth(email, subject, text, html);
+    // Intentar en orden: Resend → SendGrid → Mailgun
+    if (resendKey) {
+      await sendWithResend(email, subject, text, html);
     } else if (sendgridKey) {
       await sendWithSendGrid(email, subject, text, html);
     } else if (mailgunKey && mailgunDomain) {
       await sendWithMailgun(email, subject, text, html);
     } else {
-      return NextResponse.json({ message: 'No está configurado un servicio de envío de correo. Configure SUPABASE_SERVICE_ROLE_KEY, SENDGRID_API_KEY o MAILGUN_API_KEY + MAILGUN_DOMAIN.' }, { status: 500 });
+      return NextResponse.json({ message: 'No está configurado un servicio de envío de correo. Configure RESEND_API_KEY, SENDGRID_API_KEY o MAILGUN_API_KEY + MAILGUN_DOMAIN.' }, { status: 500 });
     }
     
     return NextResponse.json({ success: true });
