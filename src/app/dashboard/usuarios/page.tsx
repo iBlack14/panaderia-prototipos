@@ -29,7 +29,7 @@ const SYSTEM_PERMISSIONS: SystemPermission[] = [
 ];
 
 export default function PersonalPage() {
-  const { usersList, saveUser, toggleUserStatus } = useApp();
+  const { usersList, saveUser, toggleUserStatus, lookupProfileByDni, toast } = useApp();
 
   const [activeSubTab, setActiveSubTab] = useState<'personal' | 'roles'>('personal');
 
@@ -87,6 +87,8 @@ export default function PersonalPage() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [dni, setDni] = useState('');
+  const [dniLookupLoading, setDniLookupLoading] = useState(false);
+  const [dniLookupError, setDniLookupError] = useState<string | null>(null);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -175,7 +177,34 @@ export default function PersonalPage() {
     setEmailVerified(true); // Al editar, el correo ya fue verificado antes
     setShowPassword(false);
     setShowConfirmPassword(false);
+    setDniLookupError(null);
     setShowUserModal(true);
+  };
+
+  const handleLookupDni = async () => {
+    if (!isDniValid) return;
+    setDniLookupError(null);
+    setDniLookupLoading(true);
+
+    try {
+      const profile = await lookupProfileByDni(dni);
+      if (!profile) {
+        setDniLookupError('No se encontraron datos para este DNI.');
+        return;
+      }
+
+      if (profile.firstName) setFirstName(profile.firstName);
+      if (profile.lastName) setLastName(profile.lastName);
+      if (profile.email) {
+        setEmail(profile.email);
+        setEmailVerified(false);
+      }
+      if (profile.phone) setPhone(profile.phone);
+    } catch (err: any) {
+      setDniLookupError(err.message || 'Error al consultar el servicio de DNI.');
+    } finally {
+      setDniLookupLoading(false);
+    }
   };
 
   // OTP helpers
@@ -189,14 +218,39 @@ export default function PersonalPage() {
     }, 1000);
   };
 
-  const handleSendOtp = () => {
+  const sendOtpEmail = async (targetEmail: string, code: string) => {
+    const response = await fetch('/api/send-otp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email: targetEmail, code })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.message || 'No se pudo enviar el código por correo.');
+    }
+  };
+
+  const handleSendOtp = async () => {
     const code = String(Math.floor(100000 + Math.random() * 900000));
     setGeneratedOtp(code);
     setOtpCode('');
     setOtpError(false);
-    console.log(`[OTP Simulado] Código para ${email}: ${code}`);
-    setShowOtpModal(true);
-    startResendTimer();
+    setOtpSending(true);
+
+    try {
+      await sendOtpEmail(email, code);
+      setShowOtpModal(true);
+      toast('📨 Código enviado por correo. Revisa tu bandeja de entrada.');
+      startResendTimer();
+    } catch (err: any) {
+      console.error(err);
+      toast(`❌ ${err.message}`);
+    } finally {
+      setOtpSending(false);
+    }
   };
 
   const handleVerifyOtp = (e: React.FormEvent) => {
@@ -211,14 +265,24 @@ export default function PersonalPage() {
     }
   };
 
-  const handleResendOtp = () => {
+  const handleResendOtp = async () => {
     if (otpResendTimer > 0) return;
     const code = String(Math.floor(100000 + Math.random() * 900000));
     setGeneratedOtp(code);
     setOtpCode('');
     setOtpError(false);
-    console.log(`[OTP Reenviado] Código para ${email}: ${code}`);
-    startResendTimer();
+    setOtpSending(true);
+
+    try {
+      await sendOtpEmail(email, code);
+      toast('🔁 Código reenviado por correo.');
+      startResendTimer();
+    } catch (err: any) {
+      console.error(err);
+      toast(`❌ ${err.message}`);
+    } finally {
+      setOtpSending(false);
+    }
   };
 
   const handleEmailChange = (val: string) => {
@@ -528,9 +592,35 @@ export default function PersonalPage() {
                     maxLength={8}
                     required
                   />
-                  <div style={{ fontSize: '10px', color: isDniValid ? 'var(--green)' : 'var(--text-3)', marginTop: '4px', fontWeight: '500' }}>
-                    {dni === '' ? '⚪ 8 dígitos numéricos' : isDniValid ? '🟢 DNI válido' : '❌ Debe tener exactamente 8 dígitos'}
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', marginTop: '6px' }}>
+                    <span style={{ fontSize: '10px', color: isDniValid ? 'var(--green)' : 'var(--text-3)', fontWeight: '500' }}>
+                      {dni === '' ? '⚪ 8 dígitos numéricos' : isDniValid ? '🟢 DNI válido' : '❌ Debe tener exactamente 8 dígitos'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleLookupDni}
+                      disabled={!isDniValid || dniLookupLoading}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '10px',
+                        border: '1.5px solid var(--border)',
+                        background: isDniValid ? 'var(--accent-bg)' : 'var(--bg-card2)',
+                        color: isDniValid ? 'var(--accent)' : 'var(--text-3)',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        cursor: isDniValid ? 'pointer' : 'not-allowed',
+                        opacity: isDniValid ? 1 : 0.5,
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {dniLookupLoading ? 'Buscando...' : 'Autocompletar datos'}
+                    </button>
                   </div>
+                  {dniLookupError && (
+                    <div style={{ fontSize: '10px', color: 'var(--red)', marginTop: '4px', fontWeight: '600' }}>
+                      {dniLookupError}
+                    </div>
+                  )}
                 </div>
 
                 <div className="inp-group">

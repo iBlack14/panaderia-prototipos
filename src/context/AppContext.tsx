@@ -195,6 +195,7 @@ export interface AppContextType {
   checkoutCart: (paymentMethodId: number, clienteId?: number | string) => Promise<Sale | undefined>;
   saveUser: (uObj: any) => void;
   toggleUserStatus: (userId: number | string) => void;
+  lookupProfileByDni: (dni: string) => Promise<{ firstName: string; lastName: string; email?: string; phone?: string } | null>;
   saveProvider: (pObj: any) => Promise<void>;
   toggleProvider: (id: number | string) => void;
   savePaymentMethod: (mObj: any) => void;
@@ -844,43 +845,62 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const toggleUserStatus = async (userId: number | string) => {
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const u = usersList.find(x => x.id === userId);
-        if (!u) return;
-        const newSt = u.st === 'act' ? 'ina' : 'act';
-
-        const { error } = await supabase.from('profiles').update({
-          estado: newSt
-        }).eq('id', userId);
-
-        if (error) throw error;
-        toast('👤 Estado de usuario actualizado en la nube');
-
-        // Recargar lista desde Supabase
-        const { data: profs } = await supabase.from('profiles').select('*, roles(nombre)');
-        if (profs) {
-          setUsersList((profs as any[]).map(p => ({
-            id: p.id,
-            u: p.username,
-            p: '••••',
-            n: p.nombre + ' ' + (p.apellido_paterno || ''),
-            rs: [p.roles?.nombre || 'Cajero'],
-            st: p.estado,
-            email: p.correo,
-            phone: p.num_telefono || ''
-          })));
-        }
-      } catch (err: any) {
-        toast(`❌ Error al cambiar estado: ${err.message}`);
-      }
-    } else {
-      const updated = usersList.map(u => u.id === userId ? { ...u, st: u.st === 'act' ? 'ina' : 'act' } : u);
-      setUsersList(updated);
-      saveOffline('snack_users', updated);
-      toast('👤 Estado de usuario actualizado');
+  const lookupProfileByDni = async (dni: string) => {
+    const baseUrl = process.env.NEXT_PUBLIC_PROFILE_LOOKUP_URL?.trim() || '';
+    if (!baseUrl) {
+      throw new Error('No se ha configurado la URL de búsqueda de perfiles por DNI. Use NEXT_PUBLIC_PROFILE_LOOKUP_URL.');
     }
+
+    const url = baseUrl.includes('{dni}')
+      ? baseUrl.replace('{dni}', encodeURIComponent(dni))
+      : `${baseUrl.replace(/\/$/, '')}${baseUrl.includes('?') ? '&' : '?'}dni=${encodeURIComponent(dni)}`;
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Error al consultar el servicio de perfiles: ${res.status} ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    if (!data || typeof data !== 'object') return null;
+
+    const firstName =
+      (data as any).nombre ||
+      (data as any).nombres ||
+      (data as any).first_name ||
+      (data as any).firstName ||
+      '';
+
+    const lastNameParts = [
+      (data as any).apellido_paterno,
+      (data as any).apellido_materno,
+      (data as any).apellido,
+      (data as any).last_name,
+      (data as any).lastName
+    ].filter(Boolean);
+    const lastName = lastNameParts.join(' ').trim();
+
+    const email =
+      (data as any).email ||
+      (data as any).correo ||
+      (data as any).correo_electronico ||
+      '';
+    const phone =
+      (data as any).telefono ||
+      (data as any).celular ||
+      (data as any).phone ||
+      (data as any).mobile ||
+      '';
+
+    if (!firstName && !lastName && !email && !phone) {
+      return null;
+    }
+
+    return {
+      firstName: firstName || lastName || '',
+      lastName: lastName || '',
+      email: email || undefined,
+      phone: phone || undefined
+    };
   };
 
   // --- CRUD GESTION PROVEEDORES ---
@@ -1369,6 +1389,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       checkoutCart,
       saveUser,
       toggleUserStatus,
+      lookupProfileByDni,
       saveProvider,
       toggleProvider,
       savePaymentMethod,
