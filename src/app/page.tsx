@@ -198,8 +198,8 @@ export default function LoginPage() {
     setIsVerified(false);
     setNewPassword('');
     setConfirmPassword('');
-    setUsername(recUsername);
-    setPassword(newPassword);
+    setUsername('');
+    setPassword('');
   };
 
   return (

@@ -202,7 +202,8 @@ export interface AppContextType {
   clearCart: () => void;
   checkoutCart: (paymentMethodId: number, clienteId?: number | string) => Promise<Sale | undefined>;
   saveUser: (uObj: any) => void;
-  toggleUserStatus: (userId: number | string) => void;
+  toggleUserStatus: (userId: number | string) => Promise<void>;
+  lookupProfileByDni: (dni: string) => Promise<{ firstName: string; lastName: string; email?: string; phone?: string } | null>;
   saveProvider: (pObj: any) => Promise<void>;
   toggleProvider: (id: number | string) => void;
   savePaymentMethod: (mObj: any) => void;
@@ -912,7 +913,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (isSupabaseConfigured && supabase) {
       try {
         if (uObj.id) {
-          // Obtener ID del rol correspondiente
+          // Actualizar usuario existente
           let idRol = 2; // Cajero por defecto
           if (uObj.role === 'Administrador') idRol = 1;
           else if (uObj.role === 'Panadero') idRol = 3;
@@ -923,33 +924,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
             apellido_paterno: uObj.n.split(' ').slice(1).join(' ') || '',
             correo: uObj.email,
             num_telefono: uObj.phone,
+            numero_documento: uObj.dni || '',
             id_rol: idRol
           }).eq('id', uObj.id);
 
           if (error) throw error;
           toast('👤 Colaborador actualizado en la nube');
         } else {
+          // Crear nuevo usuario en profiles (requiere que exista en auth)
           toast('⚠️ Los nuevos colaboradores se registran en la nube al iniciar sesión por primera vez.');
         }
 
         // Recargar lista desde Supabase
-        const { data: profs } = await supabase.from('profiles').select('*, roles(nombre)');
-        if (profs) {
+        const { data: profs, error: selectError } = await supabase.from('profiles').select('*, roles(nombre)');
+        if (selectError) {
+          console.error('Error recargar perfiles:', selectError);
+        } else if (profs) {
           setUsersList((profs as any[]).map(p => ({
             id: p.id,
-            u: p.username,
+            u: p.username || '',
             p: '••••',
-            n: p.nombre + ' ' + (p.apellido_paterno || ''),
+            n: (p.nombre || '') + ' ' + (p.apellido_paterno || ''),
             rs: [p.roles?.nombre || 'Cajero'],
-            st: p.estado,
-            email: p.correo,
+            st: p.estado === 1 ? 'act' : 'inact',
+            email: p.correo || '',
             phone: p.num_telefono || ''
           })));
         }
       } catch (err: any) {
+        console.error('Error en saveUser:', err);
         toast(`❌ Error en la nube: ${err.message}`);
       }
     } else {
+      // Fallback local
       let updated;
       if (uObj.id) {
         updated = usersList.map(u => u.id === uObj.id ? { ...u, ...uObj } : u);
@@ -965,42 +972,124 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleUserStatus = async (userId: number | string) => {
-    if (isSupabaseConfigured && supabase) {
+    const currentUser = usersList.find(u => u.id === userId);
+    const newStatus = currentUser?.st === 'act' ? 'inact' : 'act';
+    const updated = usersList.map(u => u.id === userId ? { ...u, st: newStatus } : u);
+
+    setUsersList(updated);
+    saveOffline('snack_users', updated);
+
+    if (isSupabaseConfigured && supabase && currentUser) {
       try {
-        const u = usersList.find(x => x.id === userId);
-        if (!u) return;
-        const newSt = u.st === 'act' ? 'ina' : 'act';
-
-        const { error } = await supabase.from('profiles').update({
-          estado: newSt
-        }).eq('id', userId);
-
-        if (error) throw error;
-        toast('👤 Estado de usuario actualizado en la nube');
-
-        // Recargar lista desde Supabase
-        const { data: profs } = await supabase.from('profiles').select('*, roles(nombre)');
-        if (profs) {
-          setUsersList((profs as any[]).map(p => ({
-            id: p.id,
-            u: p.username,
-            p: '••••',
-            n: p.nombre + ' ' + (p.apellido_paterno || ''),
-            rs: [p.roles?.nombre || 'Cajero'],
-            st: p.estado,
-            email: p.correo,
-            phone: p.num_telefono || ''
-          })));
-        }
+        await supabase.from('profiles').update({ estado: newStatus === 'act' ? 1 : 0 }).eq('id', userId);
+        toast('👤 Estado de colaborador actualizado en la nube');
       } catch (err: any) {
-        toast(`❌ Error al cambiar estado: ${err.message}`);
+        toast(`❌ Error actualizando estado en la nube: ${err.message}`);
       }
     } else {
-      const updated = usersList.map(u => u.id === userId ? { ...u, st: u.st === 'act' ? 'ina' : 'act' } : u);
-      setUsersList(updated);
-      saveOffline('snack_users', updated);
-      toast('👤 Estado de usuario actualizado');
+      toast('👤 Estado de colaborador actualizado');
     }
+  };
+
+  const lookupProfileByDni = async (dni: string) => {
+    // Buscar en Supabase si está configurado
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('numero_documento', dni)
+          .single();
+
+        if (error && error.code !== 'PGRST116') {
+          throw error;
+        }
+
+        if (data) {
+          const firstName = data.nombre || '';
+          const lastName = data.apellido_paterno || '';
+          const email = data.correo || '';
+          const phone = data.num_telefono || '';
+
+          return {
+            firstName: firstName || lastName || '',
+            lastName: lastName || '',
+            email: email || undefined,
+            phone: phone || undefined
+          };
+        }
+        
+        return null;
+      } catch (err: any) {
+        console.error('Error buscando perfil en Supabase:', err);
+        throw new Error(`Error al consultar el perfil por DNI en Supabase: ${err.message}`);
+      }
+    }
+
+    // Si Supabase no está configurado, intentar con API externa
+    const baseUrl = process.env.NEXT_PUBLIC_PROFILE_LOOKUP_URL?.trim() || '';
+    if (!baseUrl) {
+      throw new Error('No se ha configurado Supabase ni NEXT_PUBLIC_PROFILE_LOOKUP_URL para la búsqueda de perfiles por DNI.');
+    }
+
+    const url = baseUrl.includes('{dni}')
+      ? baseUrl.replace('{dni}', encodeURIComponent(dni))
+      : `${baseUrl.replace(/\/$/, '')}${baseUrl.includes('?') ? '&' : '?'}dni=${encodeURIComponent(dni)}`;
+
+    const authToken = process.env.NEXT_PUBLIC_PROFILE_LOOKUP_AUTH?.trim() || '';
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (authToken) {
+      headers.Authorization = authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
+    }
+
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      throw new Error(`Error al consultar el servicio de perfiles: ${res.status} ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    if (!data || typeof data !== 'object') return null;
+
+    const firstName =
+      (data as any).nombre ||
+      (data as any).nombres ||
+      (data as any).first_name ||
+      (data as any).firstName ||
+      '';
+
+    const lastNameParts = [
+      (data as any).apellido_paterno,
+      (data as any).apellido_materno,
+      (data as any).apellido,
+      (data as any).last_name,
+      (data as any).lastName
+    ].filter(Boolean);
+    const lastName = lastNameParts.join(' ').trim();
+
+    const email =
+      (data as any).email ||
+      (data as any).correo ||
+      (data as any).correo_electronico ||
+      '';
+    const phone =
+      (data as any).telefono ||
+      (data as any).celular ||
+      (data as any).phone ||
+      (data as any).mobile ||
+      '';
+
+    if (!firstName && !lastName && !email && !phone) {
+      return null;
+    }
+
+    return {
+      firstName: firstName || lastName || '',
+      lastName: lastName || '',
+      email: email || undefined,
+      phone: phone || undefined
+    };
   };
 
   // --- CRUD GESTION PROVEEDORES ---
@@ -1669,6 +1758,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       checkoutCart,
       saveUser,
       toggleUserStatus,
+      lookupProfileByDni,
       saveProvider,
       toggleProvider,
       savePaymentMethod,

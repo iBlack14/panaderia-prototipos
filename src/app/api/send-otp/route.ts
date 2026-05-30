@@ -1,133 +1,143 @@
+
 import { NextRequest, NextResponse } from 'next/server';
-import { Resend } from 'resend';
-import fs from 'fs';
-import path from 'path';
+const sendgridKey = process.env.SENDGRID_API_KEY;
+const mailgunKey = process.env.MAILGUN_API_KEY;
+const mailgunDomain = process.env.MAILGUN_DOMAIN;
+const resendKey = process.env.RESEND_API_KEY;
+// Usar un dominio verificado en Resend, fallback a onboarding@resend.dev
+const emailFrom = process.env.EMAIL_FROM || process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
 
-export async function POST(req: NextRequest) {
+async function sendWithResend(email: string, subject: string, text: string, html: string) {
+  if (!resendKey) {
+    throw new Error('RESEND_API_KEY no está configurado');
+  }
   try {
-    let apiKey = process.env.RESEND_API_KEY;
-    let fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
-
-    // Manual fallback for reading .env in dev mode if process.env isn't populated
-    if (!apiKey) {
-      try {
-        const envPath = path.join(process.cwd(), '.env');
-        if (fs.existsSync(envPath)) {
-          const envContent = fs.readFileSync(envPath, 'utf8');
-          const keyMatch = envContent.match(/^RESEND_API_KEY\s*=\s*(.*)$/m);
-          if (keyMatch) {
-            apiKey = keyMatch[1].trim();
-            console.log('[Resend Fallback] Loaded RESEND_API_KEY manually from .env');
-          }
-          const fromMatch = envContent.match(/^RESEND_FROM_EMAIL\s*=\s*(.*)$/m);
-          if (fromMatch) {
-            fromEmail = fromMatch[1].trim();
-            console.log('[Resend Fallback] Loaded RESEND_FROM_EMAIL manually from .env:', fromEmail);
-          }
-        }
-      } catch (e) {
-        console.warn('[Resend Fallback] Failed to read .env file manually:', e);
-      }
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${resendKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: emailFrom,
+        to: email,
+        subject,
+        html
+      })
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      console.error('Resend response error:', body);
+      throw new Error(`Resend error: ${response.status} ${body}`);
     }
+    const data = await response.json();
+    console.log('Email enviado via Resend:', data);
+  } catch (error: any) {
+    console.error('Error en sendWithResend:', error);
+    throw error;
+  }
+}
 
-    if (!apiKey) {
-      console.error('[Resend Config Error] RESEND_API_KEY is not defined in environment variables or .env file.');
+async function sendWithSendGrid(email: string, subject: string, text: string, html: string) {
+  if (!sendgridKey) {
+    throw new Error('SENDGRID_API_KEY no está configurado');
+  }
+  const payload = {
+    personalizations: [{ to: [{ email }] }],
+    from: { email: emailFrom },
+    subject,
+    content: [
+      { type: 'text/plain', value: text },
+      { type: 'text/html', value: html }
+    ]
+  };
+  const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${sendgridKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    console.error('SendGrid response error:', body);
+    throw new Error(`SendGrid error: ${response.status} ${body}`);
+  }
+  console.log('Email enviado via SendGrid');
+}
+
+async function sendWithMailgun(email: string, subject: string, text: string, html: string) {
+  if (!mailgunKey || !mailgunDomain) {
+    throw new Error('MAILGUN_API_KEY o MAILGUN_DOMAIN no están configurados');
+  }
+  const formData = new URLSearchParams();
+  formData.append('from', emailFrom);
+  formData.append('to', email);
+  formData.append('subject', subject);
+  formData.append('text', text);
+  formData.append('html', html);
+  const auth = Buffer.from(`api:${mailgunKey}`).toString('base64');
+  const response = await fetch(`https://api.mailgun.net/v3/${mailgunDomain}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: formData.toString()
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    console.error('Mailgun response error:', body);
+    throw new Error(`Mailgun error: ${response.status} ${body}`);
+  }
+  console.log('Email enviado via Mailgun');
+}
+
+export async function POST(request: NextRequest) {
+  const body = await request.json().catch(() => null);
+  const email = body?.email;
+  const code = body?.code;
+  console.log('Send-OTP request:', { email, codeLength: code?.length });
+  if (!email || !code) {
+    return NextResponse.json({ message: 'Se requiere email y código OTP.' }, { status: 400 });
+  }
+  const subject = 'Código de verificación - Panadería';
+  const text = `Tu código OTP es ${code}. Ingresa este código en la aplicación para verificar tu correo.`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; padding: 20px;">
+      <h2>Verificación de correo - Panadería</h2>
+      <p>Tu código OTP es:</p>
+      <h1 style="color: #007bff; letter-spacing: 2px;">${code}</h1>
+      <p>Ingresa este código en la aplicación para verificar tu correo.</p>
+      <p style="color: #666; font-size: 12px;">Este código expira en 10 minutos.</p>
+    </div>
+  `;
+  try {
+    console.log('Intentando enviar OTP a:', email);
+    // Intentar en orden: Resend → SendGrid → Mailgun
+    if (resendKey) {
+      console.log('Usando Resend con from:', emailFrom);
+      await sendWithResend(email, subject, text, html);
+    } else if (sendgridKey) {
+      console.log('Usando SendGrid');
+      await sendWithSendGrid(email, subject, text, html);
+    } else if (mailgunKey && mailgunDomain) {
+      console.log('Usando Mailgun');
+      await sendWithMailgun(email, subject, text, html);
+    } else {
+      console.error('No email service configured');
       return NextResponse.json({ 
-        error: 'La API Key de Resend (RESEND_API_KEY) no está definida. Por favor, verifica tu archivo .env y reinicia el servidor Next.js.' 
+        message: 'No está configurado un servicio de envío de correo. Configure RESEND_API_KEY, SENDGRID_API_KEY o MAILGUN_API_KEY + MAILGUN_DOMAIN.' 
       }, { status: 500 });
     }
-
-    const { email, otp } = await req.json();
-
-    if (!email || !otp) {
-      return NextResponse.json({ error: 'Faltan campos requeridos' }, { status: 400 });
-    }
-
-    // Validar formato de email básico
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return NextResponse.json({ error: 'Correo inválido' }, { status: 400 });
-    }
-
-    const resend = new Resend(apiKey);
-
-    const { data, error } = await resend.emails.send({
-      from: `Snack Roque <${fromEmail}>`,
-      to: [email],
-      subject: `🔐 Tu código de verificación: ${otp}`,
-      html: `
-        <!DOCTYPE html>
-        <html lang="es">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Código de Verificación</title>
-        </head>
-        <body style="margin:0;padding:0;background:#f4f4f8;font-family:'Segoe UI',Arial,sans-serif;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f8;padding:40px 0;">
-            <tr>
-              <td align="center">
-                <table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-                  
-                  <!-- Header -->
-                  <tr>
-                    <td style="background:linear-gradient(135deg,#c0392b,#e74c3c);padding:32px 40px;text-align:center;">
-                      <div style="font-size:40px;margin-bottom:8px;">🥖</div>
-                      <div style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.5px;">Snack Roque</div>
-                      <div style="color:rgba(255,255,255,0.8);font-size:13px;margin-top:4px;">Panadería & Pastelería</div>
-                    </td>
-                  </tr>
-
-                  <!-- Body -->
-                  <tr>
-                    <td style="padding:36px 40px;">
-                      <h2 style="margin:0 0 8px;color:#1a1a2e;font-size:20px;font-weight:700;">Código de verificación</h2>
-                      <p style="margin:0 0 28px;color:#666;font-size:14px;line-height:1.6;">
-                        Recibimos una solicitud para restablecer la contraseña de tu cuenta.<br>
-                        Ingresa el siguiente código en la aplicación:
-                      </p>
-
-                      <!-- OTP Box -->
-                      <div style="background:#f8f8fc;border:2px dashed #e74c3c;border-radius:12px;padding:24px;text-align:center;margin-bottom:28px;">
-                        <div style="font-size:42px;font-weight:800;letter-spacing:12px;color:#c0392b;font-family:'Courier New',monospace;">${otp}</div>
-                        <div style="font-size:12px;color:#999;margin-top:8px;">Válido por <strong>10 minutos</strong></div>
-                      </div>
-
-                      <p style="margin:0;color:#888;font-size:13px;line-height:1.6;">
-                        Si no solicitaste este código, puedes ignorar este correo.<br>
-                        Tu contraseña no cambiará a menos que uses este código.
-                      </p>
-                    </td>
-                  </tr>
-
-                  <!-- Footer -->
-                  <tr>
-                    <td style="background:#f8f8fc;padding:20px 40px;border-top:1px solid #eee;">
-                      <p style="margin:0;color:#aaa;font-size:12px;text-align:center;">
-                        © ${new Date().getFullYear()} Snack Roque · Sistema de Gestión Interno<br>
-                        Este es un correo automático, por favor no respondas.
-                      </p>
-                    </td>
-                  </tr>
-
-                </table>
-              </td>
-            </tr>
-          </table>
-        </body>
-        </html>
-      `,
-    });
-
-    if (error) {
-      console.error('[Resend Error]', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true, id: data?.id });
-  } catch (err: unknown) {
-    console.error('[send-otp route error]', err);
-    const message = err instanceof Error ? err.message : 'Error interno';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.log('Email enviado exitosamente a:', email);
+    return NextResponse.json({ success: true, message: 'Código OTP enviado' });
+  } catch (error: any) {
+    console.error('Error enviando OTP:', error);
+    return NextResponse.json({ 
+      message: error?.message || 'Error enviando OTP.',
+      error: error?.message
+    }, { status: 500 });
   }
 }
