@@ -23,11 +23,7 @@ const SYSTEM_PERMISSIONS: SystemPermission[] = [
 ];
 
 export default function PersonalPage() {
-<<<<<<< HEAD
-  const { usersList, saveUser, toggleUserStatus, rolesList, saveRole, deleteRole } = useApp();
-=======
-  const { usersList, saveUser, toggleUserStatus, lookupProfileByDni, toast } = useApp();
->>>>>>> 37630ec6cc76803433a6665ea215777b73ece500
+  const { usersList, saveUser, toggleUserStatus, lookupProfileByDni, toast, rolesList, saveRole, deleteRole } = useApp();
 
   const [activeSubTab, setActiveSubTab] = useState<'personal' | 'roles'>('personal');
 
@@ -60,7 +56,6 @@ export default function PersonalPage() {
   const [otpError, setOtpError] = useState(false);
   const [otpSending, setOtpSending] = useState(false);
   const [otpResendTimer, setOtpResendTimer] = useState(0);
-  const [otpSending, setOtpSending] = useState(false);
   const [otpSendError, setOtpSendError] = useState('');
 
   // --- ROLE FORM STATES ---
@@ -171,60 +166,30 @@ export default function PersonalPage() {
       setOtpResendTimer(prev => {
         if (prev <= 1) { clearInterval(interval); return 0; }
         return prev - 1;
-        const sendOtpEmail = async (targetEmail: string, code: string) => {
-          const response = await fetch('/api/send-otp', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ email: targetEmail, code })
-          });
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => null);
-            throw new Error(errorData?.message || 'No se pudo enviar el código por correo.');
-          }
-        };
+      });
+    }, 1000);
+  };
 
-        const handleSendOtp = async () => {
-          const code = String(Math.floor(100000 + Math.random() * 900000));
-          setGeneratedOtp(code);
-          setOtpCode('');
-          setOtpError(false);
-          setOtpSending(true);
-          try {
-            await sendOtpEmail(email, code);
-            setShowOtpModal(true);
-            toast('📨 Código enviado por correo. Revisa tu bandeja de entrada.');
-            startResendTimer();
-          } catch (err: any) {
-            console.error(err);
-            toast(`❌ ${err.message}`);
-          } finally {
-            setOtpSending(false);
-          }
-        };
-        const errMsg = body?.error || 'Error desconocido al enviar el correo';
-        setOtpSendError(errMsg);
-        console.warn('[OTP] Error al enviar:', errMsg);
-        return false;
-      }
-      return true;
-    } catch (err) {
-      const msg = 'No se pudo conectar con el servicio de email';
-      setOtpSendError(msg);
-      console.warn('[OTP]', msg, err);
-      return false;
+  const sendOtpEmail = async (targetEmail: string, code: string) => {
+    const response = await fetch('/api/send-otp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email: targetEmail, code })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.message || 'No se pudo enviar el código por correo.');
     }
   };
 
   const handleSendOtp = async () => {
-    setOtpSending(true);
-    const ok = await sendOtpEmail(email);
-    setOtpSending(false);
-    if (ok) {
-      setShowOtpModal(true);
-      startResendTimer();
-=======
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    setGeneratedOtp(code);
+    setOtpCode('');
+    setOtpError(false);
     setOtpSending(true);
 
     try {
@@ -237,7 +202,6 @@ export default function PersonalPage() {
       toast(`❌ ${err.message}`);
     } finally {
       setOtpSending(false);
->>>>>>> 37630ec6cc76803433a6665ea215777b73ece500
     }
   };
 

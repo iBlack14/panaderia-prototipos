@@ -48,7 +48,6 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     apellido_materno VARCHAR(100),
     correo VARCHAR(150) NOT NULL,
     num_telefono VARCHAR(20),
-    dni VARCHAR(20),
     id_rol INT REFERENCES public.roles(id_rol) DEFAULT 2, -- Cajero por defecto
     fec_registro TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     estado VARCHAR(20) DEFAULT 'act' -- 'act': Activo, 'ina': Inactivo
