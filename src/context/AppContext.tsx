@@ -194,7 +194,7 @@ export interface AppContextType {
   clearCart: () => void;
   checkoutCart: (paymentMethodId: number, clienteId?: number | string) => Promise<Sale | undefined>;
   saveUser: (uObj: any) => void;
-  toggleUserStatus: (userId: number | string) => void;
+  toggleUserStatus: (userId: number | string) => Promise<void>;
   lookupProfileByDni: (dni: string) => Promise<{ firstName: string; lastName: string; email?: string; phone?: string } | null>;
   saveProvider: (pObj: any) => Promise<void>;
   toggleProvider: (id: number | string) => void;
@@ -842,6 +842,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       setUsersList(updated);
       saveOffline('snack_users', updated);
+    }
+  };
+
+  const toggleUserStatus = async (userId: number | string) => {
+    const currentUser = usersList.find(u => u.id === userId);
+    const newStatus = currentUser?.st === 'act' ? 'inact' : 'act';
+    const updated = usersList.map(u => u.id === userId ? { ...u, st: newStatus } : u);
+
+    setUsersList(updated);
+    saveOffline('snack_users', updated);
+
+    if (isSupabaseConfigured && supabase && currentUser) {
+      try {
+        await supabase.from('profiles').update({ estado: newStatus === 'act' ? 1 : 0 }).eq('id', userId);
+        toast('👤 Estado de colaborador actualizado en la nube');
+      } catch (err: any) {
+        toast(`❌ Error actualizando estado en la nube: ${err.message}`);
+      }
+    } else {
+      toast('👤 Estado de colaborador actualizado');
     }
   };
 
