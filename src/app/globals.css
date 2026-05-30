@@ -1200,7 +1200,9 @@ tr:last-child td { border-bottom: none; }
 .modal-card select,
 .modal-card input[type=text],
 .modal-card input[type=number],
-.modal-card input[type=password] {
+.modal-card input[type=password],
+.modal-card input[type=tel],
+.modal-card input[type=email] {
   background: var(--bg-card2);
   border: 1.5px solid var(--border);
   border-radius: 11px;
@@ -1211,6 +1213,10 @@ tr:last-child td { border-bottom: none; }
   width: 100%;
   outline: none;
   transition: all 0.2s;
+}
+
+.modal-card .inp-wrap input {
+  padding-left: 42px;
 }
 
 .modal-card .inp-wrap input:focus,

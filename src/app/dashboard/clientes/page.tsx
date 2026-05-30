@@ -25,7 +25,9 @@ export default function ClientesPage() {
   const [historyClient, setHistoryClient] = useState<Client | null>(null);
 
   // Form state
-  const [fNombre, setFNombre] = useState('');
+  const [fNombres, setFNombres] = useState('');
+  const [fApePaterno, setFApePaterno] = useState('');
+  const [fApeMaterno, setFApeMaterno] = useState('');
   const [fDni, setFDni] = useState('');
   const [fTel, setFTel] = useState('');
   const [fEmail, setFEmail] = useState('');
@@ -57,19 +59,51 @@ export default function ClientesPage() {
 
   const openNewClient = () => {
     setEditingClient(null);
-    setFNombre(''); setFDni(''); setFTel(''); setFEmail(''); setFLimite('50');
+    setFNombres(''); setFApePaterno(''); setFApeMaterno(''); setFDni(''); setFTel(''); setFEmail(''); setFLimite('50');
     setShowClientModal(true);
   };
 
   const openEditClient = (c: Client) => {
     setEditingClient(c);
-    setFNombre(c.nombre); setFDni(c.dni || ''); setFTel(c.telefono || ''); setFEmail(c.email || ''); setFLimite(String(c.limiteCred));
+    
+    // Parsear el nombre completo de regreso a Nombres, Apellido Paterno y Apellido Materno
+    const parts = c.nombre.trim().split(/\s+/);
+    let nombres = '';
+    let apePaterno = '';
+    let apeMaterno = '';
+
+    if (parts.length === 1) {
+      nombres = parts[0];
+    } else if (parts.length === 2) {
+      nombres = parts[0];
+      apePaterno = parts[1];
+    } else {
+      // 3 o más partes, ej: ["Rosa", "Quispe", "Mamani"] o ["Ana", "María", "Rodríguez", "López"]
+      apeMaterno = parts[parts.length - 1];
+      apePaterno = parts[parts.length - 2];
+      nombres = parts.slice(0, parts.length - 2).join(' ');
+    }
+
+    setFNombres(nombres);
+    setFApePaterno(apePaterno);
+    setFApeMaterno(apeMaterno);
+    
+    setFDni(c.dni || '');
+    setFTel(c.telefono || '');
+    setFEmail(c.email || '');
+    setFLimite(String(c.limiteCred));
     setShowClientModal(true);
   };
 
   const handleClientSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    saveClient({ id: editingClient?.id, nombre: fNombre, dni: fDni, telefono: fTel, email: fEmail, limiteCred: parseFloat(fLimite) || 0 });
+    const limit = parseFloat(fLimite) || 0;
+    if (limit > 100) {
+      alert("El límite de crédito máximo permitido es S/. 100.00");
+      return;
+    }
+    const fullName = `${fNombres} ${fApePaterno} ${fApeMaterno}`.trim().replace(/\s+/g, ' ');
+    saveClient({ id: editingClient?.id, nombre: fullName, dni: fDni, telefono: fTel, email: fEmail, limiteCred: limit });
     setShowClientModal(false);
   };
 
@@ -290,46 +324,74 @@ export default function ClientesPage() {
       )}
 
       {/* MODAL: NUEVO / EDITAR CLIENTE */}
-      {showClientModal && (
-        <div className="modal-overlay open">
-          <div className="modal-card" style={{ width: '460px' }}>
-            <span className="mc-icon">👤</span>
-            <div className="mc-title">{editingClient ? 'Editar Cliente' : 'Nuevo Cliente Frecuente'}</div>
-            <p className="mc-sub">Configura los datos y el límite de crédito para fiados</p>
-            <form onSubmit={handleClientSubmit}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                <div className="inp-group" style={{ gridColumn: '1/-1', textAlign: 'left' }}>
-                  <label>Nombre Completo</label>
-                  <input type="text" value={fNombre} onChange={e => setFNombre(e.target.value)} placeholder="Ej: Rosa Quispe Mamani" required />
-                </div>
-                <div className="inp-group" style={{ textAlign: 'left' }}>
-                  <label>DNI</label>
-                  <input type="text" maxLength={8} value={fDni} onChange={e => setFDni(e.target.value)} placeholder="12345678" />
-                </div>
-                <div className="inp-group" style={{ textAlign: 'left' }}>
-                  <label>Teléfono</label>
-                  <input type="tel" value={fTel} onChange={e => setFTel(e.target.value)} placeholder="987654321" />
-                </div>
-                <div className="inp-group" style={{ textAlign: 'left' }}>
-                  <label>Correo (opcional)</label>
-                  <input type="email" value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="cliente@gmail.com" />
-                </div>
-                <div className="inp-group" style={{ textAlign: 'left' }}>
-                  <label>Límite de Crédito (S/.)</label>
-                  <div className="inp-wrap">
-                    <span className="inp-icon">💳</span>
-                    <input type="number" min="0" step="10" value={fLimite} onChange={e => setFLimite(e.target.value)} placeholder="50.00" required />
+      {showClientModal && (() => {
+        const isLimitInvalid = (parseFloat(fLimite) || 0) > 100;
+        return (
+          <div className="modal-overlay open">
+            <div className="modal-card" style={{ width: '460px' }}>
+              <span className="mc-icon">👤</span>
+              <div className="mc-title">{editingClient ? 'Editar Cliente' : 'Nuevo Cliente Frecuente'}</div>
+              <p className="mc-sub">Configura los datos y el límite de crédito para fiados</p>
+              <form onSubmit={handleClientSubmit}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                  <div className="inp-group" style={{ gridColumn: '1/-1', textAlign: 'left' }}>
+                    <label>Nombres</label>
+                    <input type="text" value={fNombres} onChange={e => setFNombres(e.target.value)} placeholder="Ej: Rosa" required />
+                  </div>
+                  <div className="inp-group" style={{ textAlign: 'left' }}>
+                    <label>Apellido Paterno</label>
+                    <input type="text" value={fApePaterno} onChange={e => setFApePaterno(e.target.value)} placeholder="Ej: Quispe" required />
+                  </div>
+                  <div className="inp-group" style={{ textAlign: 'left' }}>
+                    <label>Apellido Materno</label>
+                    <input type="text" value={fApeMaterno} onChange={e => setFApeMaterno(e.target.value)} placeholder="Ej: Mamani" required />
+                  </div>
+                  <div className="inp-group" style={{ textAlign: 'left' }}>
+                    <label>DNI</label>
+                    <input type="text" maxLength={8} value={fDni} onChange={e => setFDni(e.target.value.replace(/\D/g, ''))} placeholder="12345678" />
+                  </div>
+                  <div className="inp-group" style={{ textAlign: 'left' }}>
+                    <label>Teléfono</label>
+                    <input type="tel" value={fTel} onChange={e => setFTel(e.target.value.replace(/\D/g, ''))} placeholder="987654321" />
+                  </div>
+                  <div className="inp-group" style={{ textAlign: 'left' }}>
+                    <label>Correo (opcional)</label>
+                    <input type="email" value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="cliente@gmail.com" />
+                  </div>
+                  <div className="inp-group" style={{ textAlign: 'left' }}>
+                    <label>Límite de Crédito (S/.)</label>
+                    <div className="inp-wrap">
+                      <span className="inp-icon">💳</span>
+                      <input type="number" min="0" max="100" step="5" value={fLimite} onChange={e => setFLimite(e.target.value)} placeholder="50.00" required />
+                    </div>
+                    {isLimitInvalid && (
+                      <span style={{ fontSize: '10.5px', color: 'var(--red)', fontWeight: '700', marginTop: '4px', display: 'block' }}>
+                        ⚠️ Límite máx. permitido: S/. 100.00
+                      </span>
+                    )}
                   </div>
                 </div>
-              </div>
-              <div className="mc-btns" style={{ marginTop: '16px' }}>
-                <button type="button" className="mc-sec" onClick={() => setShowClientModal(false)}>Cancelar</button>
-                <button type="submit" className="mc-pri">{editingClient ? 'Guardar Cambios' : 'Registrar Cliente'}</button>
-              </div>
-            </form>
+                <div className="mc-btns" style={{ marginTop: '16px' }}>
+                  <button type="button" className="mc-sec" onClick={() => setShowClientModal(false)}>Cancelar</button>
+                  <button 
+                    type="submit" 
+                    className="mc-pri" 
+                    disabled={isLimitInvalid} 
+                    style={{ 
+                      opacity: isLimitInvalid ? 0.55 : 1, 
+                      cursor: isLimitInvalid ? 'not-allowed' : 'pointer',
+                      background: isLimitInvalid ? 'var(--text-3)' : undefined,
+                      boxShadow: isLimitInvalid ? 'none' : undefined
+                    }}
+                  >
+                    {editingClient ? 'Guardar Cambios' : 'Registrar Cliente'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* MODAL: COBRO DE FIADO — CON SELECTOR DE MÉTODO */}
       {showPayModal && selectedClient && (

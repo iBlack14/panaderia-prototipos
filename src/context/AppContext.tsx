@@ -102,6 +102,13 @@ export interface CashHistoryRecord {
   denominaciones?: DenominacionArqueo;
 }
 
+export interface CustomRole {
+  id: string;
+  name: string;
+  desc: string;
+  permissions: string[];
+}
+
 export interface Client {
   id: number | string;
   nombre: string;
@@ -183,11 +190,12 @@ export interface AppContextType {
   cashDrops: CashDrop[];
   breadLogs: BreadLog[];
   clients: Client[];
+  rolesList: CustomRole[];
   toastMsg: string;
   toast: (msg: string) => void;
   login: (uIn: string, pIn: string) => Promise<{ success: boolean; user?: User; message?: string }>;
   logout: () => void;
-  sendRecoveryEmail: (emailIn: string) => Promise<{ success: boolean; online?: boolean; userId?: number | string; message?: string }>;
+  sendRecoveryEmail: (emailIn: string) => Promise<{ success: boolean; online?: boolean; userId?: number | string; username?: string; message?: string }>;
   resetPasswordOffline: (userId: number | string, newPass: string) => void;
   addToCart: (productName: string, price: number, em: any, id: number, versionObj?: ProductVersion | null) => void;
   updateCartQty: (id: number, delta: number, version?: string | null) => void;
@@ -211,12 +219,41 @@ export interface AppContextType {
   toggleClient: (id: number | string) => void;
   payCreditBalance: (clientId: number | string, monto: number, concepto: string, metodoPago?: string) => void;
   logBreadConversion: (prodId: number, qty: number, destino: string, costoEstimado?: number, version?: string | null) => void;
+  saveRole: (roleObj: any) => Promise<void>;
+  deleteRole: (id: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 // --- SEED DATA FALLBACKS ---
 const DEFAULT_PRODUCTS: Product[] = [];
+
+const DEFAULT_ROLES: CustomRole[] = [
+  {
+    id: 'Administrador',
+    name: 'Administrador',
+    desc: 'Control total de la panadería con acceso sin restricciones a todos los módulos.',
+    permissions: ['pos_ventas', 'caja_operaciones', 'caja_auditoria', 'inventario_ver', 'inventario_editar', 'estadisticas_ver', 'personal_gestionar']
+  },
+  {
+    id: 'Cajero',
+    name: 'Cajero',
+    desc: 'Operador de caja estándar encargado de cobros al detalle y arqueo de turnos básicos.',
+    permissions: ['pos_ventas', 'caja_operaciones', 'inventario_ver']
+  },
+  {
+    id: 'Contador',
+    name: 'Contador',
+    desc: 'Auditor contable enfocado en control fiscal, ingresos consolidados y reportes mensuales.',
+    permissions: ['caja_auditoria', 'estadisticas_ver']
+  },
+  {
+    id: 'Supervisor',
+    name: 'Supervisor',
+    desc: 'Encargado del local. Habilitado para auditar cajas, gestionar descartes de panes y stock.',
+    permissions: ['pos_ventas', 'caja_operaciones', 'caja_auditoria', 'inventario_ver', 'inventario_editar', 'estadisticas_ver']
+  }
+];
 
 const DEFAULT_USERS: User[] = [
   { id: 1, u: 'admin', p: '1234', n: 'Administrador', rs: ['Administrador'], st: 'act', email: 'admin@snackroque.com', phone: '' },
@@ -260,6 +297,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [cashDrops, setCashDrops] = useState<CashDrop[]>([]);
   const [breadLogs, setBreadLogs] = useState<BreadLog[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [rolesList, setRolesList] = useState<CustomRole[]>([]);
 
   const [toastMsg, setToastMsg] = useState<string>('');
 
@@ -290,6 +328,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       if (isSupabaseConfigured && supabase) {
         try {
+          // --- CARGAR SESIÓN DE AUTH DE SUPABASE ---
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            const { data: prof } = await supabase
+              .from('profiles')
+              .select('*, roles(nombre)')
+              .eq('id', session.user.id)
+              .maybeSingle();
+            
+            if (prof && prof.estado === 'act') {
+              setUser({
+                id: prof.id,
+                u: prof.username,
+                n: prof.nombre + ' ' + (prof.apellido_paterno || ''),
+                rs: [prof.roles?.nombre || 'Cajero'],
+                email: prof.correo,
+                phone: prof.num_telefono || '',
+                st: prof.estado
+              });
+              setRole(prof.roles?.nombre || 'Cajero');
+            }
+          }
+
           // --- CARGAR DESDE SUPABASE ---
           console.log('⚡ Cargando datos desde Supabase...');
           
@@ -379,6 +440,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
               phone: p.num_telefono || ''
             })));
           }
+
+          // 7. Clientes Frecuentes
+          const { data: clis } = await supabase.from('clientes').select('*').order('id_cliente', { ascending: true });
+          if (clis) {
+            setClients((clis as any[]).map(c => ({
+              id: c.id_cliente,
+              nombre: c.nombre,
+              dni: c.dni || '',
+              telefono: c.telefono || '',
+              email: c.email || '',
+              limiteCred: parseFloat(c.limite_credito || 0),
+              saldoCred: parseFloat(c.saldo_credito || 0),
+              historialPagos: c.historial_pagos ? (typeof c.historial_pagos === 'string' ? JSON.parse(c.historial_pagos) : c.historial_pagos) : [],
+              active: c.estado === 1
+            })));
+          }
+
+          // 8. Roles desde la nube
+          const { data: rls } = await supabase.from('roles').select('*').order('id_rol', { ascending: true });
+          if (rls) {
+            setRolesList((rls as any[]).map(r => ({
+              id: r.nombre,
+              name: r.nombre,
+              desc: r.descripcion || '',
+              permissions: Array.isArray(r.permisos) ? r.permisos : (typeof r.permisos === 'string' ? JSON.parse(r.permisos) : [])
+            })));
+          }
           
         } catch (err) {
           console.error('Error cargando datos de Supabase', err);
@@ -386,6 +474,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } else {
         // --- CARGAR DESDE LOCALSTORAGE (MODO OFFLINE) ---
         console.log('🔌 Modo Offline: Cargando desde LocalStorage...');
+        const localUser = localStorage.getItem('snack_offline_user');
+        if (localUser) {
+          try {
+            const parsed = JSON.parse(localUser);
+            setUser(parsed);
+            setRole(parsed.rs[0]);
+          } catch (e) {
+            console.error('Error parsing offline user session', e);
+          }
+        }
         const localProds = localStorage.getItem('snack_products');
         const localUsers = localStorage.getItem('snack_users');
         const localProviders = localStorage.getItem('snack_providers');
@@ -398,6 +496,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         const localDrops = localStorage.getItem('snack_cash_drops');
         const localClients = localStorage.getItem('snack_clients');
+        const localRoles = localStorage.getItem('snack_custom_roles_v1');
 
         setProducts(localProds ? JSON.parse(localProds) : DEFAULT_PRODUCTS);
         setUsersList(localUsers ? JSON.parse(localUsers) : DEFAULT_USERS);
@@ -410,6 +509,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setBreadLogs(localBreadLogs ? JSON.parse(localBreadLogs) : []);
         setCashDrops(localDrops ? JSON.parse(localDrops) : []);
         setClients(localClients ? JSON.parse(localClients) : DEFAULT_CLIENTS);
+        setRolesList(localRoles ? JSON.parse(localRoles) : DEFAULT_ROLES);
       }
       setLoading(false);
     }
@@ -481,6 +581,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (found) {
         setUser(found);
         setRole(found.rs[0]);
+        localStorage.setItem('snack_offline_user', JSON.stringify(found));
         toast(`✨ ¡Bienvenido, ${found.n.split(' ')[0]}!`);
         return { success: true, user: found };
       } else {
@@ -491,9 +592,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    if (isSupabaseConfigured && supabase) {
+      supabase.auth.signOut().catch(console.error);
+    }
     setUser(null);
     setRole(null);
     setCart([]);
+    localStorage.removeItem('snack_offline_user');
     toast('↩ Sesión cerrada');
   };
 
@@ -513,7 +618,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const found = usersList.find(x => x.email === emailIn);
       if (found) {
         toast('🔓 Datos verificados. Configura tu nueva contraseña.');
-        return { success: true, userId: found.id, online: false };
+        return { success: true, userId: found.id, username: found.u, online: false };
       }
       toast('❌ Correo electrónico no encontrado.');
       return { success: false };
@@ -710,7 +815,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       // Cargar crédito al cliente
       const nuevoPago: CreditPayment = { id: Date.now(), fecha: new Date().toLocaleDateString(), concepto: `Compra a crédito — ${cart.map(i => i.name).join(', ')}`, monto: tot, tipo: 'cargo' };
-      const updClients = clients.map(c => c.id === clienteId ? { ...c, saldoCred: c.saldoCred + tot, historialPagos: [...c.historialPagos, nuevoPago] } : c);
+      
+      const newSaldo = clienteObj.saldoCred + tot;
+      const newHistorial = [...clienteObj.historialPagos, nuevoPago];
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await supabase.from('clientes').update({
+            saldo_credito: newSaldo,
+            historial_pagos: newHistorial
+          }).eq('id_cliente', clienteId);
+        } catch (err) {
+          console.error('Error al actualizar crédito de cliente en Supabase', err);
+        }
+      }
+
+      const updClients = clients.map(c => c.id === clienteId ? { ...c, saldoCred: newSaldo, historialPagos: newHistorial } : c);
       setClients(updClients);
       saveOffline('snack_clients', updClients);
     }
@@ -738,7 +858,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data: vData } = await supabase.from('ventas').insert({
-          id_cliente: 1,
+          id_cliente: clienteId || 1,
           id_usuario: user?.id,
           id_cierre_caja: activeSession.id,
           id_metodo_pago: paymentMethodId,
@@ -1237,38 +1357,121 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // --- CRUD CLIENTES FRECUENTES ---
-  const saveClient = (cObj: any) => {
-    let updated;
-    if (cObj.id && clients.find(c => c.id === cObj.id)) {
-      updated = clients.map(c => c.id === cObj.id ? { ...c, ...cObj } : c);
-      toast('👤 Cliente actualizado');
+  const saveClient = async (cObj: any) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        if (cObj.id) {
+          // Actualizar en Supabase
+          const { error } = await supabase.from('clientes').update({
+            nombre: cObj.nombre,
+            dni: cObj.dni || '',
+            telefono: cObj.telefono || '',
+            email: cObj.email || '',
+            limite_credito: cObj.limiteCred || 0
+          }).eq('id_cliente', cObj.id);
+          if (error) throw error;
+          toast('👤 Cliente actualizado en la nube');
+        } else {
+          // Insertar en Supabase
+          const { error } = await supabase.from('clientes').insert({
+            nombre: cObj.nombre,
+            dni: cObj.dni || '',
+            telefono: cObj.telefono || '',
+            email: cObj.email || '',
+            limite_credito: cObj.limiteCred || 0,
+            saldo_credito: 0,
+            historial_pagos: [],
+            estado: 1
+          });
+          if (error) throw error;
+          toast('👤 Cliente registrado en la nube');
+        }
+
+        // Recargar clientes desde Supabase
+        const { data } = await supabase.from('clientes').select('*').order('id_cliente', { ascending: true });
+        if (data) {
+          setClients((data as any[]).map(c => ({
+            id: c.id_cliente,
+            nombre: c.nombre,
+            dni: c.dni || '',
+            telefono: c.telefono || '',
+            email: c.email || '',
+            limiteCred: parseFloat(c.limite_credito || 0),
+            saldoCred: parseFloat(c.saldo_credito || 0),
+            historialPagos: c.historial_pagos ? (typeof c.historial_pagos === 'string' ? JSON.parse(c.historial_pagos) : c.historial_pagos) : [],
+            active: c.estado === 1
+          })));
+        }
+      } catch (err: any) {
+        toast(`❌ Error en Supabase: ${err.message}`);
+      }
     } else {
-      const newClient: Client = {
-        id: Date.now(),
-        nombre: cObj.nombre,
-        dni: cObj.dni || '',
-        telefono: cObj.telefono || '',
-        email: cObj.email || '',
-        limiteCred: cObj.limiteCred || 0,
-        saldoCred: 0,
-        historialPagos: [],
-        active: true
-      };
-      updated = [...clients, newClient];
-      toast('👤 Cliente registrado');
+      // Modo offline
+      let updated;
+      if (cObj.id && clients.find(c => c.id === cObj.id)) {
+        updated = clients.map(c => c.id === cObj.id ? { ...c, ...cObj } : c);
+        toast('👤 Cliente actualizado');
+      } else {
+        const newClient: Client = {
+          id: Date.now(),
+          nombre: cObj.nombre,
+          dni: cObj.dni || '',
+          telefono: cObj.telefono || '',
+          email: cObj.email || '',
+          limiteCred: cObj.limiteCred || 0,
+          saldoCred: 0,
+          historialPagos: [],
+          active: true
+        };
+        updated = [...clients, newClient];
+        toast('👤 Cliente registrado');
+      }
+      setClients(updated);
+      saveOffline('snack_clients', updated);
     }
-    setClients(updated);
-    saveOffline('snack_clients', updated);
   };
 
-  const toggleClient = (id: number | string) => {
-    const updated = clients.map(c => c.id === id ? { ...c, active: !c.active } : c);
-    setClients(updated);
-    saveOffline('snack_clients', updated);
-    toast('👤 Estado de cliente actualizado');
+  const toggleClient = async (id: number | string) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const c = clients.find(x => x.id === id);
+        if (!c) return;
+        const newSt = c.active ? 0 : 1;
+
+        const { error } = await supabase.from('clientes').update({
+          estado: newSt
+        }).eq('id_cliente', id);
+
+        if (error) throw error;
+        toast('👤 Estado de cliente actualizado en la nube');
+
+        // Recargar clientes desde Supabase
+        const { data } = await supabase.from('clientes').select('*').order('id_cliente', { ascending: true });
+        if (data) {
+          setClients((data as any[]).map(cl => ({
+            id: cl.id_cliente,
+            nombre: cl.nombre,
+            dni: cl.dni || '',
+            telefono: cl.telefono || '',
+            email: cl.email || '',
+            limiteCred: parseFloat(cl.limite_credito || 0),
+            saldoCred: parseFloat(cl.saldo_credito || 0),
+            historialPagos: cl.historial_pagos ? (typeof cl.historial_pagos === 'string' ? JSON.parse(cl.historial_pagos) : cl.historial_pagos) : [],
+            active: cl.estado === 1
+          })));
+        }
+      } catch (err: any) {
+        toast(`❌ Error en Supabase: ${err.message}`);
+      }
+    } else {
+      const updated = clients.map(c => c.id === id ? { ...c, active: !c.active } : c);
+      setClients(updated);
+      saveOffline('snack_clients', updated);
+      toast('👤 Estado de cliente actualizado');
+    }
   };
 
-  const payCreditBalance = (clientId: number | string, monto: number, concepto: string, metodoPago?: string) => {
+  const payCreditBalance = async (clientId: number | string, monto: number, concepto: string, metodoPago?: string) => {
     const metodoFinal = metodoPago || 'Efectivo';
     const abono: CreditPayment = {
       id: Date.now(),
@@ -1278,10 +1481,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
       tipo: 'abono',
       metodoPago: metodoFinal
     };
+
+    const targetClient = clients.find(c => c.id === clientId);
+    if (!targetClient) return;
+
+    const newSaldo = Math.max(0, targetClient.saldoCred - monto);
+    const newHistorial = [...targetClient.historialPagos, abono];
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase.from('clientes').update({
+          saldo_credito: newSaldo,
+          historial_pagos: newHistorial
+        }).eq('id_cliente', clientId);
+        if (error) throw error;
+      } catch (err: any) {
+        toast(`❌ Error en Supabase al registrar abono: ${err.message}`);
+      }
+    }
+
     const updated = clients.map(c => {
       if (c.id === clientId) {
-        const newSaldo = Math.max(0, c.saldoCred - monto);
-        return { ...c, saldoCred: newSaldo, historialPagos: [...c.historialPagos, abono] };
+        return { ...c, saldoCred: newSaldo, historialPagos: newHistorial };
       }
       return c;
     });
@@ -1340,6 +1561,85 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast(`♻️ ${qty} und. de ${prodNombre} convertidos en insumo para ${destino}.`);
   };
 
+  const saveRole = async (roleObj: any) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: existing } = await supabase.from('roles').select('id_rol').eq('nombre', roleObj.name).maybeSingle();
+        if (existing) {
+          const { error } = await supabase.from('roles').update({
+            descripcion: roleObj.desc,
+            permisos: roleObj.permissions
+          }).eq('id_rol', existing.id_rol);
+          if (error) throw error;
+          toast('🔑 Rol actualizado en la nube');
+        } else {
+          const { error } = await supabase.from('roles').insert({
+            nombre: roleObj.name,
+            descripcion: roleObj.desc,
+            permisos: roleObj.permissions,
+            estado: 1
+          });
+          if (error) throw error;
+          toast('🔑 Rol registrado en la nube');
+        }
+
+        // Recargar roles desde Supabase
+        const { data } = await supabase.from('roles').select('*').order('id_rol', { ascending: true });
+        if (data) {
+          setRolesList((data as any[]).map(r => ({
+            id: r.nombre,
+            name: r.nombre,
+            desc: r.descripcion || '',
+            permissions: Array.isArray(r.permisos) ? r.permisos : (typeof r.permisos === 'string' ? JSON.parse(r.permisos) : [])
+          })));
+        }
+      } catch (err: any) {
+        toast(`❌ Error en Supabase al guardar rol: ${err.message}`);
+      }
+    } else {
+      let updated;
+      const exists = rolesList.some(r => r.id === roleObj.id || r.name === roleObj.name);
+      if (exists) {
+        updated = rolesList.map(r => (r.id === roleObj.id || r.name === roleObj.name) ? { ...r, ...roleObj } : r);
+        toast('🔑 Rol actualizado');
+      } else {
+        const newRole = { ...roleObj, id: roleObj.id || roleObj.name.replace(/\s+/g, '') };
+        updated = [...rolesList, newRole];
+        toast('🔑 Rol registrado');
+      }
+      setRolesList(updated);
+      saveOffline('snack_custom_roles_v1', updated);
+    }
+  };
+
+  const deleteRole = async (id: string) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase.from('roles').delete().eq('nombre', id);
+        if (error) throw error;
+        toast('🔑 Rol eliminado de la nube');
+
+        // Recargar roles desde Supabase
+        const { data } = await supabase.from('roles').select('*').order('id_rol', { ascending: true });
+        if (data) {
+          setRolesList((data as any[]).map(r => ({
+            id: r.nombre,
+            name: r.nombre,
+            desc: r.descripcion || '',
+            permissions: Array.isArray(r.permisos) ? r.permisos : (typeof r.permisos === 'string' ? JSON.parse(r.permisos) : [])
+          })));
+        }
+      } catch (err: any) {
+        toast(`❌ Error en Supabase al eliminar rol: ${err.message}`);
+      }
+    } else {
+      const updated = rolesList.filter(r => r.id !== id);
+      setRolesList(updated);
+      saveOffline('snack_custom_roles_v1', updated);
+      toast('🔑 Rol eliminado');
+    }
+  };
+
   return (
     <AppContext.Provider value={{
       user,
@@ -1384,7 +1684,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       logBreadConversion,
       saveClient,
       toggleClient,
-      payCreditBalance
+      payCreditBalance,
+      rolesList,
+      saveRole,
+      deleteRole
     }}>
       {children}
       {toastMsg && <div className="snack" style={{ display: 'block' }}>{toastMsg}</div>}

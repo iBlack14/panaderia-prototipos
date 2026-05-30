@@ -24,6 +24,7 @@ export default function LoginPage() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [recoverySent, setRecoverySent] = useState(false);
+  const [recUsername, setRecUsername] = useState('');
 
   // OTP states
   const [otpStep, setOtpStep] = useState(false);
@@ -32,12 +33,14 @@ export default function LoginPage() {
   const [otpError, setOtpError] = useState(false);
   const [otpSending, setOtpSending] = useState(false);
   const [otpResendTimer, setOtpResendTimer] = useState(0);
+  const [otpSendError, setOtpSendError] = useState('');
 
   const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   const handleEmailChange = (val: string) => {
     setRecEmail(val);
     setRecEmailValid(val.length > 0 ? validateEmail(val) : null);
+    if (otpSendError) setOtpSendError('');
   };
 
   const startResendTimer = () => {
@@ -50,14 +53,33 @@ export default function LoginPage() {
     }, 1000);
   };
 
-  const generateAndSendOtp = () => {
+  const generateAndSendOtp = async (emailTarget?: string): Promise<boolean> => {
     const code = String(Math.floor(100000 + Math.random() * 900000));
     setGeneratedOtp(code);
     setOtpCode('');
     setOtpError(false);
-    // En modo offline simulamos el envío mostrando el código en consola
-    console.log(`[OTP Simulado] Código para ${recEmail}: ${code}`);
-    return code;
+    setOtpSendError('');
+    const target = emailTarget || recEmail;
+    try {
+      const resp = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: target, otp: code }),
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        const errMsg = body?.error || 'Error desconocido';
+        setOtpSendError(errMsg);
+        console.warn('[OTP] Error enviando email:', errMsg);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      const msg = 'No se pudo conectar con la API de email';
+      setOtpSendError(msg);
+      console.warn('[OTP] No se pudo conectar con la API de email:', err);
+      return false;
+    }
   };
 
   const handleOpenRecovery = () => {
@@ -67,6 +89,7 @@ export default function LoginPage() {
     setOtpStep(false);
     setRecEmail('');
     setRecEmailValid(null);
+    setOtpSendError('');
   };
 
   // Multi-role selection step
@@ -105,6 +128,7 @@ export default function LoginPage() {
     if (!recEmail || !recEmailValid) return;
 
     setOtpSending(true);
+    setOtpSendError('');
 
     const res = await sendRecoveryEmail(recEmail);
     if (res && res.success) {
@@ -112,12 +136,17 @@ export default function LoginPage() {
         // Supabase envía el correo real
         setRecoverySent(true);
       } else {
-        // Modo offline: generamos OTP simulado
-        generateAndSendOtp();
-        setOtpStep(true);
-        startResendTimer();
-        if (res.userId !== undefined) {
-          setVerifiedUserId(res.userId);
+        // Modo offline (con usuarios locales): enviamos OTP real por Resend
+        const sent = await generateAndSendOtp(recEmail);
+        if (sent) {
+          setOtpStep(true);
+          startResendTimer();
+          if (res.userId !== undefined) {
+            setVerifiedUserId(res.userId);
+          }
+          if (res.username !== undefined) {
+            setRecUsername(res.username);
+          }
         }
       }
     }
@@ -136,10 +165,14 @@ export default function LoginPage() {
     }
   };
 
-  const handleResendOtp = () => {
+  const handleResendOtp = async () => {
     if (otpResendTimer > 0) return;
-    generateAndSendOtp();
-    startResendTimer();
+    setOtpSending(true);
+    const sent = await generateAndSendOtp(recEmail);
+    setOtpSending(false);
+    if (sent) {
+      startResendTimer();
+    }
   };
 
   const handleResetSubmit = (e: React.FormEvent) => {
@@ -218,12 +251,12 @@ export default function LoginPage() {
               
               <form onSubmit={handleLoginSubmit}>
                 <div className="inp-group">
-                  <label>Usuario o Correo</label>
+                  <label>Usuario</label>
                   <div className="inp-wrap">
-                    <span className="inp-icon">{username.includes('@') ? '📧' : '👤'}</span>
+                    <span className="inp-icon">👤</span>
                     <input 
                       type="text" 
-                      placeholder="Ej: admin o correo@snackroque.com" 
+                      placeholder="Ej: admin o carlos" 
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       required 
@@ -374,6 +407,11 @@ export default function LoginPage() {
                           Ingresa un correo electrónico válido
                         </span>
                       )}
+                      {otpSendError && (
+                        <span style={{ fontSize: '11.5px', color: 'var(--red)', fontWeight: '600', marginTop: '8px', display: 'block', background: 'rgba(192,72,58,0.06)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(192,72,58,0.15)', textAlign: 'left', lineHeight: '1.4' }}>
+                          ❌ Error al enviar: {otpSendError}
+                        </span>
+                      )}
                     </div>
 
                     <button 
@@ -430,6 +468,12 @@ export default function LoginPage() {
                         </button>
                       )}
                     </div>
+
+                    {otpSendError && (
+                      <span style={{ fontSize: '11.5px', color: 'var(--red)', fontWeight: '600', marginBottom: '14px', display: 'block', background: 'rgba(192,72,58,0.06)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(192,72,58,0.15)', textAlign: 'left', lineHeight: '1.4' }}>
+                        ❌ Error al reenviar: {otpSendError}
+                      </span>
+                    )}
 
                     <button 
                       type="submit" 

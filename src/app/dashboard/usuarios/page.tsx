@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useApp, User } from '@/context/AppContext';
+import { useApp, User, CustomRole } from '@/context/AppContext';
 
 interface SystemPermission {
   key: string;
@@ -11,12 +11,6 @@ interface SystemPermission {
   desc: string;
 }
 
-interface CustomRole {
-  id: string;
-  name: string;
-  desc: string;
-  permissions: string[];
-}
 
 const SYSTEM_PERMISSIONS: SystemPermission[] = [
   { key: 'pos_ventas', label: 'Registrar Ventas (POS)', icon: '🛒', desc: 'Permite ingresar a la vitrina y procesar cobros de panadería' },
@@ -29,53 +23,9 @@ const SYSTEM_PERMISSIONS: SystemPermission[] = [
 ];
 
 export default function PersonalPage() {
-  const { usersList, saveUser, toggleUserStatus } = useApp();
+  const { usersList, saveUser, toggleUserStatus, rolesList, saveRole, deleteRole } = useApp();
 
   const [activeSubTab, setActiveSubTab] = useState<'personal' | 'roles'>('personal');
-
-  // --- LOCAL PERSISTED ROLES LIST STATE ---
-  const [rolesList, setRolesList] = useState<CustomRole[]>([]);
-
-  useEffect(() => {
-    const stored = localStorage.getItem('snack_custom_roles_v1');
-    if (stored) {
-      setRolesList(JSON.parse(stored));
-    } else {
-      const defaultRoles: CustomRole[] = [
-        {
-          id: 'Administrador',
-          name: 'Administrador',
-          desc: 'Control total de la panadería con acceso sin restricciones a todos los módulos.',
-          permissions: SYSTEM_PERMISSIONS.map(p => p.key)
-        },
-        {
-          id: 'Cajero',
-          name: 'Cajero',
-          desc: 'Operador de caja estándar encargado de cobros al detalle y arqueo de turnos básicos.',
-          permissions: ['pos_ventas', 'caja_operaciones', 'inventario_ver']
-        },
-        {
-          id: 'Contador',
-          name: 'Contador',
-          desc: 'Auditor contable enfocado en control fiscal, ingresos consolidados y reportes mensuales.',
-          permissions: ['caja_auditoria', 'estadisticas_ver']
-        },
-        {
-          id: 'Supervisor',
-          name: 'Supervisor',
-          desc: 'Encargado del local. Habilitado para auditar cajas, gestionar descartes de panes y stock.',
-          permissions: ['pos_ventas', 'caja_operaciones', 'caja_auditoria', 'inventario_ver', 'inventario_editar', 'estadisticas_ver']
-        }
-      ];
-      setRolesList(defaultRoles);
-      localStorage.setItem('snack_custom_roles_v1', JSON.stringify(defaultRoles));
-    }
-  }, []);
-
-  const saveRolesToStorage = (updated: CustomRole[]) => {
-    setRolesList(updated);
-    localStorage.setItem('snack_custom_roles_v1', JSON.stringify(updated));
-  };
 
   // --- MODALS STATES ---
   const [showUserModal, setShowUserModal] = useState(false);
@@ -103,6 +53,8 @@ export default function PersonalPage() {
   const [generatedOtp, setGeneratedOtp] = useState('');
   const [otpError, setOtpError] = useState(false);
   const [otpResendTimer, setOtpResendTimer] = useState(0);
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpSendError, setOtpSendError] = useState('');
 
   // --- ROLE FORM STATES ---
   const [roleName, setRoleName] = useState('');
@@ -189,14 +141,42 @@ export default function PersonalPage() {
     }, 1000);
   };
 
-  const handleSendOtp = () => {
+  const sendOtpEmail = async (targetEmail: string): Promise<boolean> => {
     const code = String(Math.floor(100000 + Math.random() * 900000));
     setGeneratedOtp(code);
     setOtpCode('');
     setOtpError(false);
-    console.log(`[OTP Simulado] Código para ${email}: ${code}`);
-    setShowOtpModal(true);
-    startResendTimer();
+    setOtpSendError('');
+    try {
+      const resp = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: targetEmail, otp: code }),
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        const errMsg = body?.error || 'Error desconocido al enviar el correo';
+        setOtpSendError(errMsg);
+        console.warn('[OTP] Error al enviar:', errMsg);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      const msg = 'No se pudo conectar con el servicio de email';
+      setOtpSendError(msg);
+      console.warn('[OTP]', msg, err);
+      return false;
+    }
+  };
+
+  const handleSendOtp = async () => {
+    setOtpSending(true);
+    const ok = await sendOtpEmail(email);
+    setOtpSending(false);
+    if (ok) {
+      setShowOtpModal(true);
+      startResendTimer();
+    }
   };
 
   const handleVerifyOtp = (e: React.FormEvent) => {
@@ -211,13 +191,11 @@ export default function PersonalPage() {
     }
   };
 
-  const handleResendOtp = () => {
+  const handleResendOtp = async () => {
     if (otpResendTimer > 0) return;
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    setGeneratedOtp(code);
-    setOtpCode('');
-    setOtpError(false);
-    console.log(`[OTP Reenviado] Código para ${email}: ${code}`);
+    setOtpSending(true);
+    await sendOtpEmail(email);
+    setOtpSending(false);
     startResendTimer();
   };
 
@@ -267,21 +245,13 @@ export default function PersonalPage() {
     e.preventDefault();
     if (!isRoleFormValid) return;
 
-    if (editingRoleId) {
-      // Editar rol existente
-      const updated = rolesList.map(r => r.id === editingRoleId ? { ...r, name: roleName, desc: roleDesc, permissions: rolePermissions } : r);
-      saveRolesToStorage(updated);
-    } else {
-      // Crear nuevo rol
-      const newId = roleName.replace(/\s+/g, '');
-      const newRole: CustomRole = {
-        id: newId,
-        name: roleName,
-        desc: roleDesc,
-        permissions: rolePermissions
-      };
-      saveRolesToStorage([...rolesList, newRole]);
-    }
+    const newId = editingRoleId || roleName.replace(/\s+/g, '');
+    saveRole({
+      id: newId,
+      name: roleName,
+      desc: roleDesc,
+      permissions: rolePermissions
+    });
     setShowRoleModal(false);
   };
 
@@ -295,8 +265,7 @@ export default function PersonalPage() {
 
   const handleDeleteRole = (id: string) => {
     if (id === 'Administrador' || id === 'Cajero') return;
-    const updated = rolesList.filter(r => r.id !== id);
-    saveRolesToStorage(updated);
+    deleteRole(id);
   };
 
   const getRolePermissionsCount = (roleId: string) => {
@@ -564,29 +533,34 @@ export default function PersonalPage() {
                           isEmailValid ? '⚠️ Correo válido — pendiente de verificar' :
                           '❌ Correo inválido'}
                       </div>
+                      {otpSendError && !emailVerified && (
+                        <div style={{ fontSize: '10px', marginTop: '4px', fontWeight: '600', color: 'var(--red)', background: 'rgba(192,72,58,0.06)', padding: '6px 10px', borderRadius: '6px', border: '1px solid rgba(192,72,58,0.15)' }}>
+                          ❌ Error al enviar: {otpSendError}
+                        </div>
+                      )}
                     </div>
                     {!editingUserId && (
                       <button
                         type="button"
                         onClick={handleSendOtp}
-                        disabled={!isEmailValid || isEmailTaken || emailVerified}
+                        disabled={!isEmailValid || isEmailTaken || emailVerified || otpSending}
                         style={{
                           padding: '10px 14px',
                           borderRadius: '10px',
                           border: '1.5px solid var(--border)',
-                          background: emailVerified ? 'var(--green-bg)' : 'var(--accent-bg)',
-                          color: emailVerified ? 'var(--green)' : 'var(--accent)',
+                          background: emailVerified ? 'var(--green-bg)' : otpSending ? 'var(--bg-hover)' : 'var(--accent-bg)',
+                          color: emailVerified ? 'var(--green)' : otpSending ? 'var(--text-3)' : 'var(--accent)',
                           fontSize: '11.5px',
                           fontWeight: '700',
-                          cursor: (!isEmailValid || isEmailTaken || emailVerified) ? 'not-allowed' : 'pointer',
-                          opacity: (!isEmailValid || isEmailTaken) ? 0.5 : 1,
+                          cursor: (!isEmailValid || isEmailTaken || emailVerified || otpSending) ? 'not-allowed' : 'pointer',
+                          opacity: (!isEmailValid || isEmailTaken || otpSending) ? 0.6 : 1,
                           whiteSpace: 'nowrap',
                           transition: 'all 0.18s',
                           flexShrink: 0,
                           marginTop: '0px'
                         }}
                       >
-                        {emailVerified ? '✅ Verificado' : '📨 Verificar correo'}
+                        {emailVerified ? '✅ Verificado' : otpSending ? '⏳ Enviando...' : '📨 Verificar correo'}
                       </button>
                     )}
                   </div>

@@ -7,10 +7,35 @@
 -- Habilitar extensiones necesarias
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- ============================================================
+-- LIMPIEZA DE TABLAS Y FUNCIONES (RESET COMPLETO)
+-- ============================================================
+DROP TABLE IF EXISTS public.produccion_descarte CASCADE;
+DROP TABLE IF EXISTS public.detalle_compra CASCADE;
+DROP TABLE IF EXISTS public.compras CASCADE;
+DROP TABLE IF EXISTS public.detalle_venta CASCADE;
+DROP TABLE IF EXISTS public.ventas CASCADE;
+DROP TABLE IF EXISTS public.cierres_caja CASCADE;
+DROP TABLE IF EXISTS public.producto_versiones CASCADE;
+DROP TABLE IF EXISTS public.productos CASCADE;
+DROP TABLE IF EXISTS public.proveedores CASCADE;
+DROP TABLE IF EXISTS public.clientes CASCADE;
+DROP TABLE IF EXISTS public.metodos_pago CASCADE;
+DROP TABLE IF EXISTS public.categorias CASCADE;
+DROP TABLE IF EXISTS public.profiles CASCADE;
+DROP TABLE IF EXISTS public.roles CASCADE;
+
+DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
+DROP FUNCTION IF EXISTS fn_descontar_stock_venta() CASCADE;
+DROP FUNCTION IF EXISTS fn_aumentar_stock_compra() CASCADE;
+DROP FUNCTION IF EXISTS fn_actualizar_stock_panes() CASCADE;
+
 -- 1. Roles de usuario
 CREATE TABLE IF NOT EXISTS public.roles (
     id_rol SERIAL PRIMARY KEY,
     nombre VARCHAR(50) NOT NULL UNIQUE,
+    descripcion TEXT,
+    permisos JSONB DEFAULT '[]'::jsonb,
     estado INT DEFAULT 1 -- 1: Activo, 0: Inactivo
 );
 
@@ -23,6 +48,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     apellido_materno VARCHAR(100),
     correo VARCHAR(150) NOT NULL,
     num_telefono VARCHAR(20),
+    dni VARCHAR(20),
     id_rol INT REFERENCES public.roles(id_rol) DEFAULT 2, -- Cajero por defecto
     fec_registro TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     estado VARCHAR(20) DEFAULT 'act' -- 'act': Activo, 'ina': Inactivo
@@ -30,6 +56,11 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 
 -- Habilitar RLS en profiles
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+-- Eliminar políticas si ya existen para evitar errores al re-ejecutar el script
+DROP POLICY IF EXISTS "Permitir lectura de perfiles a todos los autenticados" ON public.profiles;
+DROP POLICY IF EXISTS "Permitir actualización de perfil propio" ON public.profiles;
+DROP POLICY IF EXISTS "Permitir inserción de perfiles" ON public.profiles;
 
 -- Políticas de RLS para profiles
 CREATE POLICY "Permitir lectura de perfiles a todos los autenticados" 
@@ -55,10 +86,16 @@ CREATE TABLE IF NOT EXISTS public.metodos_pago (
     estado INT DEFAULT 1 -- 1: Activo, 0: Inactivo
 );
 
--- 5. Clientes
+-- 5. Clientes (con soporte para línea de crédito y fiados)
 CREATE TABLE IF NOT EXISTS public.clientes (
     id_cliente SERIAL PRIMARY KEY,
     nombre VARCHAR(150) NOT NULL,
+    dni VARCHAR(20),
+    telefono VARCHAR(50),
+    email VARCHAR(150),
+    limite_credito DECIMAL(10, 2) NOT NULL DEFAULT 0.00 CONSTRAINT chk_limite_credito CHECK (limite_credito <= 100.00),
+    saldo_credito DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+    historial_pagos JSONB DEFAULT '[]'::jsonb,
     fec_registro TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     estado INT DEFAULT 1 -- 1: Activo, 0: Inactivo
 );
@@ -190,7 +227,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER tr_venta_descontar_stock
+DROP TRIGGER IF EXISTS tr_venta_descontar_stock ON public.detalle_venta;
+CREATE TRIGGER tr_venta_descontar_stock
 AFTER INSERT ON public.detalle_venta
 FOR EACH ROW EXECUTE FUNCTION fn_descontar_stock_venta();
 
@@ -212,7 +250,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER tr_compra_aumentar_stock
+DROP TRIGGER IF EXISTS tr_compra_aumentar_stock ON public.detalle_compra;
+CREATE TRIGGER tr_compra_aumentar_stock
 AFTER INSERT ON public.detalle_compra
 FOR EACH ROW EXECUTE FUNCTION fn_aumentar_stock_compra();
 
@@ -246,7 +285,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER tr_panes_actualizar_stock
+DROP TRIGGER IF EXISTS tr_panes_actualizar_stock ON public.produccion_descarte;
+CREATE TRIGGER tr_panes_actualizar_stock
 AFTER INSERT ON public.produccion_descarte
 FOR EACH ROW EXECUTE FUNCTION fn_actualizar_stock_panes();
 
@@ -273,7 +313,8 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Disparador después de que un usuario se registra en Auth
-CREATE OR REPLACE TRIGGER on_auth_user_created
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
@@ -283,11 +324,13 @@ CREATE OR REPLACE TRIGGER on_auth_user_created
 -- ============================================================
 
 -- 1. Roles
-INSERT INTO public.roles (id_rol, nombre, estado) VALUES
-(1, 'Administrador', 1),
-(2, 'Cajero', 1),
-(3, 'Panadero', 1)
-ON CONFLICT (id_rol) DO UPDATE SET nombre = EXCLUDED.nombre;
+INSERT INTO public.roles (id_rol, nombre, descripcion, permisos, estado) VALUES
+(1, 'Administrador', 'Control total de la panadería con acceso sin restricciones a todos los módulos.', '["pos_ventas", "caja_operaciones", "caja_auditoria", "inventario_ver", "inventario_editar", "estadisticas_ver", "personal_gestionar"]'::jsonb, 1),
+(2, 'Cajero', 'Operador de caja estándar encargado de cobros al detalle y arqueo de turnos básicos.', '["pos_ventas", "caja_operaciones", "inventario_ver"]'::jsonb, 1),
+(3, 'Panadero', 'Personal de producción de panes y dulces con control sobre stock y descartes.', '["inventario_ver", "inventario_editar"]'::jsonb, 1),
+(4, 'Contador', 'Auditor contable enfocado en control fiscal, ingresos consolidados y reportes mensuales.', '["caja_auditoria", "estadisticas_ver"]'::jsonb, 1),
+(5, 'Supervisor', 'Encargado del local. Habilitado para auditar cajas, gestionar descartes de panes y stock.', '["pos_ventas", "caja_operaciones", "caja_auditoria", "inventario_ver", "inventario_editar", "estadisticas_ver"]'::jsonb, 1)
+ON CONFLICT (id_rol) DO UPDATE SET nombre = EXCLUDED.nombre, descripcion = EXCLUDED.descripcion, permisos = EXCLUDED.permisos;
 
 -- 2. Categorías
 INSERT INTO public.categorias (id_categoria, nombre, estado) VALUES
@@ -307,18 +350,10 @@ ON CONFLICT (id_metodo_pago) DO UPDATE SET tipo_pago = EXCLUDED.tipo_pago;
 
 -- 4. Clientes
 INSERT INTO public.clientes (id_cliente, nombre, estado) VALUES
-(1, 'Público General', 1),
-(2, 'Juan Pérez', 1),
-(3, 'María López', 1)
+(1, 'Público General', 1)
 ON CONFLICT (id_cliente) DO UPDATE SET nombre = EXCLUDED.nombre;
 
--- 5. Proveedores
-INSERT INTO public.proveedores (id_proveedor, ruc, nombre_empresa, num_telefono, direccion, estado) VALUES
-(1, '20123456789', 'Harinas S.A.', '987654321', 'Av. Trigo 123', 1),
-(2, '20987654321', 'Distribuidora Dulce', '912345678', 'Calle Azúcar 456', 1)
-ON CONFLICT (id_proveedor) DO UPDATE SET ruc = EXCLUDED.ruc;
-
--- 6. Productos
+-- 5. Productos
 INSERT INTO public.productos (id_producto, id_categoria, nombre, em, num_stock, precio_unitario, estado) VALUES
 (1, 1, 'Croissant mantequilla', '🥐', 48, 4.50, 1),
 (2, 1, 'Pan de yema especial', '🍞', 74, 1.80, 1),
@@ -329,3 +364,21 @@ INSERT INTO public.productos (id_producto, id_categoria, nombre, em, num_stock, 
 (7, 1, 'Pan integral', '🌾', 20, 5.50, 1),
 (8, 4, 'Café americano', '☕', 99, 6.00, 1)
 ON CONFLICT (id_producto) DO UPDATE SET nombre = EXCLUDED.nombre;
+
+-- Vincular usuarios de auth.users existentes con public.profiles (Backfill automático)
+INSERT INTO public.profiles (id, username, nombre, apellido_paterno, correo, id_rol, estado)
+SELECT 
+  id, 
+  COALESCE(raw_user_meta_data->>'username', split_part(email, '@', 1)), 
+  COALESCE(raw_user_meta_data->>'nombre', 'Alonso'), 
+  COALESCE(raw_user_meta_data->>'apellido_paterno', 'Admin'), 
+  email, 
+  1, -- 1: Administrador por defecto para usuarios ya creados en auth
+  'act'
+FROM auth.users
+ON CONFLICT (id) DO NOTHING;
+
+-- Recargar caché del esquema de Supabase/PostgREST
+NOTIFY pgrst, 'reload schema';
+
+
