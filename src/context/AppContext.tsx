@@ -793,7 +793,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (isSupabaseConfigured && supabase) {
       try {
         if (uObj.id) {
-          // Obtener ID del rol correspondiente
+          // Actualizar usuario existente
           let idRol = 2; // Cajero por defecto
           if (uObj.role === 'Administrador') idRol = 1;
           else if (uObj.role === 'Panadero') idRol = 3;
@@ -804,33 +804,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
             apellido_paterno: uObj.n.split(' ').slice(1).join(' ') || '',
             correo: uObj.email,
             num_telefono: uObj.phone,
+            numero_documento: uObj.dni || '',
             id_rol: idRol
           }).eq('id', uObj.id);
 
           if (error) throw error;
           toast('👤 Colaborador actualizado en la nube');
         } else {
+          // Crear nuevo usuario en profiles (requiere que exista en auth)
           toast('⚠️ Los nuevos colaboradores se registran en la nube al iniciar sesión por primera vez.');
         }
 
         // Recargar lista desde Supabase
-        const { data: profs } = await supabase.from('profiles').select('*, roles(nombre)');
-        if (profs) {
+        const { data: profs, error: selectError } = await supabase.from('profiles').select('*, roles(nombre)');
+        if (selectError) {
+          console.error('Error recargar perfiles:', selectError);
+        } else if (profs) {
           setUsersList((profs as any[]).map(p => ({
             id: p.id,
-            u: p.username,
+            u: p.username || '',
             p: '••••',
-            n: p.nombre + ' ' + (p.apellido_paterno || ''),
+            n: (p.nombre || '') + ' ' + (p.apellido_paterno || ''),
             rs: [p.roles?.nombre || 'Cajero'],
-            st: p.estado,
-            email: p.correo,
+            st: p.estado === 1 ? 'act' : 'inact',
+            email: p.correo || '',
             phone: p.num_telefono || ''
           })));
         }
       } catch (err: any) {
+        console.error('Error en saveUser:', err);
         toast(`❌ Error en la nube: ${err.message}`);
       }
     } else {
+      // Fallback local
       let updated;
       if (uObj.id) {
         updated = usersList.map(u => u.id === uObj.id ? { ...u, ...uObj } : u);
