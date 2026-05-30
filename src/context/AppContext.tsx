@@ -866,9 +866,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const lookupProfileByDni = async (dni: string) => {
+    // Buscar en Supabase si está configurado
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('numero_documento', dni)
+          .single();
+
+        if (error && error.code !== 'PGRST116') {
+          throw error;
+        }
+
+        if (data) {
+          const firstName = data.nombre || '';
+          const lastName = data.apellido_paterno || '';
+          const email = data.correo || '';
+          const phone = data.num_telefono || '';
+
+          return {
+            firstName: firstName || lastName || '',
+            lastName: lastName || '',
+            email: email || undefined,
+            phone: phone || undefined
+          };
+        }
+        
+        return null;
+      } catch (err: any) {
+        console.error('Error buscando perfil en Supabase:', err);
+        throw new Error(`Error al consultar el perfil por DNI en Supabase: ${err.message}`);
+      }
+    }
+
+    // Si Supabase no está configurado, intentar con API externa
     const baseUrl = process.env.NEXT_PUBLIC_PROFILE_LOOKUP_URL?.trim() || '';
     if (!baseUrl) {
-      throw new Error('No se ha configurado la URL de búsqueda de perfiles por DNI. Use NEXT_PUBLIC_PROFILE_LOOKUP_URL.');
+      throw new Error('No se ha configurado Supabase ni NEXT_PUBLIC_PROFILE_LOOKUP_URL para la búsqueda de perfiles por DNI.');
     }
 
     const url = baseUrl.includes('{dni}')
