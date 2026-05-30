@@ -855,7 +855,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ? baseUrl.replace('{dni}', encodeURIComponent(dni))
       : `${baseUrl.replace(/\/$/, '')}${baseUrl.includes('?') ? '&' : '?'}dni=${encodeURIComponent(dni)}`;
 
-    const res = await fetch(url);
+    const authToken = process.env.NEXT_PUBLIC_PROFILE_LOOKUP_AUTH?.trim() || '';
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (authToken) {
+      headers.Authorization = authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
+    }
+
+    const res = await fetch(url, { headers });
     if (!res.ok) {
       throw new Error(`Error al consultar el servicio de perfiles: ${res.status} ${res.statusText}`);
     }
