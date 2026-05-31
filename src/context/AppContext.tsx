@@ -932,7 +932,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           toast('👤 Colaborador actualizado en la nube');
         } else {
           // Crear nuevo usuario en profiles (requiere que exista en auth)
-          toast('⚠️ Los nuevos colaboradores se registran en la nube al iniciar sesión por primera vez.');
+          toast('✅ Colaborador agregado exitosamente. Se sincronizará en la nube cuando inicie sesión.');
         }
 
         // Recargar lista desde Supabase
