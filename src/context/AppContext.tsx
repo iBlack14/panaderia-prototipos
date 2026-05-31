@@ -931,16 +931,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (error) throw error;
           toast('👤 Colaborador actualizado en la nube');
         } else {
-          // Crear nuevo usuario directamente en profiles (sin crear en auth)
+          // Crear nuevo usuario en auth y profiles
           let idRol = 2; // Cajero por defecto
           if (uObj.role === 'Administrador') idRol = 1;
           else if (uObj.role === 'Panadero') idRol = 3;
 
-          // Generar UUID temporal para el nuevo usuario
-          const tempUUID = crypto.randomUUID?.() || `local_${Date.now()}`;
+          // Generar contraseña temporal (usar correo como base)
+          const tempPassword = uObj.email?.split('@')[0] + '123456' || `Temp${Date.now()}`;
 
+          // Crear usuario en auth usando endpoint
+          const authResponse = await fetch('/api/create-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: uObj.email,
+              password: tempPassword,
+              userData: {
+                username: uObj.u,
+                nombre: uObj.n,
+                apellido_paterno: uObj.n.split(' ').slice(1).join(' ') || '',
+              }
+            })
+          });
+
+          const authData = await authResponse.json();
+
+          if (!authResponse.ok && !authData.message?.includes('already exists')) {
+            throw new Error(authData.error || 'Error creando usuario en auth');
+          }
+
+          // Usar el ID del usuario de auth, o generar uno temporal si no se crea
+          const userId = authData.userId || crypto.randomUUID?.() || `local_${Date.now()}`;
+
+          // Guardar en profiles
           const { error: insertError } = await supabase.from('profiles').insert({
-            id: tempUUID,
+            id: userId,
             username: uObj.u,
             nombre: uObj.n.split(' ')[0] || uObj.n,
             apellido_paterno: uObj.n.split(' ').slice(1).join(' ') || '',
@@ -952,7 +977,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
 
           if (insertError) throw insertError;
-          toast('✅ Colaborador guardado directamente en la nube');
+          toast(`✅ Colaborador creado. Contraseña temporal: ${tempPassword}`);
         }
 
         // Recargar lista desde Supabase
