@@ -931,8 +931,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (error) throw error;
           toast('👤 Colaborador actualizado en la nube');
         } else {
-          // Crear nuevo usuario en profiles (requiere que exista en auth)
-          toast('✅ Colaborador agregado exitosamente. Se sincronizará en la nube cuando inicie sesión.');
+          // Crear nuevo usuario en auth e inmediatamente en profiles
+          const tempId = uObj.email || `temp_${Date.now()}`;
+          let idRol = 2; // Cajero por defecto
+          if (uObj.role === 'Administrador') idRol = 1;
+          else if (uObj.role === 'Panadero') idRol = 3;
+
+          // Intentar crear en auth (requiere service role key - fallará si no está configurado)
+          try {
+            const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+              email: uObj.email,
+              password: uObj.p,
+              email_confirm: true,
+              user_metadata: { nombre: uObj.n }
+            });
+
+            if (authData?.user) {
+              // Si se creó en auth, guardarlo en profiles
+              const { error: insertError } = await supabase.from('profiles').insert({
+                id: authData.user.id,
+                username: uObj.u,
+                nombre: uObj.n.split(' ')[0] || uObj.n,
+                apellido_paterno: uObj.n.split(' ').slice(1).join(' ') || '',
+                correo: uObj.email,
+                num_telefono: uObj.phone,
+                numero_documento: uObj.dni || '',
+                id_rol: idRol,
+                estado: 'act'
+              });
+
+              if (insertError) throw insertError;
+              toast('✅ Colaborador guardado directamente en la nube');
+            } else if (authError) {
+              // Si falla auth, al menos guardarlo localmente
+              console.warn('Auth insert failed, saving locally:', authError);
+              throw authError;
+            }
+          } catch (authErr: any) {
+            console.warn('No se pudo crear en auth (normal si no tienes admin key):', authErr.message);
+            // Fallback: guardar localmente
+            const newUser = { ...uObj, id: `local_${Date.now()}`, st: 'act', rs: [uObj.role] };
+            setUsersList([...usersList, newUser]);
+            saveOffline('snack_users', [...usersList, newUser]);
+            toast('✅ Colaborador agregado localmente (sin sincronización cloud)');
+            return;
+          }
         }
 
         // Recargar lista desde Supabase
@@ -953,7 +996,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       } catch (err: any) {
         console.error('Error en saveUser:', err);
-        toast(`❌ Error en la nube: ${err.message}`);
+        toast(`❌ Error: ${err.message}`);
+        // Fallback local
+        const newUser = { ...uObj, id: `local_${Date.now()}`, st: 'act', rs: [uObj.role] };
+        setUsersList([...usersList, newUser]);
+        saveOffline('snack_users', [...usersList, newUser]);
+        toast('✅ Colaborador guardado localmente (sincronización pendiente)');
       }
     } else {
       // Fallback local
