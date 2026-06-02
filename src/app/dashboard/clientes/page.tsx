@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useApp, Client } from '@/context/AppContext';
 
 // Métodos de pago para cobranza
@@ -33,6 +33,11 @@ export default function ClientesPage() {
   const [fEmail, setFEmail] = useState('');
   const [fLimite, setFLimite] = useState('50');
 
+  // DNI lookup state
+  const [dniLoading, setDniLoading] = useState(false);
+  const [dniError, setDniError] = useState('');
+  const [dniOk, setDniOk] = useState(false);
+
   // Payment form state
   const [payMonto, setPayMonto] = useState('');
   const [payMetodo, setPayMetodo] = useState('Efectivo');
@@ -57,11 +62,48 @@ export default function ClientesPage() {
     clients.reduce((a, c) => a + c.saldoCred, 0), [clients]
   );
 
+  const resetDniState = () => { setDniError(''); setDniOk(false); };
+
   const openNewClient = () => {
     setEditingClient(null);
     setFNombres(''); setFApePaterno(''); setFApeMaterno(''); setFDni(''); setFTel(''); setFEmail(''); setFLimite('50');
+    resetDniState();
     setShowClientModal(true);
   };
+
+  const consultarDni = useCallback(async (dni: string) => {
+    setDniLoading(true);
+    setDniError('');
+    setDniOk(false);
+    try {
+      const res = await fetch('/api/consulta-dni', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dni }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setDniError(json.message || 'No se encontraron datos para ese DNI.');
+      } else {
+        const d = json.data;
+        setFNombres(d.nombres ? d.nombres.trim() : '');
+        setFApePaterno(d.apellido_paterno ? d.apellido_paterno.trim() : '');
+        setFApeMaterno(d.apellido_materno ? d.apellido_materno.trim() : '');
+        setDniOk(true);
+      }
+    } catch {
+      setDniError('Error de conexión al consultar el DNI.');
+    } finally {
+      setDniLoading(false);
+    }
+  }, []);
+
+  // Auto-consulta cuando el DNI llega a 8 dígitos
+  useEffect(() => {
+    if (fDni.length === 8 && showClientModal) {
+      consultarDni(fDni);
+    }
+  }, [fDni, showClientModal, consultarDni]);
 
   const openEditClient = (c: Client) => {
     setEditingClient(c);
@@ -92,6 +134,7 @@ export default function ClientesPage() {
     setFTel(c.telefono || '');
     setFEmail(c.email || '');
     setFLimite(String(c.limiteCred));
+    resetDniState();
     setShowClientModal(true);
   };
 
@@ -347,8 +390,23 @@ export default function ClientesPage() {
                     <input type="text" value={fApeMaterno} onChange={e => setFApeMaterno(e.target.value)} placeholder="Ej: Mamani" required />
                   </div>
                   <div className="inp-group" style={{ textAlign: 'left' }}>
-                    <label>DNI</label>
-                    <input type="text" maxLength={8} value={fDni} onChange={e => setFDni(e.target.value.replace(/\D/g, ''))} placeholder="12345678" />
+                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>DNI</span>
+                      {dniLoading && <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: '600' }}>⏳ Consultando RENIEC...</span>}
+                      {!dniLoading && dniOk && <span style={{ fontSize: '10px', color: 'var(--green)', fontWeight: '700' }}>✅ Datos encontrados</span>}
+                      {!dniLoading && dniError && <span style={{ fontSize: '10px', color: 'var(--red)', fontWeight: '600' }}>⚠️ {dniError}</span>}
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={8}
+                      value={fDni}
+                      onChange={e => { setFDni(e.target.value.replace(/\D/g, '')); setDniOk(false); setDniError(''); }}
+                      placeholder="12345678 — se autocompletará solo"
+                      style={{
+                        borderColor: dniOk ? 'var(--green)' : dniError ? 'var(--red)' : undefined,
+                        transition: 'border-color 0.2s ease'
+                      }}
+                    />
                   </div>
                   <div className="inp-group" style={{ textAlign: 'left' }}>
                     <label>Teléfono</label>

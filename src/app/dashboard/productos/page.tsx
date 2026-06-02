@@ -6,6 +6,7 @@ import { useApp, Product, ProductVersion } from '@/context/AppContext';
 export default function InventarioPage() {
   const { 
     products, 
+    categories,
     saveProduct, 
     deleteProduct, 
     breadLogs, 
@@ -22,7 +23,7 @@ export default function InventarioPage() {
   // --- FORM STATES FOR PRODUCT CRUD ---
   const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState('');
-  const [cat, setCat] = useState('Panes');
+  const [cat, setCat] = useState('');
   const [em, setEm] = useState('🥐');
   const [price, setPrice] = useState('');
   const [stock, setStock] = useState('0');
@@ -70,7 +71,7 @@ export default function InventarioPage() {
   const handleOpenNew = () => {
     setEditingId(null);
     setName('');
-    setCat('Panes');
+    setCat(categories[0]?.name || 'Panes');
     setEm('🥐');
     setPrice('');
     setStock('0');
@@ -415,10 +416,18 @@ export default function InventarioPage() {
               <div className="inp-group">
                 <label>Categoría</label>
                 <select value={cat} onChange={(e) => setCat(e.target.value)}>
-                  <option value="Panes">🍞 Panes</option>
-                  <option value="Tortas">🎂 Tortas</option>
-                  <option value="Dulces">🍬 Dulces</option>
-                  <option value="Bebidas">☕ Bebidas</option>
+                  {categories.length > 0 ? (
+                    categories.map(c => (
+                      <option key={c.id} value={c.name}>{c.name}</option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="Panes">🍞 Panes</option>
+                      <option value="Tortas">🎂 Tortas</option>
+                      <option value="Dulces">🍬 Dulces</option>
+                      <option value="Bebidas">☕ Bebidas</option>
+                    </>
+                  )}
                 </select>
               </div>
 

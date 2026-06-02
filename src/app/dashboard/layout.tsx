@@ -7,16 +7,44 @@ import { useApp } from '@/context/AppContext';
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, role, logout, loading } = useApp();
+  const { user, role, logout, loading, rolesList } = useApp();
   const [timeStr, setTimeStr] = useState('');
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 
-  // --- AUTH SECURITY GUARD ---
+  const userPermissions = rolesList.find(r => r.name === role)?.permissions || [];
+  const isAdmin = role === 'Administrador';
+  const isSupervisor = role === 'Supervisor';
+  const hasPerm = (p: string) => userPermissions.includes(p);
+
+  // --- AUTH SECURITY & ROUTE GUARD ---
   useEffect(() => {
     if (!loading && !user) {
       router.push('/');
+      return;
     }
-  }, [user, loading, router]);
+
+    if (!loading && user && role && rolesList.length > 0) {
+      const perms = rolesList.find(r => r.name === role)?.permissions || [];
+      const adminOrSup = role === 'Administrador' || role === 'Supervisor';
+      
+      const routeReqs: Record<string, boolean> = {
+        '/dashboard/clientes': perms.includes('pos_ventas') || adminOrSup,
+        '/dashboard/ventas': perms.includes('pos_ventas'),
+        '/dashboard/caja': perms.includes('caja_operaciones') || perms.includes('caja_auditoria'),
+        '/dashboard/productos': perms.includes('inventario_ver'),
+        '/dashboard/proveedores': adminOrSup,
+        '/dashboard/compras': adminOrSup,
+        '/dashboard/categorias': adminOrSup,
+        '/dashboard/metodos': adminOrSup,
+        '/dashboard/reportes': perms.includes('estadisticas_ver'),
+        '/dashboard/usuarios': role === 'Administrador'
+      };
+
+      if (routeReqs[pathname] === false) {
+        router.push('/dashboard');
+      }
+    }
+  }, [user, loading, router, pathname, role, rolesList]);
 
   // --- CLOCK TICKER ---
   useEffect(() => {
@@ -31,7 +59,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, []);
 
-  if (loading || !user) {
+  // Solo mostramos la pantalla de carga cuando NO hay usuario (primer arranque).
+  // Si 'loading' es true pero ya hay un 'user', significa que hay un refresco silencioso → no bloquear la UI.
+  if (loading && !user) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', color: 'var(--text-3)', fontWeight: '600', fontSize: '15px' }}>
         <div style={{ textAlign: 'center' }}>
@@ -47,36 +77,35 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     path?: string;
     icon?: string;
     type: 'section' | 'item';
-    adminOnly?: boolean;
+    show?: boolean;
   }
 
   // --- NAVIGATION LINKS ---
   const navItems: NavItem[] = [
-    { label: 'Principal', type: 'section' },
-    { label: 'Dashboard', path: '/dashboard', icon: '📊', type: 'item' },
-    { label: 'Clientes', path: '/dashboard/clientes', icon: '👥', type: 'item' },
+    { label: 'Principal', type: 'section', show: true },
+    { label: 'Dashboard', path: '/dashboard', icon: '📊', type: 'item', show: true },
+    { label: 'Clientes', path: '/dashboard/clientes', icon: '👥', type: 'item', show: hasPerm('pos_ventas') || isAdmin || isSupervisor },
     
-    { label: 'Operaciones', type: 'section' },
-    { label: 'Punto de Venta', path: '/dashboard/ventas', icon: '🛒', type: 'item' },
-    { label: 'Control de Caja', path: '/dashboard/caja', icon: '💰', type: 'item' },
-    { label: 'Inventario', path: '/dashboard/productos', icon: '📦', type: 'item' },
+    { label: 'Operaciones', type: 'section', show: hasPerm('pos_ventas') || hasPerm('caja_operaciones') || hasPerm('caja_auditoria') || hasPerm('inventario_ver') },
+    { label: 'Punto de Venta', path: '/dashboard/ventas', icon: '🛒', type: 'item', show: hasPerm('pos_ventas') },
+    { label: 'Control de Caja', path: '/dashboard/caja', icon: '💰', type: 'item', show: hasPerm('caja_operaciones') || hasPerm('caja_auditoria') },
+    { label: 'Inventario', path: '/dashboard/productos', icon: '📦', type: 'item', show: hasPerm('inventario_ver') },
     
-    { label: 'Logística', type: 'section' },
-    { label: 'Proveedores', path: '/dashboard/proveedores', icon: '🏭', type: 'item' },
-    { label: 'Compras', path: '/dashboard/compras', icon: '📥', type: 'item' },
+    { label: 'Logística', type: 'section', show: isAdmin || isSupervisor },
+    { label: 'Proveedores', path: '/dashboard/proveedores', icon: '🏭', type: 'item', show: isAdmin || isSupervisor },
+    { label: 'Compras', path: '/dashboard/compras', icon: '📥', type: 'item', show: isAdmin || isSupervisor },
     
-    { label: 'Mantenimiento', type: 'section' },
-    { label: 'Categorías', path: '/dashboard/categorias', icon: '🏷️', type: 'item' },
-    { label: 'Métodos de Pago', path: '/dashboard/metodos', icon: '💳', type: 'item' },
+    { label: 'Mantenimiento', type: 'section', show: isAdmin || isSupervisor },
+    { label: 'Categorías', path: '/dashboard/categorias', icon: '🏷️', type: 'item', show: isAdmin || isSupervisor },
+    { label: 'Métodos de Pago', path: '/dashboard/metodos', icon: '💳', type: 'item', show: isAdmin || isSupervisor },
     
-    { label: 'Análisis', type: 'section' },
-    { label: 'Estadísticas', path: '/dashboard/reportes', icon: '📈', type: 'item' },
-    { label: 'Personal', path: '/dashboard/usuarios', icon: '👤', type: 'item', adminOnly: true },
+    { label: 'Análisis', type: 'section', show: hasPerm('estadisticas_ver') || isAdmin },
+    { label: 'Estadísticas', path: '/dashboard/reportes', icon: '📈', type: 'item', show: hasPerm('estadisticas_ver') },
+    { label: 'Personal', path: '/dashboard/usuarios', icon: '👤', type: 'item', show: isAdmin },
   ];
 
-  // Filtramos por rol si no es administrador
-  const isAdmin = role === 'Administrador';
-  const filteredNavItems = navItems.filter(item => !item.adminOnly || isAdmin);
+  // Filtramos por permisos
+  const filteredNavItems = navItems.filter(item => item.show !== false);
 
   // --- DYNAMIC HEADER TITLE & SUBTITLE ---
   const pageDetails: Record<string, { title: string; sub: string }> = {
@@ -194,18 +223,28 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <span className="mb-icon">📊</span>
           <span className="mb-label">Dashboard</span>
         </div>
-        <div className={`mb-item ${pathname === '/dashboard/ventas' ? 'active' : ''}`} onClick={() => router.push('/dashboard/ventas')}>
-          <span className="mb-icon">🛒</span>
-          <span className="mb-label">Ventas</span>
-        </div>
-        <div className={`mb-item ${pathname === '/dashboard/caja' ? 'active' : ''}`} onClick={() => router.push('/dashboard/caja')}>
-          <span className="mb-icon">💰</span>
-          <span className="mb-label">Caja</span>
-        </div>
-        <div className={`mb-item ${pathname === '/dashboard/productos' ? 'active' : ''}`} onClick={() => router.push('/dashboard/productos')}>
-          <span className="mb-icon">📦</span>
-          <span className="mb-label">Inventario</span>
-        </div>
+        
+        {hasPerm('pos_ventas') && (
+          <div className={`mb-item ${pathname === '/dashboard/ventas' ? 'active' : ''}`} onClick={() => router.push('/dashboard/ventas')}>
+            <span className="mb-icon">🛒</span>
+            <span className="mb-label">Ventas</span>
+          </div>
+        )}
+        
+        {(hasPerm('caja_operaciones') || hasPerm('caja_auditoria')) && (
+          <div className={`mb-item ${pathname === '/dashboard/caja' ? 'active' : ''}`} onClick={() => router.push('/dashboard/caja')}>
+            <span className="mb-icon">💰</span>
+            <span className="mb-label">Caja</span>
+          </div>
+        )}
+        
+        {hasPerm('inventario_ver') && (
+          <div className={`mb-item ${pathname === '/dashboard/productos' ? 'active' : ''}`} onClick={() => router.push('/dashboard/productos')}>
+            <span className="mb-icon">📦</span>
+            <span className="mb-label">Inventario</span>
+          </div>
+        )}
+        
         <div className={`mb-item ${isMoreMenuOpen ? 'active' : ''}`} onClick={() => setIsMoreMenuOpen(true)}>
           <span className="mb-icon">☰</span>
           <span className="mb-label">Más</span>
@@ -226,30 +265,38 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             
             <div className="md-body">
               <div className="md-grid">
-                <div className="md-item-btn" onClick={() => { router.push('/dashboard/clientes'); setIsMoreMenuOpen(false); }}>
-                  <span className="md-btn-icon">👥</span>
-                  <span className="md-btn-lbl">Clientes</span>
-                </div>
-                <div className="md-item-btn" onClick={() => { router.push('/dashboard/proveedores'); setIsMoreMenuOpen(false); }}>
-                  <span className="md-btn-icon">🏭</span>
-                  <span className="md-btn-lbl">Proveedores</span>
-                </div>
-                <div className="md-item-btn" onClick={() => { router.push('/dashboard/compras'); setIsMoreMenuOpen(false); }}>
-                  <span className="md-btn-icon">📥</span>
-                  <span className="md-btn-lbl">Compras</span>
-                </div>
-                <div className="md-item-btn" onClick={() => { router.push('/dashboard/categorias'); setIsMoreMenuOpen(false); }}>
-                  <span className="md-btn-icon">🏷️</span>
-                  <span className="md-btn-lbl">Categorías</span>
-                </div>
-                <div className="md-item-btn" onClick={() => { router.push('/dashboard/metodos'); setIsMoreMenuOpen(false); }}>
-                  <span className="md-btn-icon">💳</span>
-                  <span className="md-btn-lbl">Pagos</span>
-                </div>
-                <div className="md-item-btn" onClick={() => { router.push('/dashboard/reportes'); setIsMoreMenuOpen(false); }}>
-                  <span className="md-btn-icon">📈</span>
-                  <span className="md-btn-lbl">Reportes</span>
-                </div>
+                {(hasPerm('pos_ventas') || isAdmin || isSupervisor) && (
+                  <div className="md-item-btn" onClick={() => { router.push('/dashboard/clientes'); setIsMoreMenuOpen(false); }}>
+                    <span className="md-btn-icon">👥</span>
+                    <span className="md-btn-lbl">Clientes</span>
+                  </div>
+                )}
+                {(isAdmin || isSupervisor) && (
+                  <>
+                    <div className="md-item-btn" onClick={() => { router.push('/dashboard/proveedores'); setIsMoreMenuOpen(false); }}>
+                      <span className="md-btn-icon">🏭</span>
+                      <span className="md-btn-lbl">Proveedores</span>
+                    </div>
+                    <div className="md-item-btn" onClick={() => { router.push('/dashboard/compras'); setIsMoreMenuOpen(false); }}>
+                      <span className="md-btn-icon">📥</span>
+                      <span className="md-btn-lbl">Compras</span>
+                    </div>
+                    <div className="md-item-btn" onClick={() => { router.push('/dashboard/categorias'); setIsMoreMenuOpen(false); }}>
+                      <span className="md-btn-icon">🏷️</span>
+                      <span className="md-btn-lbl">Categorías</span>
+                    </div>
+                    <div className="md-item-btn" onClick={() => { router.push('/dashboard/metodos'); setIsMoreMenuOpen(false); }}>
+                      <span className="md-btn-icon">💳</span>
+                      <span className="md-btn-lbl">Pagos</span>
+                    </div>
+                  </>
+                )}
+                {hasPerm('estadisticas_ver') && (
+                  <div className="md-item-btn" onClick={() => { router.push('/dashboard/reportes'); setIsMoreMenuOpen(false); }}>
+                    <span className="md-btn-icon">📈</span>
+                    <span className="md-btn-lbl">Reportes</span>
+                  </div>
+                )}
                 {isAdmin && (
                   <div className="md-item-btn" onClick={() => { router.push('/dashboard/usuarios'); setIsMoreMenuOpen(false); }}>
                     <span className="md-btn-icon">👤</span>

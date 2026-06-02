@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState('');
 
   // Recovery states
   const [showRecovery, setShowRecovery] = useState(false);
@@ -23,8 +24,7 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [recoverySent, setRecoverySent] = useState(false);
-  const [recUsername, setRecUsername] = useState('');
+  const [passwordResetDone, setPasswordResetDone] = useState(false);
 
   // OTP states
   const [otpStep, setOtpStep] = useState(false);
@@ -34,6 +34,20 @@ export default function LoginPage() {
   const [otpSending, setOtpSending] = useState(false);
   const [otpResendTimer, setOtpResendTimer] = useState(0);
   const [otpSendError, setOtpSendError] = useState('');
+
+  // Multi-role states
+  const [roleStep, setRoleStep] = useState(false);
+  const [loggedInUser, setLoggedInUser] = useState<User | null>(null);
+  const [selectedRole, setSelectedRole] = useState<string | null>(null);
+
+  // Password strength
+  const hasMinLength = newPassword.length >= 8;
+  const hasUppercase = /[A-Z]/.test(newPassword);
+  const hasLowercase = /[a-z]/.test(newPassword);
+  const hasNumber = /[0-9]/.test(newPassword);
+  const hasSpecial = /[@$!%*?&]/.test(newPassword);
+  const isPasswordSecure = hasMinLength && hasUppercase && hasLowercase && hasNumber && hasSpecial;
+  const isPasswordMatch = newPassword === confirmPassword && confirmPassword.length > 0;
 
   const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -64,20 +78,16 @@ export default function LoginPage() {
       const resp = await fetch('/api/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: target, otp: code }),
+        body: JSON.stringify({ email: target, code }),
       });
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
-        const errMsg = body?.error || 'Error desconocido';
-        setOtpSendError(errMsg);
-        console.warn('[OTP] Error enviando email:', errMsg);
+        setOtpSendError(body?.message || body?.error || 'Error desconocido');
         return false;
       }
       return true;
-    } catch (err) {
-      const msg = 'No se pudo conectar con la API de email';
-      setOtpSendError(msg);
-      console.warn('[OTP] No se pudo conectar con la API de email:', err);
+    } catch {
+      setOtpSendError('No se pudo conectar con el servicio de email');
       return false;
     }
   };
@@ -85,70 +95,53 @@ export default function LoginPage() {
   const handleOpenRecovery = () => {
     setShowRecovery(true);
     setIsVerified(false);
-    setRecoverySent(false);
     setOtpStep(false);
     setRecEmail('');
     setRecEmailValid(null);
     setOtpSendError('');
+    setPasswordResetDone(false);
+    setLoginError('');
   };
-
-  // Multi-role selection step
-  const [roleStep, setRoleStep] = useState(false);
-  const [loggedInUser, setLoggedInUser] = useState<User | null>(null);
-  const [selectedRole, setSelectedRole] = useState<string | null>(null);
 
   // --- HANDLERS ---
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoginError('');
     if (!username || !password) return;
-
     const res = await login(username, password);
     if (res && res.success && res.user) {
       const u = res.user;
       if (u.rs.length === 1) {
-        // Un solo rol -> Redirigir de inmediato a /dashboard
         router.push('/dashboard');
       } else {
-        // Multiples roles -> Mostrar selector de roles
         setLoggedInUser(u);
         setSelectedRole(u.rs[0]);
         setRoleStep(true);
       }
+    } else {
+      setLoginError(res?.message || 'Credenciales inválidas o usuario inactivo');
     }
   };
 
   const handleRoleConfirm = () => {
-    if (selectedRole) {
-      router.push('/dashboard');
-    }
+    if (selectedRole) router.push('/dashboard');
   };
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!recEmail || !recEmailValid) return;
-
     setOtpSending(true);
     setOtpSendError('');
-
     const res = await sendRecoveryEmail(recEmail);
     if (res && res.success) {
-      if (res.online) {
-        // Supabase envía el correo real
-        setRecoverySent(true);
-      } else {
-        // Modo offline (con usuarios locales): enviamos OTP real por Resend
-        const sent = await generateAndSendOtp(recEmail);
-        if (sent) {
-          setOtpStep(true);
-          startResendTimer();
-          if (res.userId !== undefined) {
-            setVerifiedUserId(res.userId);
-          }
-          if (res.username !== undefined) {
-            setRecUsername(res.username);
-          }
-        }
+      const sent = await generateAndSendOtp(recEmail);
+      if (sent) {
+        setOtpStep(true);
+        startResendTimer();
+        if (res.userId !== undefined) setVerifiedUserId(res.userId);
       }
+    } else {
+      setOtpSendError(res?.message || 'Correo no encontrado en el sistema.');
     }
     setOtpSending(false);
   };
@@ -170,53 +163,34 @@ export default function LoginPage() {
     setOtpSending(true);
     const sent = await generateAndSendOtp(recEmail);
     setOtpSending(false);
-    if (sent) {
-      startResendTimer();
-    }
+    if (sent) startResendTimer();
   };
 
-  const handleResetSubmit = (e: React.FormEvent) => {
+  const handleResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPassword || newPassword !== confirmPassword) {
-      alert("Las contraseñas no coinciden");
-      return;
-    }
-    
-    // Reglas de contraseña fuerte en recuperación
-    const passRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-    if (!passRegex.test(newPassword)) {
-      alert("La nueva contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial (@$!%*?&).");
-      return;
-    }
-
+    if (!isPasswordSecure || !isPasswordMatch) return;
     if (verifiedUserId !== null) {
-      resetPasswordOffline(verifiedUserId, newPassword);
+      await resetPasswordOffline(verifiedUserId, newPassword);
     }
-    
-    // Regresar al login
-    setShowRecovery(false);
-    setIsVerified(false);
-    setNewPassword('');
-    setConfirmPassword('');
-    setUsername('');
-    setPassword('');
+    setPasswordResetDone(true);
   };
 
   return (
     <div className="login-scene">
-      <div className="deco-circle dc1"></div>
-      <div className="deco-circle dc2"></div>
+      <div className="deco-circle dc1" />
+      <div className="deco-circle dc2" />
 
       <div className={`login-container ${roleStep ? 'wide-mode' : ''}`}>
-        {/* Left Side: Brand and Features */}
+
+        {/* ── LEFT PANEL ── */}
         {!roleStep && (
           <div className="login-left">
             <div className="ll-top">
-              <img 
-                src="/asset/logo.png" 
-                alt="Logo Snack Roque" 
-                className="bread-icon" 
-                onError={(e) => { (e.target as HTMLImageElement).src = "https://cdn-icons-png.flaticon.com/512/992/992747.png"; }} 
+              <img
+                src="/asset/logo.png"
+                alt="Logo Snack Roque"
+                className="bread-icon"
+                onError={(e) => { (e.target as HTMLImageElement).src = 'https://cdn-icons-png.flaticon.com/512/992/992747.png'; }}
               />
               <div className="ll-features">
                 <div className="feature"><div className="f-dot">🥖</div>Pan artesanal y atención al instante</div>
@@ -229,71 +203,55 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* Right Side: Form Handler */}
+        {/* ── RIGHT PANEL ── */}
         <div className="login-right">
-          {/* STEP 1: LOGIN FORM */}
+
+          {/* STEP 1 — LOGIN */}
           {!roleStep && !showRecovery && (
             <div>
-              {/* Responsive Brand Header (visible on mobile/tablet when left panel is hidden) */}
               <div className="mobile-brand-header">
-                <img 
-                  src="/asset/logo.png" 
-                  alt="Logo Snack Roque" 
-                  className="mobile-bread-icon" 
-                  onError={(e) => { (e.target as HTMLImageElement).src = "https://cdn-icons-png.flaticon.com/512/992/992747.png"; }} 
-                />
+                <img src="/asset/logo.png" alt="Logo" className="mobile-bread-icon"
+                  onError={(e) => { (e.target as HTMLImageElement).src = 'https://cdn-icons-png.flaticon.com/512/992/992747.png'; }} />
                 <span className="mobile-brand-title">Snack Roque</span>
                 <span className="mobile-brand-subtitle">Panadería &amp; Pastelería</span>
               </div>
 
               <div className="lr-title">Bienvenido de vuelta</div>
               <p className="lr-sub">Accede a tu estación de trabajo</p>
-              
+
               <form onSubmit={handleLoginSubmit}>
                 <div className="inp-group">
                   <label>Usuario</label>
                   <div className="inp-wrap">
                     <span className="inp-icon">👤</span>
-                    <input 
-                      type="text" 
-                      placeholder="Ej: admin o carlos" 
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      required 
-                    />
+                    <input type="text" placeholder="Ej: admin o carlos"
+                      value={username} onChange={(e) => { setUsername(e.target.value); setLoginError(''); }} required />
                   </div>
                 </div>
-                
+
                 <div className="inp-group">
                   <label>Contraseña</label>
                   <div className="inp-wrap">
                     <span className="inp-icon">🔐</span>
-                    <input 
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="••••••••" 
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required 
-                    />
-                    <button
-                      type="button"
-                      className="eye-btn"
-                      onClick={() => setShowPassword(v => !v)}
-                      tabIndex={-1}
-                      aria-label={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
-                    >
+                    <input type={showPassword ? 'text' : 'password'} placeholder="••••••••"
+                      value={password} onChange={(e) => { setPassword(e.target.value); setLoginError(''); }} required />
+                    <button type="button" className="eye-btn" onClick={() => setShowPassword(v => !v)} tabIndex={-1}>
                       {showPassword ? '🙈' : '👁️'}
                     </button>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <span 
-                    onClick={handleOpenRecovery} 
-                    style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: '600', cursor: 'pointer', fontFamily: 'sans-serif' }}
-                  >
+                {loginError && (
+                  <div style={{ background: 'rgba(192,72,58,0.08)', border: '1px solid rgba(192,72,58,0.20)', borderRadius: '10px', padding: '10px 14px', marginBottom: '14px', fontSize: '12.5px', color: 'var(--red)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>⚠️</span> {loginError}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '18px' }}>
+                  <button type="button" onClick={handleOpenRecovery}
+                    style={{ background: 'none', border: 'none', fontSize: '12px', color: 'var(--accent)', fontWeight: '700', cursor: 'pointer', padding: 0, fontFamily: 'Inter, sans-serif', position: 'relative', zIndex: 1 }}>
                     ¿Olvidaste tu contraseña?
-                  </span>
+                  </button>
                 </div>
 
                 <button type="submit" className="btn-enter">Ingresar al sistema →</button>
@@ -301,27 +259,17 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* STEP 2: MULTI-ROLE SELECTOR */}
+          {/* STEP 2 — MULTI-ROLE SELECTOR */}
           {roleStep && loggedInUser && (
             <div className="role-step" style={{ display: 'block' }}>
-              <button 
-                className="btn-back-sm" 
-                onClick={() => setRoleStep(false)}
-              >
-                ← Cambiar usuario
-              </button>
+              <button className="btn-back-sm" onClick={() => setRoleStep(false)}>← Cambiar usuario</button>
               <div className="lr-title">Selecciona tu rol</div>
-              <p className="lr-sub">Hola <strong>{loggedInUser.n}</strong>, elige cómo ingresar hoy</p>
-              
+              <p className="lr-sub">Hola <strong>{loggedInUser.n.split(' ')[0]}</strong>, elige cómo ingresar hoy</p>
               <div className="roles-stack" style={{ margin: '20px 0' }}>
                 {loggedInUser.rs.map((r) => {
-                  const icons: Record<string, string> = { Administrador: '👑', Cajero: '🛒', Panadero: '🥖' };
+                  const icons: Record<string, string> = { Administrador: '👑', Cajero: '🛒', Panadero: '🥖', Supervisor: '🔍', Contador: '📊' };
                   return (
-                    <div 
-                      key={r}
-                      className={`role-tile ${selectedRole === r ? 'sel' : ''}`}
-                      onClick={() => setSelectedRole(r)}
-                    >
+                    <div key={r} className={`role-tile ${selectedRole === r ? 'sel' : ''}`} onClick={() => setSelectedRole(r)}>
                       <div className="rt-icon">{icons[r] || '👤'}</div>
                       <div className="rt-texts">
                         <div className="rt-name">{r}</div>
@@ -332,165 +280,120 @@ export default function LoginPage() {
                   );
                 })}
               </div>
-              
-              <button 
-                onClick={handleRoleConfirm} 
-                className="btn-enter"
-              >
-                Confirmar e ingresar →
-              </button>
+              <button onClick={handleRoleConfirm} className="btn-enter">Confirmar e ingresar →</button>
             </div>
           )}
 
-          {/* STEP 3: PASSWORD RECOVERY VIEW */}
+          {/* STEP 3 — RECOVERY */}
           {showRecovery && !isVerified && (
             <div>
-              <button className="btn-back-sm" onClick={() => { setShowRecovery(false); setRecoverySent(false); setOtpStep(false); }}>← Volver al login</button>
-              
-              {/* Responsive Brand Header */}
+              <button className="btn-back-sm" onClick={() => { setShowRecovery(false); setOtpStep(false); setOtpSendError(''); }}>
+                ← Volver al login
+              </button>
               <div className="mobile-brand-header">
-                <img 
-                  src="/asset/logo.png" 
-                  alt="Logo Snack Roque" 
-                  className="mobile-bread-icon" 
-                  onError={(e) => { (e.target as HTMLImageElement).src = "https://cdn-icons-png.flaticon.com/512/992/992747.png"; }} 
-                />
+                <img src="/asset/logo.png" alt="Logo" className="mobile-bread-icon"
+                  onError={(e) => { (e.target as HTMLImageElement).src = 'https://cdn-icons-png.flaticon.com/512/992/992747.png'; }} />
                 <span className="mobile-brand-title">Snack Roque</span>
                 <span className="mobile-brand-subtitle">Panadería &amp; Pastelería</span>
               </div>
 
               <div className="lr-title">Recuperar Acceso</div>
 
-              {recoverySent ? (
-                <div style={{ marginTop: '20px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>📧</div>
-                  <p className="lr-sub" style={{ fontSize: '14px', lineHeight: '1.6', color: 'var(--text-1)', marginBottom: '8px' }}>
-                    Hemos enviado un enlace de recuperación a <strong>{recEmail}</strong>.
-                  </p>
-                  <p className="lr-sub" style={{ fontSize: '12px', color: 'var(--text-3)', lineHeight: '1.5', marginBottom: '24px' }}>
-                    Por favor revisa tu bandeja de entrada (y la carpeta de correo no deseado) y sigue las instrucciones para restablecer tu contraseña en la nube.
-                  </p>
-                  <button 
-                    onClick={() => { setShowRecovery(false); setRecoverySent(false); }} 
-                    className="btn-enter"
-                  >
-                    Volver al inicio de sesión
-                  </button>
-                </div>
-              ) : !otpStep ? (
-                /* SUB-STEP A: Ingresar correo */
+              {/* SUB-STEP A — Email */}
+              {!otpStep && (
                 <>
-                  <p className="lr-sub">Ingresa tu correo registrado y te enviaremos un código de verificación</p>
+                  <p className="lr-sub">Ingresa tu correo registrado y te enviaremos un código de 6 dígitos</p>
                   <form onSubmit={handleSendOtp}>
                     <div className="inp-group">
                       <label>Correo Electrónico</label>
                       <div className={`inp-wrap ${recEmailValid === false ? 'inp-error' : recEmailValid === true ? 'inp-ok' : ''}`}>
                         <span className="inp-icon">📧</span>
-                        <input 
-                          type="email" 
-                          placeholder="correo@ejemplo.com" 
-                          value={recEmail}
-                          onChange={(e) => handleEmailChange(e.target.value)}
-                          required 
-                        />
+                        <input type="email" placeholder="correo@ejemplo.com"
+                          value={recEmail} onChange={(e) => handleEmailChange(e.target.value)} required />
                         {recEmailValid === true && <span className="inp-status-icon">✅</span>}
                         {recEmailValid === false && <span className="inp-status-icon">❌</span>}
                       </div>
-                      {recEmailValid === true && (
-                        <span style={{ fontSize: '11px', color: 'var(--green)', fontWeight: '600', marginTop: '5px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                          <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }}></span>
-                          Correo válido
-                        </span>
-                      )}
                       {recEmailValid === false && (
-                        <span style={{ fontSize: '11px', color: 'var(--red)', fontWeight: '600', marginTop: '5px', display: 'block' }}>
+                        <p style={{ fontSize: '11px', color: 'var(--red)', fontWeight: '600', marginTop: '5px' }}>
                           Ingresa un correo electrónico válido
-                        </span>
+                        </p>
                       )}
                       {otpSendError && (
-                        <span style={{ fontSize: '11.5px', color: 'var(--red)', fontWeight: '600', marginTop: '8px', display: 'block', background: 'rgba(192,72,58,0.06)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(192,72,58,0.15)', textAlign: 'left', lineHeight: '1.4' }}>
-                          ❌ Error al enviar: {otpSendError}
-                        </span>
+                        <div style={{ marginTop: '10px', background: 'rgba(192,72,58,0.08)', border: '1px solid rgba(192,72,58,0.20)', borderRadius: '10px', padding: '10px 14px', fontSize: '12.5px', color: 'var(--red)', fontWeight: '600' }}>
+                          ⚠️ {otpSendError}
+                        </div>
                       )}
                     </div>
-
-                    <button 
-                      type="submit" 
-                      className="btn-enter"
-                      disabled={!recEmailValid || otpSending}
-                      style={{ opacity: recEmailValid ? 1 : 0.6, cursor: recEmailValid ? 'pointer' : 'not-allowed' }}
-                    >
-                      {otpSending ? 'Enviando código...' : 'Enviar código de verificación →'}
+                    <button type="submit" className="btn-enter" disabled={!recEmailValid || otpSending}>
+                      {otpSending ? '⏳ Enviando código...' : 'Enviar código de verificación →'}
                     </button>
                   </form>
                 </>
-              ) : (
-                /* SUB-STEP B: Ingresar OTP */
+              )}
+
+              {/* SUB-STEP B — OTP */}
+              {otpStep && (
                 <>
-                  <p className="lr-sub">
-                    Ingresa el código de 6 dígitos enviado a <strong>{recEmail}</strong>
-                  </p>
+                  {/* Email badge */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(176,125,46,0.20)', borderRadius: '12px', padding: '10px 14px', marginBottom: '20px', backdropFilter: 'blur(4px)' }}>
+                    <span style={{ fontSize: '20px' }}>📧</span>
+                    <div>
+                      <p style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: '600', margin: 0 }}>Código enviado a</p>
+                      <p style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700', margin: 0 }}>{recEmail}</p>
+                    </div>
+                    <button type="button" onClick={() => { setOtpStep(false); setOtpCode(''); setOtpError(false); }}
+                      style={{ marginLeft: 'auto', background: 'none', border: 'none', fontSize: '11px', color: 'var(--accent)', fontWeight: '700', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>
+                      Cambiar
+                    </button>
+                  </div>
+
+                  <p className="lr-sub" style={{ marginBottom: '20px' }}>Ingresa el código de 6 dígitos</p>
+
                   <form onSubmit={handleVerifyOtp}>
                     <div className="inp-group">
-                      <label>Código de Verificación</label>
                       <div className="otp-wrap">
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          maxLength={6}
-                          placeholder="_ _ _ _ _ _"
+                        <input type="text" inputMode="numeric" maxLength={6}
+                          placeholder="· · · · · ·"
                           value={otpCode}
                           onChange={(e) => { setOtpCode(e.target.value.replace(/\D/g, '')); setOtpError(false); }}
                           className={`otp-input${otpError ? ' otp-input-error' : ''}`}
-                          autoFocus
-                          required
-                        />
+                          autoFocus required />
                       </div>
                       {otpError && (
-                        <span style={{ fontSize: '11px', color: 'var(--red)', fontWeight: '600', marginTop: '6px', display: 'block' }}>
+                        <p style={{ fontSize: '12px', color: 'var(--red)', fontWeight: '600', marginTop: '8px', textAlign: 'center' }}>
                           ❌ Código incorrecto. Inténtalo de nuevo.
-                        </span>
+                        </p>
                       )}
+                    </div>
+
+                    {/* Progress dots */}
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '20px' }}>
+                      {[0,1,2,3,4,5].map(i => (
+                        <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: i < otpCode.length ? 'var(--accent)' : 'rgba(176,125,46,0.20)', transition: 'background 0.2s', boxShadow: i < otpCode.length ? '0 0 6px rgba(176,125,46,0.40)' : 'none' }} />
+                      ))}
                     </div>
 
                     <div style={{ textAlign: 'center', marginBottom: '16px' }}>
                       {otpResendTimer > 0 ? (
                         <span style={{ fontSize: '12px', color: 'var(--text-3)', fontWeight: '500' }}>
-                          Reenviar código en <strong style={{ color: 'var(--accent)' }}>{otpResendTimer}s</strong>
+                          Reenviar en <strong style={{ color: 'var(--accent)' }}>{otpResendTimer}s</strong>
                         </span>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={handleResendOtp}
-                          style={{ background: 'none', border: 'none', fontSize: '12px', color: 'var(--accent)', fontWeight: '700', cursor: 'pointer', textDecoration: 'underline' }}
-                        >
-                          ¿No recibiste el código? Reenviar
+                        <button type="button" onClick={handleResendOtp} disabled={otpSending}
+                          style={{ background: 'none', border: 'none', fontSize: '12.5px', color: 'var(--accent)', fontWeight: '700', cursor: 'pointer', fontFamily: 'Inter, sans-serif', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
+                          {otpSending ? 'Reenviando...' : '¿No recibiste el código? Reenviar'}
                         </button>
                       )}
                     </div>
 
                     {otpSendError && (
-                      <span style={{ fontSize: '11.5px', color: 'var(--red)', fontWeight: '600', marginBottom: '14px', display: 'block', background: 'rgba(192,72,58,0.06)', padding: '8px 12px', borderRadius: '8px', border: '1px solid rgba(192,72,58,0.15)', textAlign: 'left', lineHeight: '1.4' }}>
-                        ❌ Error al reenviar: {otpSendError}
-                      </span>
+                      <div style={{ marginBottom: '14px', background: 'rgba(192,72,58,0.08)', border: '1px solid rgba(192,72,58,0.20)', borderRadius: '10px', padding: '10px 14px', fontSize: '12.5px', color: 'var(--red)', fontWeight: '600' }}>
+                        ⚠️ {otpSendError}
+                      </div>
                     )}
 
-                    <button 
-                      type="submit" 
-                      className="btn-enter"
-                      disabled={otpCode.length !== 6}
-                      style={{ opacity: otpCode.length === 6 ? 1 : 0.6, cursor: otpCode.length === 6 ? 'pointer' : 'not-allowed' }}
-                    >
+                    <button type="submit" className="btn-enter" disabled={otpCode.length !== 6}>
                       Verificar código →
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn-back-sm"
-                      onClick={() => { setOtpStep(false); setOtpCode(''); setOtpError(false); }}
-                      style={{ width: '100%', justifyContent: 'center', marginTop: '10px' }}
-                    >
-                      ← Cambiar correo
                     </button>
                   </form>
                 </>
@@ -498,63 +401,93 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* STEP 4: RESET PASSWORD FORM */}
-          {showRecovery && isVerified && (
+          {/* STEP 4 — RESET PASSWORD */}
+          {showRecovery && isVerified && !passwordResetDone && (
             <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(74,140,92,0.10)', border: '1px solid rgba(74,140,92,0.25)', borderRadius: '12px', padding: '12px 16px', marginBottom: '24px' }}>
+                <span style={{ fontSize: '22px' }}>✅</span>
+                <div>
+                  <p style={{ fontSize: '12px', fontWeight: '700', color: 'var(--green)', margin: 0 }}>Identidad verificada</p>
+                  <p style={{ fontSize: '11px', color: 'var(--text-3)', margin: 0, marginTop: '2px' }}>Ahora establece tu nueva contraseña</p>
+                </div>
+              </div>
+
               <div className="lr-title">Nueva Contraseña</div>
-              <p className="lr-sub">Establece una contraseña segura</p>
-              
+              <p className="lr-sub">Debe tener al menos 8 caracteres, mayúscula, número y símbolo</p>
+
               <form onSubmit={handleResetSubmit}>
                 <div className="inp-group">
                   <label>Nueva Contraseña</label>
                   <div className="inp-wrap">
                     <span className="inp-icon">🔐</span>
-                    <input 
-                      type={showNewPassword ? 'text' : 'password'}
-                      placeholder="Mínimo 8 caracteres, 1 número, 1 símbolo" 
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      required 
-                    />
-                    <button
-                      type="button"
-                      className="eye-btn"
-                      onClick={() => setShowNewPassword(v => !v)}
-                      tabIndex={-1}
-                      aria-label={showNewPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
-                    >
+                    <input type={showNewPassword ? 'text' : 'password'} placeholder="Mínimo 8 caracteres"
+                      value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
+                    <button type="button" className="eye-btn" onClick={() => setShowNewPassword(v => !v)} tabIndex={-1}>
                       {showNewPassword ? '🙈' : '👁️'}
                     </button>
                   </div>
+                  {/* Strength indicators */}
+                  {newPassword.length > 0 && (
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+                      {[
+                        { ok: hasMinLength, label: '8+ chars' },
+                        { ok: hasUppercase, label: 'Mayúscula' },
+                        { ok: hasLowercase, label: 'Minúscula' },
+                        { ok: hasNumber, label: 'Número' },
+                        { ok: hasSpecial, label: 'Símbolo' },
+                      ].map(({ ok, label }) => (
+                        <span key={label} style={{ fontSize: '10px', fontWeight: '700', padding: '2px 8px', borderRadius: '20px', background: ok ? 'rgba(74,140,92,0.12)' : 'rgba(176,125,46,0.08)', color: ok ? 'var(--green)' : 'var(--text-3)', border: `1px solid ${ok ? 'rgba(74,140,92,0.25)' : 'rgba(176,125,46,0.15)'}`, transition: 'all 0.2s' }}>
+                          {ok ? '✓' : '○'} {label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="inp-group">
                   <label>Confirmar Contraseña</label>
-                  <div className="inp-wrap">
+                  <div className={`inp-wrap ${confirmPassword.length > 0 ? (isPasswordMatch ? 'inp-ok' : 'inp-error') : ''}`}>
                     <span className="inp-icon">🔐</span>
-                    <input 
-                      type={showConfirmPassword ? 'text' : 'password'}
-                      placeholder="Repite la contraseña" 
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      required 
-                    />
-                    <button
-                      type="button"
-                      className="eye-btn"
-                      onClick={() => setShowConfirmPassword(v => !v)}
-                      tabIndex={-1}
-                      aria-label={showConfirmPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
-                    >
+                    <input type={showConfirmPassword ? 'text' : 'password'} placeholder="Repite la contraseña"
+                      value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+                    <button type="button" className="eye-btn" onClick={() => setShowConfirmPassword(v => !v)} tabIndex={-1}>
                       {showConfirmPassword ? '🙈' : '👁️'}
                     </button>
                   </div>
+                  {confirmPassword.length > 0 && !isPasswordMatch && (
+                    <p style={{ fontSize: '11px', color: 'var(--red)', fontWeight: '600', marginTop: '5px' }}>Las contraseñas no coinciden</p>
+                  )}
                 </div>
 
-                <button type="submit" className="btn-enter">Restablecer Contraseña →</button>
+                <button type="submit" className="btn-enter" disabled={!isPasswordSecure || !isPasswordMatch}>
+                  Restablecer Contraseña →
+                </button>
               </form>
             </div>
           )}
+
+          {/* STEP 5 — SUCCESS */}
+          {showRecovery && isVerified && passwordResetDone && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '64px', marginBottom: '16px', animation: 'popIn 0.5s cubic-bezier(0.34,1.56,0.64,1)' }}>🎉</div>
+              <div className="lr-title" style={{ textAlign: 'center' }}>¡Contraseña actualizada!</div>
+              <p className="lr-sub" style={{ textAlign: 'center', marginBottom: '28px' }}>
+                Tu contraseña ha sido restablecida con éxito. Ya puedes ingresar al sistema.
+              </p>
+              <button className="btn-enter" onClick={() => {
+                setShowRecovery(false);
+                setIsVerified(false);
+                setPasswordResetDone(false);
+                setNewPassword('');
+                setConfirmPassword('');
+                setUsername('');
+                setPassword('');
+              }}>
+                Ir al inicio de sesión →
+              </button>
+            </div>
+          )}
+
         </div>
       </div>
     </div>

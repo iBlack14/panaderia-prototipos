@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp, User, CustomRole } from '@/context/AppContext';
 
@@ -35,10 +35,12 @@ export default function PersonalPage() {
 
   // --- USER FORM STATES ---
   const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  const [apePaterno, setApePaterno] = useState('');
+  const [apeMaterno, setApeMaterno] = useState('');
   const [dni, setDni] = useState('');
   const [dniLookupLoading, setDniLookupLoading] = useState(false);
   const [dniLookupError, setDniLookupError] = useState<string | null>(null);
+  const [dniOk, setDniOk] = useState(false);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -82,7 +84,7 @@ export default function PersonalPage() {
 
   const isUserFormValid = 
     firstName.trim().length >= 2 && 
-    lastName.trim().length >= 2 && 
+    apePaterno.trim().length >= 2 && 
     isDniValid &&
     isEmailValid && 
     emailVerified &&
@@ -97,67 +99,71 @@ export default function PersonalPage() {
   // --- USER HANDLERS ---
   const handleOpenNewUser = () => {
     setEditingUserId(null);
-    setFirstName('');
-    setLastName('');
-    setDni('');
-    setUsername('');
-    setEmail('');
-    setPhone('');
-    setPassword('');
-    setConfirmPassword('');
-    setShowPassword(false);
-    setShowConfirmPassword(false);
+    setFirstName(''); setApePaterno(''); setApeMaterno('');
+    setDni(''); setDniOk(false); setDniLookupError(null);
+    setUsername(''); setEmail(''); setPhone('');
+    setPassword(''); setConfirmPassword('');
+    setShowPassword(false); setShowConfirmPassword(false);
     setSelectedUserRole(rolesList[0]?.id || 'Cajero');
-    setEmailVerified(false);
-    setOtpCode('');
-    setOtpError(false);
+    setEmailVerified(false); setOtpCode(''); setOtpError(false);
     setShowUserModal(true);
   };
 
   const handleOpenEditUser = (u: User) => {
     setEditingUserId(u.id);
-    const nameParts = u.n.split(' ');
-    setFirstName(nameParts[0] || '');
-    setLastName(nameParts.slice(1).join(' ') || '');
-    setDni((u as any).dni || '');
-    setUsername(u.u);
-    setEmail(u.email || '');
-    setPhone(u.phone || '');
-    setPassword(u.p || '12345678'); 
-    setConfirmPassword(u.p || '12345678');
+    const parts = u.n.trim().split(/\s+/);
+    if (parts.length >= 3) {
+      setApeMaterno(parts[parts.length - 1]);
+      setApePaterno(parts[parts.length - 2]);
+      setFirstName(parts.slice(0, parts.length - 2).join(' '));
+    } else if (parts.length === 2) {
+      setFirstName(parts[0]); setApePaterno(parts[1]); setApeMaterno('');
+    } else {
+      setFirstName(parts[0] || ''); setApePaterno(''); setApeMaterno('');
+    }
+    setDni((u as any).dni || ''); setDniOk(false); setDniLookupError(null);
+    setUsername(u.u); setEmail(u.email || ''); setPhone(u.phone || '');
+    setPassword(u.p || '12345678'); setConfirmPassword(u.p || '12345678');
     setSelectedUserRole(u.rs[0] || 'Cajero');
-    setEmailVerified(true); // Al editar, el correo ya fue verificado antes
-    setShowPassword(false);
-    setShowConfirmPassword(false);
-    setDniLookupError(null);
+    setEmailVerified(true);
+    setShowPassword(false); setShowConfirmPassword(false);
     setShowUserModal(true);
   };
 
-  const handleLookupDni = async () => {
-    if (!isDniValid) return;
-    setDniLookupError(null);
+  // Auto-consulta RENIEC al completar 8 dígitos
+  const consultarDniReniec = useCallback(async (dniVal: string) => {
     setDniLookupLoading(true);
-
+    setDniLookupError(null);
+    setDniOk(false);
     try {
-      const profile = await lookupProfileByDni(dni);
-      if (!profile) {
-        setDniLookupError('No se encontraron datos para este DNI.');
-        return;
+      const res = await fetch('/api/consulta-dni', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dni: dniVal }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setDniLookupError(json.message || 'No se encontraron datos para ese DNI.');
+      } else {
+        const d = json.data;
+        setFirstName(d.nombres ? d.nombres.trim() : '');
+        setApePaterno(d.apellido_paterno ? d.apellido_paterno.trim() : '');
+        setApeMaterno(d.apellido_materno ? d.apellido_materno.trim() : '');
+        setDniOk(true);
       }
-
-      if (profile.firstName) setFirstName(profile.firstName);
-      if (profile.lastName) setLastName(profile.lastName);
-      if (profile.email) {
-        setEmail(profile.email);
-        setEmailVerified(false);
-      }
-      if (profile.phone) setPhone(profile.phone);
-    } catch (err: any) {
-      setDniLookupError(err.message || 'Error al consultar el servicio de DNI.');
+    } catch {
+      setDniLookupError('Error de conexión al consultar el DNI.');
     } finally {
       setDniLookupLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (dni.length === 8 && showUserModal) {
+      consultarDniReniec(dni);
+    }
+    if (dni.length < 8) { setDniOk(false); setDniLookupError(null); }
+  }, [dni, showUserModal, consultarDniReniec]);
 
   // OTP helpers
   const startResendTimer = () => {
@@ -245,9 +251,10 @@ export default function PersonalPage() {
     e.preventDefault();
     if (!isUserFormValid) return;
 
+    const fullName = `${firstName} ${apePaterno} ${apeMaterno}`.trim().replace(/\s+/g, ' ');
     const userObj = {
       id: editingUserId,
-      n: `${firstName} ${lastName}`,
+      n: fullName,
       u: username,
       p: password,
       role: selectedUserRole,
@@ -512,57 +519,39 @@ export default function PersonalPage() {
 
             <form onSubmit={handleUserFormSubmit}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                
+
+                {/* DNI — ocupa fila completa, auto-consulta al llegar a 8 dígitos */}
+                <div className="inp-group" style={{ gridColumn: '1/-1' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>DNI</span>
+                    {dniLookupLoading && <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: '600' }}>⏳ Consultando RENIEC...</span>}
+                    {!dniLookupLoading && dniOk && <span style={{ fontSize: '10px', color: 'var(--green)', fontWeight: '700' }}>✅ Datos encontrados</span>}
+                    {!dniLookupLoading && dniLookupError && <span style={{ fontSize: '10px', color: 'var(--red)', fontWeight: '600' }}>⚠️ {dniLookupError}</span>}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="12345678 — se autocompletará solo"
+                    value={dni}
+                    onChange={(e) => { setDni(e.target.value.replace(/\D/g, '')); setDniOk(false); setDniLookupError(null); }}
+                    maxLength={8}
+                    required
+                    style={{ borderColor: dniOk ? 'var(--green)' : dniLookupError ? 'var(--red)' : undefined, transition: 'border-color 0.2s ease' }}
+                  />
+                </div>
+
                 <div className="inp-group">
                   <label>Nombres</label>
                   <input type="text" placeholder="Ej: Ana María" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
                 </div>
 
                 <div className="inp-group">
-                  <label>Apellidos</label>
-                  <input type="text" placeholder="Ej: Rodríguez López" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+                  <label>Apellido Paterno</label>
+                  <input type="text" placeholder="Ej: Rodríguez" value={apePaterno} onChange={(e) => setApePaterno(e.target.value)} required />
                 </div>
 
-                {/* DNI */}
                 <div className="inp-group">
-                  <label>DNI</label>
-                  <input
-                    type="text"
-                    placeholder="Ej: 12345678"
-                    value={dni}
-                    onChange={(e) => setDni(e.target.value.replace(/\D/g, ''))}
-                    maxLength={8}
-                    required
-                  />
-                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', marginTop: '6px' }}>
-                    <span style={{ fontSize: '10px', color: isDniValid ? 'var(--green)' : 'var(--text-3)', fontWeight: '500' }}>
-                      {dni === '' ? '⚪ 8 dígitos numéricos' : isDniValid ? '🟢 DNI válido' : '❌ Debe tener exactamente 8 dígitos'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleLookupDni}
-                      disabled={!isDniValid || dniLookupLoading}
-                      style={{
-                        padding: '8px 12px',
-                        borderRadius: '10px',
-                        border: '1.5px solid var(--border)',
-                        background: isDniValid ? 'var(--accent-bg)' : 'var(--bg-card2)',
-                        color: isDniValid ? 'var(--accent)' : 'var(--text-3)',
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        cursor: isDniValid ? 'pointer' : 'not-allowed',
-                        opacity: isDniValid ? 1 : 0.5,
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
-                      {dniLookupLoading ? 'Buscando...' : 'Autocompletar datos'}
-                    </button>
-                  </div>
-                  {dniLookupError && (
-                    <div style={{ fontSize: '10px', color: 'var(--red)', marginTop: '4px', fontWeight: '600' }}>
-                      {dniLookupError}
-                    </div>
-                  )}
+                  <label>Apellido Materno</label>
+                  <input type="text" placeholder="Ej: López" value={apeMaterno} onChange={(e) => setApeMaterno(e.target.value)} />
                 </div>
 
                 <div className="inp-group">
@@ -701,31 +690,22 @@ export default function PersonalPage() {
                   </div>
                 </div>
 
-                {/* PASSWORD CHECKLIST */}
-                <div style={{ gridColumn: 'span 2', background: 'var(--bg-card2)', padding: '14px', borderRadius: '12px', border: '1.5px solid var(--border)', marginBottom: '10px' }}>
-                  <div style={{ fontSize: '10.5px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '8px', letterSpacing: '0.5px' }}>
-                    🔒 Validación de Contraseña Segura:
-                  </div>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                    <li style={{ color: hasMinLength ? 'var(--green)' : 'var(--text-3)', fontWeight: '500' }}>
-                      {hasMinLength ? '🟢' : '⚪'} Mínimo 8 caracteres
-                    </li>
-                    <li style={{ color: hasUppercase ? 'var(--green)' : 'var(--text-3)', fontWeight: '500' }}>
-                      {hasUppercase ? '🟢' : '⚪'} Una mayúscula (A-Z)
-                    </li>
-                    <li style={{ color: hasLowercase ? 'var(--green)' : 'var(--text-3)', fontWeight: '500' }}>
-                      {hasLowercase ? '🟢' : '⚪'} Una minúscula (a-z)
-                    </li>
-                    <li style={{ color: hasNumber ? 'var(--green)' : 'var(--text-3)', fontWeight: '500' }}>
-                      {hasNumber ? '🟢' : '⚪'} Un número (0-9)
-                    </li>
-                    <li style={{ color: hasSpecial ? 'var(--green)' : 'var(--text-3)', fontWeight: '500' }}>
-                      {hasSpecial ? '🟢' : '⚪'} Un carácter especial (@$!%*?&)
-                    </li>
-                    <li style={{ color: isPasswordSecure ? 'var(--green)' : 'var(--text-3)', fontWeight: '700' }}>
-                      {isPasswordSecure ? '🟢 SEGURA' : '⚪ Insegura'}
-                    </li>
-                  </ul>
+                {/* PASSWORD CHECKLIST — compacto */}
+                <div style={{ gridColumn: 'span 2', display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '10px 12px', background: 'var(--bg-card2)', borderRadius: '10px', border: `1.5px solid ${isPasswordSecure ? 'var(--green)' : 'var(--border)'}`, transition: 'border-color 0.2s' }}>
+                  {[
+                    { ok: hasMinLength, label: '8 car.' },
+                    { ok: hasUppercase, label: 'A-Z' },
+                    { ok: hasLowercase, label: 'a-z' },
+                    { ok: hasNumber,    label: '0-9' },
+                    { ok: hasSpecial,   label: '@$!' },
+                  ].map(({ ok, label }) => (
+                    <span key={label} style={{ fontSize: '10.5px', fontWeight: '700', padding: '3px 9px', borderRadius: '20px', background: ok ? 'rgba(22,163,74,0.12)' : 'var(--bg-hover)', color: ok ? 'var(--green)' : 'var(--text-3)', border: `1px solid ${ok ? 'rgba(22,163,74,0.25)' : 'var(--border)'}`, transition: 'all 0.18s' }}>
+                      {ok ? '✓' : '·'} {label}
+                    </span>
+                  ))}
+                  <span style={{ fontSize: '10.5px', fontWeight: '800', padding: '3px 10px', borderRadius: '20px', marginLeft: 'auto', background: isPasswordSecure ? 'rgba(22,163,74,0.15)' : 'rgba(192,72,58,0.08)', color: isPasswordSecure ? 'var(--green)' : 'var(--text-3)', border: `1px solid ${isPasswordSecure ? 'rgba(22,163,74,0.3)' : 'var(--border)'}` }}>
+                    🔒 {isPasswordSecure ? 'Segura' : 'Insegura'}
+                  </span>
                 </div>
 
               </div>

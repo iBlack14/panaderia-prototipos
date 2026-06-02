@@ -179,6 +179,7 @@ export interface AppContextType {
   role: string | null;
   loading: boolean;
   products: Product[];
+  categories: { id: number; name: string }[];
   usersList: User[];
   providers: Provider[];
   paymentMethods: PaymentMethod[];
@@ -205,17 +206,17 @@ export interface AppContextType {
   toggleUserStatus: (userId: number | string) => Promise<void>;
   lookupProfileByDni: (dni: string) => Promise<{ firstName: string; lastName: string; email?: string; phone?: string } | null>;
   saveProvider: (pObj: any) => Promise<void>;
-  toggleProvider: (id: number | string) => void;
-  savePaymentMethod: (mObj: any) => void;
-  togglePaymentMethod: (id: number) => void;
+  toggleProvider: (id: number | string) => Promise<void>;
+  savePaymentMethod: (mObj: any) => Promise<void>;
+  togglePaymentMethod: (id: number) => Promise<void>;
   registerPurchase: (pObj: { providerId: number | string; items: PurchaseItem[] }) => Promise<void>;
   openCashSession: (initialAmount: string | number, shift: string) => Promise<void>;
   closeCashSession: (countedAmount: string | number, observaciones: string, denominaciones?: DenominacionArqueo) => Promise<void>;
-  registerCashDrop: (monto: number, motivo: string) => void;
-  saveProduct: (pObj: any) => void;
-  deleteProduct: (id: number) => void;
-  logBreadProduction: (prodId: number, qty: number, version?: string | null) => void;
-  logBreadDiscard: (prodId: number, qty: number, reason: string, version?: string | null) => void;
+  registerCashDrop: (monto: number, motivo: string) => Promise<void>;
+  saveProduct: (pObj: any) => Promise<void>;
+  deleteProduct: (id: number) => Promise<void>;
+  logBreadProduction: (prodId: number, qty: number, version?: string | null) => Promise<void>;
+  logBreadDiscard: (prodId: number, qty: number, reason: string, version?: string | null) => Promise<void>;
   saveClient: (cObj: any) => void;
   toggleClient: (id: number | string) => void;
   payCreditBalance: (clientId: number | string, monto: number, concepto: string, metodoPago?: string) => void;
@@ -285,6 +286,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState<boolean>(true);
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   const [usersList, setUsersList] = useState<User[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -325,150 +327,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
       console.log('🧹 LocalStorage limpiado con éxito para eliminar datos demo.');
     }
 
-    async function loadData() {
-      setLoading(true);
+    // isFirstLoad: muestra spinner solo la primera vez. Recargas posteriores son silenciosas.
+    async function loadData(isFirstLoad = false) {
+      if (isFirstLoad) setLoading(true);
       if (isSupabaseConfigured && supabase) {
         try {
-          // --- CARGAR SESIÓN DE AUTH DE SUPABASE ---
           const { data: { session } } = await supabase.auth.getSession();
           if (session) {
             const { data: prof } = await supabase
-              .from('profiles')
-              .select('*, roles(nombre)')
-              .eq('id', session.user.id)
-              .maybeSingle();
-            
+              .from('profiles').select('*, roles(nombre)').eq('id', session.user.id).maybeSingle();
             if (prof && prof.estado === 'act') {
-              setUser({
-                id: prof.id,
-                u: prof.username,
-                n: prof.nombre + ' ' + (prof.apellido_paterno || ''),
-                rs: [prof.roles?.nombre || 'Cajero'],
-                email: prof.correo,
-                phone: prof.num_telefono || '',
-                st: prof.estado
-              });
+              setUser({ id: prof.id, u: prof.username, n: prof.nombre + ' ' + (prof.apellido_paterno || ''),
+                rs: [prof.roles?.nombre || 'Cajero'], email: prof.correo, phone: prof.num_telefono || '', st: prof.estado });
               setRole(prof.roles?.nombre || 'Cajero');
             }
           }
-
-          // --- CARGAR DESDE SUPABASE ---
-          console.log('⚡ Cargando datos desde Supabase...');
-          
-          // 1. Productos
-          const { data: prods } = await supabase.from('productos').select('*, producto_versiones(*)').eq('estado', 1);
-          if (prods) {
-            setProducts((prods as any[]).map(p => ({
-              id: p.id_producto,
-              name: p.nombre,
-              cat: p.id_categoria === 1 ? 'Panes' : p.id_categoria === 2 ? 'Tortas' : p.id_categoria === 3 ? 'Dulces' : 'Bebidas',
-              price: parseFloat(p.precio_unitario),
-              stock: p.num_stock,
-              em: p.em,
-              versions: p.producto_versiones ? (p.producto_versiones as any[]).map(v => ({
-                id: v.id_version,
-                name: v.nombre_version,
-                price: parseFloat(v.precio_unitario),
-                stock: v.num_stock
-              })) : []
-            })));
-          }
-
-          // 2. Proveedores
-          const { data: provs } = await supabase.from('proveedores').select('*');
-          if (provs) {
-            setProviders((provs as any[]).map(pr => ({
-              id: pr.id_proveedor,
-              ruc: pr.ruc,
-              name: pr.nombre_empresa,
-              phone: pr.num_telefono,
-              address: pr.direccion,
-              active: pr.estado === 1
-            })));
-          }
-
-          // 3. Métodos de Pago
-          const { data: paym } = await supabase.from('metodos_pago').select('*');
-          if (paym) {
-            setPaymentMethods((paym as any[]).map(pm => ({
-              id: pm.id_metodo_pago,
-              name: pm.tipo_pago,
-              desc: 'Método configurado en la nube',
-              active: pm.estado === 1
-            })));
-          }
-
-          // 4. Sesión de Caja Activa
-          const { data: ses } = await supabase.from('cierres_caja').select('*').eq('estado', 'abierto').limit(1);
-          if (ses && ses.length > 0) {
-            setCashSession({
-              id: ses[0].id_cierre_caja,
-              fec_apertura: new Date(ses[0].fec_apertura),
-              tot_saldo_inicial: parseFloat(ses[0].tot_saldo_inicial),
-              tot_ventas_efectivo: parseFloat(ses[0].tot_ventas_efectivo),
-              tot_ventas_otros: parseFloat(ses[0].tot_ventas_otros),
-              tot_retiros: parseFloat(ses[0].tot_retiros || 0),
-              estado: 'abierto'
-            });
-          }
-
-          // 5. Historial de Cajas
-          const { data: cashHist } = await supabase.from('cierres_caja').select('*').eq('estado', 'cerrado').order('fec_cierre', { ascending: false });
-          if (cashHist) {
-            setCashHistory((cashHist as any[]).map(h => ({
-              id: h.id_cierre_caja,
-              fec_apertura: new Date(h.fec_apertura).toLocaleDateString(),
-              fec_cierre: new Date(h.fec_cierre).toLocaleDateString(),
-              monto_inicial: parseFloat(h.tot_saldo_inicial),
-              monto_final: parseFloat(h.tot_saldo_final),
-              ventas_efectivo: parseFloat(h.tot_ventas_efectivo),
-              ventas_otros: parseFloat(h.tot_ventas_otros),
-              estado: 'cerrado'
-            })));
-          }
-
-          // 6. Colaboradores / Perfiles de Usuario
-          const { data: profs } = await supabase.from('profiles').select('*, roles(nombre)');
-          if (profs) {
-            setUsersList((profs as any[]).map(p => ({
-              id: p.id,
-              u: p.username,
-              p: '••••', // Contraseña oculta en la nube
-              n: p.nombre + ' ' + (p.apellido_paterno || ''),
-              rs: [p.roles?.nombre || 'Cajero'],
-              st: p.estado,
-              email: p.correo,
-              phone: p.num_telefono || ''
-            })));
-          }
-
-          // 7. Clientes Frecuentes
-          const { data: clis } = await supabase.from('clientes').select('*').order('id_cliente', { ascending: true });
-          if (clis) {
-            setClients((clis as any[]).map(c => ({
-              id: c.id_cliente,
-              nombre: c.nombre,
-              dni: c.dni || '',
-              telefono: c.telefono || '',
-              email: c.email || '',
-              limiteCred: parseFloat(c.limite_credito || 0),
-              saldoCred: parseFloat(c.saldo_credito || 0),
-              historialPagos: c.historial_pagos ? (typeof c.historial_pagos === 'string' ? JSON.parse(c.historial_pagos) : c.historial_pagos) : [],
-              active: c.estado === 1
-            })));
-          }
-
-          // 8. Roles desde la nube
-          const { data: rls } = await supabase.from('roles').select('*').order('id_rol', { ascending: true });
-          if (rls) {
-            setRolesList((rls as any[]).map(r => ({
-              id: r.nombre,
-              name: r.nombre,
-              desc: r.descripcion || '',
-              permissions: Array.isArray(r.permisos) ? r.permisos : (typeof r.permisos === 'string' ? JSON.parse(r.permisos) : [])
-            })));
-          }
-          
+          console.log('Cargando datos en paralelo...');
+          const [
+            { data: prods }, { data: cats }, { data: rls }, { data: paym }, { data: profs },
+            { data: clis }, { data: provs }, { data: sesAbierta }, { data: cashHist }, { data: ventas }, { data: compras }
+          ] = await Promise.all([
+            supabase.from('productos').select('*, producto_versiones(*), categorias(nombre)').eq('estado', 1),
+            supabase.from('categorias').select('*').order('id_categoria', { ascending: true }),
+            supabase.from('roles').select('*').order('id_rol', { ascending: true }),
+            supabase.from('metodos_pago').select('*'),
+            supabase.from('profiles').select('*, roles(nombre)'),
+            supabase.from('clientes').select('*').order('id_cliente', { ascending: true }),
+            supabase.from('proveedores').select('*'),
+            supabase.from('cierres_caja').select('*').eq('estado', 'abierto').limit(1),
+            supabase.from('cierres_caja').select('*').eq('estado', 'cerrado').order('fec_cierre', { ascending: false }),
+            supabase.from('ventas').select('*, detalle_venta(*, productos(nombre, em), producto_versiones(nombre_version)), metodos_pago(tipo_pago), profiles(nombre, apellido_paterno)').eq('estado', 1).order('fec_venta', { ascending: false }).limit(500),
+            supabase.from('compras').select('*, detalle_compra(*, productos(nombre)), proveedores(nombre_empresa)').eq('estado', 1).order('fec_compra', { ascending: false }).limit(200),
+          ]);
+          if (prods) setProducts((prods as any[]).map(p => ({ id: p.id_producto, name: p.nombre, cat: p.categorias?.nombre || 'Sin categoria', price: parseFloat(p.precio_unitario), stock: p.num_stock, em: p.em, versions: p.producto_versiones ? (p.producto_versiones as any[]).map(v => ({ id: v.id_version, name: v.nombre_version, price: parseFloat(v.precio_unitario), stock: v.num_stock })) : [] })));
+          if (cats) setCategories((cats as any[]).map(c => ({ id: c.id_categoria, name: c.nombre })));
+          if (rls) setRolesList((rls as any[]).map(r => ({ id: r.nombre, name: r.nombre, desc: r.descripcion || '', permissions: Array.isArray(r.permisos) ? r.permisos : (typeof r.permisos === 'string' ? JSON.parse(r.permisos) : []) })));
+          if (paym) setPaymentMethods((paym as any[]).map(pm => ({ id: pm.id_metodo_pago, name: pm.tipo_pago, desc: 'Metodo en la nube', active: pm.estado === 1 })));
+          if (profs) setUsersList((profs as any[]).map(p => ({ id: p.id, u: p.username, p: '••••', n: p.nombre + ' ' + (p.apellido_paterno || ''), rs: [p.roles?.nombre || 'Cajero'], st: p.estado, email: p.correo, phone: p.num_telefono || '' })));
+          if (clis) setClients((clis as any[]).map(c => ({ id: c.id_cliente, nombre: c.nombre, dni: c.dni || '', telefono: c.telefono || '', email: c.email || '', limiteCred: parseFloat(c.limite_credito || 0), saldoCred: parseFloat(c.saldo_credito || 0), historialPagos: c.historial_pagos ? (typeof c.historial_pagos === 'string' ? JSON.parse(c.historial_pagos) : c.historial_pagos) : [], active: c.estado === 1 })));
+          if (provs) setProviders((provs as any[]).map(pr => ({ id: pr.id_proveedor, ruc: pr.ruc, name: pr.nombre_empresa, phone: pr.num_telefono, address: pr.direccion, active: pr.estado === 1 })));
+          if (sesAbierta && sesAbierta.length > 0) setCashSession({ id: sesAbierta[0].id_cierre_caja, fec_apertura: new Date(sesAbierta[0].fec_apertura), tot_saldo_inicial: parseFloat(sesAbierta[0].tot_saldo_inicial), tot_ventas_efectivo: parseFloat(sesAbierta[0].tot_ventas_efectivo), tot_ventas_otros: parseFloat(sesAbierta[0].tot_ventas_otros), tot_retiros: parseFloat(sesAbierta[0].tot_retiros || 0), estado: 'abierto' });
+          if (cashHist) setCashHistory((cashHist as any[]).map(h => ({ id: h.id_cierre_caja, fec_apertura: new Date(h.fec_apertura).toLocaleDateString(), fec_cierre: new Date(h.fec_cierre).toLocaleDateString(), monto_inicial: parseFloat(h.tot_saldo_inicial), monto_final: parseFloat(h.tot_saldo_final), ventas_efectivo: parseFloat(h.tot_ventas_efectivo), ventas_otros: parseFloat(h.tot_ventas_otros), estado: 'cerrado' })));
+          if (ventas) setSales((ventas as any[]).map(v => ({ id: v.id_venta, n: v.id_venta, items: (v.detalle_venta || []).map((d: any) => ({ id: d.id_producto, name: (d.productos?.nombre || '') + (d.producto_versiones ? ` (${d.producto_versiones.nombre_version})` : ''), price: parseFloat(d.precio_unitario), qty: d.num_cantidad, version: d.producto_versiones?.nombre_version || null })), total: parseFloat(v.tot_pago), method: v.metodos_pago?.tipo_pago || 'Efectivo', methodId: v.id_metodo_pago, d: new Date(v.fec_venta).toLocaleDateString(), t: new Date(v.fec_venta).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), cajero: v.profiles ? (v.profiles.nombre + ' ' + (v.profiles.apellido_paterno || '')).trim() : 'Sistema', clienteId: v.id_cliente || undefined })));
+          if (compras) setPurchases((compras as any[]).map(c => ({ id: 'COM-' + c.id_compra, d: new Date(c.fec_compra).toLocaleDateString(), prov: c.proveedores?.nombre_empresa || 'Proveedor', subTotal: 'S/. ' + parseFloat(c.sub_total).toFixed(2), igv: 'S/. ' + parseFloat(c.igv).toFixed(2), total: 'S/. ' + parseFloat(c.tot_pago).toFixed(2), items: (c.detalle_compra || []).map((d: any) => ({ productId: d.id_producto, qty: d.num_cantidad, cost: parseFloat(d.precio_compra), version: null })) })));
         } catch (err) {
           console.error('Error cargando datos de Supabase', err);
         }
@@ -500,6 +401,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const localRoles = localStorage.getItem('snack_custom_roles_v1');
 
         setProducts(localProds ? JSON.parse(localProds) : DEFAULT_PRODUCTS);
+        setCategories([
+          { id: 1, name: 'Panes' },
+          { id: 2, name: 'Tortas' },
+          { id: 3, name: 'Dulces' },
+          { id: 4, name: 'Bebidas' },
+        ]);
         setUsersList(localUsers ? JSON.parse(localUsers) : DEFAULT_USERS);
         setProviders(localProviders ? JSON.parse(localProviders) : DEFAULT_PROVIDERS);
         setPaymentMethods(localMethods ? JSON.parse(localMethods) : DEFAULT_PAYMENT_METHODS);
@@ -512,9 +419,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setClients(localClients ? JSON.parse(localClients) : DEFAULT_CLIENTS);
         setRolesList(localRoles ? JSON.parse(localRoles) : DEFAULT_ROLES);
       }
-      setLoading(false);
+      if (isFirstLoad) setLoading(false);
     }
-    loadData();
+    loadData(true);
+
+    if (isSupabaseConfigured && supabase) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'SIGNED_IN') {
+          loadData(false);
+        }
+      });
+      return () => subscription.unsubscribe();
+    }
   }, []);
 
   // --- SAVE LOCALSTORAGE HELPER ---
@@ -562,7 +478,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             u: prof.username,
             n: prof.nombre + ' ' + prof.apellido_paterno,
             rs: [prof.roles.nombre],
-            email: prof.correo,
+            email: prof.correo || data.user.email, // Si profiles no tiene email, usar de auth
             phone: prof.num_telefono,
             st: prof.estado
           };
@@ -604,21 +520,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // --- PASSWORD RECOVERY ---
+  // Siempre usamos OTP propio vía Resend — nunca el email genérico de Supabase.
+  // La verificación del correo se hace vía API server-side (service role)
+  // porque el usuario NO está autenticado durante este flujo.
   const sendRecoveryEmail = async (emailIn: string) => {
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase.auth.resetPasswordForEmail(emailIn, {
-        redirectTo: `${window.location.origin}/recovery`,
-      });
-      if (error) {
-        toast(`❌ Error: ${error.message}`);
-        return { success: false, message: error.message };
+      try {
+        // Verificar correo vía endpoint server-side (bypasa RLS con service role)
+        const res = await fetch('/api/check-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailIn }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || !data.found) {
+          toast('❌ Correo electrónico no encontrado.');
+          return { success: false, message: 'Correo no registrado en el sistema' };
+        }
+
+        return { success: true, online: false, userId: data.userId, username: data.username };
+      } catch (err: any) {
+        toast(`❌ Error verificando correo: ${err.message}`);
+        return { success: false, message: err.message };
       }
-      toast('📧 Enlace de recuperación enviado al correo.');
-      return { success: true, online: true };
     } else {
+      // Modo offline — buscar en lista local
       const found = usersList.find(x => x.email === emailIn);
       if (found) {
-        toast('🔓 Datos verificados. Configura tu nueva contraseña.');
         return { success: true, userId: found.id, username: found.u, online: false };
       }
       toast('❌ Correo electrónico no encontrado.');
@@ -626,16 +556,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const resetPasswordOffline = (userId: number | string, newPass: string) => {
-    const updated = usersList.map(u => {
-      if (u.id === userId) {
-        return { ...u, p: newPass };
+  const resetPasswordOffline = async (userId: number | string, newPass: string) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        // Actualizar contraseña en Supabase Auth usando admin API vía endpoint
+        const res = await fetch('/api/update-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, newPassword: newPass })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          toast(`❌ Error al actualizar contraseña: ${err.error || 'Error desconocido'}`);
+          return;
+        }
+        toast('🔒 Contraseña restablecida con éxito.');
+      } catch (err: any) {
+        toast(`❌ Error: ${err.message}`);
       }
-      return u;
-    });
-    setUsersList(updated);
-    saveOffline('snack_users', updated);
-    toast('🔒 Contraseña restablecida con éxito.');
+    } else {
+      const updated = usersList.map(u => u.id === userId ? { ...u, p: newPass } : u);
+      setUsersList(updated);
+      saveOffline('snack_users', updated);
+      toast('🔒 Contraseña restablecida con éxito.');
+    }
   };
 
   // --- POS BASICS ---
@@ -859,7 +803,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data: vData } = await supabase.from('ventas').insert({
-          id_cliente: clienteId || 1,
+          id_cliente: clienteId || null,
           id_usuario: user?.id,
           id_cierre_caja: activeSession.id,
           id_metodo_pago: paymentMethodId,
@@ -924,7 +868,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             apellido_paterno: uObj.n.split(' ').slice(1).join(' ') || '',
             correo: uObj.email,
             num_telefono: uObj.phone,
-            numero_documento: uObj.dni || '',
             id_rol: idRol
           }).eq('id', uObj.id);
 
@@ -936,8 +879,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (uObj.role === 'Administrador') idRol = 1;
           else if (uObj.role === 'Panadero') idRol = 3;
 
-          // Generar contraseña temporal (usar correo como base)
-          const tempPassword = uObj.email?.split('@')[0] + '123456' || `Temp${Date.now()}`;
+          // Usar la contraseña ingresada en el formulario
+          const tempPassword = uObj.p || (uObj.email?.split('@')[0] + '123456') || `Temp${Date.now()}`;
 
           // Crear usuario en auth usando endpoint
           const authResponse = await fetch('/api/create-user', {
@@ -945,11 +888,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               email: uObj.email,
-              password: tempPassword,
+              password: uObj.p || tempPassword,
               userData: {
                 username: uObj.u,
-                nombre: uObj.n,
+                nombre: uObj.n.split(' ')[0] || uObj.n,
                 apellido_paterno: uObj.n.split(' ').slice(1).join(' ') || '',
+                id_rol: idRol
               }
             })
           });
@@ -960,23 +904,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
             throw new Error(authData.error || 'Error creando usuario en auth');
           }
 
-          // Usar el ID del usuario de auth, o generar uno temporal si no se crea
-          const userId = authData.userId || crypto.randomUUID?.() || `local_${Date.now()}`;
+          // El trigger handle_new_user ya insertó el perfil automáticamente.
+          // Solo actualizamos los campos adicionales que el trigger no conoce.
+          const userId = authData.userId;
+          if (userId) {
+            const { error: updateError } = await supabase.from('profiles').update({
+              username: uObj.u,
+              nombre: uObj.n.split(' ')[0] || uObj.n,
+              apellido_paterno: uObj.n.split(' ').slice(1).join(' ') || '',
+              correo: uObj.email,
+              num_telefono: uObj.phone || '',
+              id_rol: idRol,
+              estado: 'act'
+            }).eq('id', userId);
 
-          // Guardar en profiles
-          const { error: insertError } = await supabase.from('profiles').insert({
-            id: userId,
-            username: uObj.u,
-            nombre: uObj.n.split(' ')[0] || uObj.n,
-            apellido_paterno: uObj.n.split(' ').slice(1).join(' ') || '',
-            correo: uObj.email,
-            num_telefono: uObj.phone,
-            numero_documento: uObj.dni || '',
-            id_rol: idRol,
-            estado: 'act'
-          });
+            if (updateError) {
+              console.warn('Advertencia al actualizar perfil post-trigger:', updateError.message);
+            }
+          }
 
-          if (insertError) throw insertError;
           toast(`✅ Colaborador creado. Contraseña temporal: ${tempPassword}`);
         }
 
@@ -1192,33 +1138,89 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const toggleProvider = (id: number | string) => {
-    const updated = providers.map(p => p.id === id ? { ...p, active: !p.active } : p);
+  const toggleProvider = async (id: number | string) => {
+    const prov = providers.find(p => p.id === id);
+    if (!prov) return;
+    const newActive = !prov.active;
+    const updated = providers.map(p => p.id === id ? { ...p, active: newActive } : p);
     setProviders(updated);
     saveOffline('snack_providers', updated);
-    toast('🏭 Estado de proveedor actualizado');
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('proveedores').update({ estado: newActive ? 1 : 0 }).eq('id_proveedor', id);
+        toast('🏭 Estado de proveedor actualizado en la nube');
+      } catch (err: any) {
+        toast(`❌ Error actualizando proveedor: ${err.message}`);
+      }
+    } else {
+      toast('🏭 Estado de proveedor actualizado');
+    }
   };
 
   // --- CRUD METODOS DE PAGO ---
-  const savePaymentMethod = (mObj: any) => {
-    let updated;
-    if (mObj.id) {
-      updated = paymentMethods.map(m => m.id === mObj.id ? { ...m, ...mObj } : m);
-      toast('💳 Método de pago actualizado');
+  const savePaymentMethod = async (mObj: any) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        if (mObj.id) {
+          await supabase.from('metodos_pago').update({
+            tipo_pago: mObj.name,
+            estado: mObj.active !== false ? 1 : 0
+          }).eq('id_metodo_pago', mObj.id);
+          toast('💳 Método de pago actualizado en la nube');
+        } else {
+          await supabase.from('metodos_pago').insert({
+            tipo_pago: mObj.name,
+            estado: 1
+          });
+          toast('💳 Nuevo método de pago registrado en la nube');
+        }
+        // Recargar desde Supabase
+        const { data } = await supabase.from('metodos_pago').select('*');
+        if (data) {
+          setPaymentMethods((data as any[]).map(pm => ({
+            id: pm.id_metodo_pago,
+            name: pm.tipo_pago,
+            desc: 'Método configurado en la nube',
+            active: pm.estado === 1
+          })));
+        }
+      } catch (err: any) {
+        toast(`❌ Error en Supabase: ${err.message}`);
+      }
     } else {
-      const newMethod = { ...mObj, id: Date.now(), active: true };
-      updated = [...paymentMethods, newMethod];
-      toast('💳 Nuevo método de pago registrado');
+      let updated;
+      if (mObj.id) {
+        updated = paymentMethods.map(m => m.id === mObj.id ? { ...m, ...mObj } : m);
+        toast('💳 Método de pago actualizado');
+      } else {
+        const newMethod = { ...mObj, id: Date.now(), active: true };
+        updated = [...paymentMethods, newMethod];
+        toast('💳 Nuevo método de pago registrado');
+      }
+      setPaymentMethods(updated);
+      saveOffline('snack_methods', updated);
     }
-    setPaymentMethods(updated);
-    saveOffline('snack_methods', updated);
   };
 
-  const togglePaymentMethod = (id: number) => {
-    const updated = paymentMethods.map(m => m.id === id ? { ...m, active: !m.active } : m);
+  const togglePaymentMethod = async (id: number) => {
+    const method = paymentMethods.find(m => m.id === id);
+    if (!method) return;
+    const newActive = !method.active;
+    const updated = paymentMethods.map(m => m.id === id ? { ...m, active: newActive } : m);
     setPaymentMethods(updated);
     saveOffline('snack_methods', updated);
-    toast('💳 Estado del método de pago actualizado');
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('metodos_pago').update({ estado: newActive ? 1 : 0 }).eq('id_metodo_pago', id);
+        toast('💳 Estado del método de pago actualizado en la nube');
+      } catch (err: any) {
+        toast(`❌ Error actualizando método de pago: ${err.message}`);
+      }
+    } else {
+      toast('💳 Estado del método de pago actualizado');
+    }
   };
 
   // --- COMPRAS (STOCK INTEGRATION) ---
@@ -1286,6 +1288,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveOffline('snack_bread_logs', updLogs2);
 
     toast('📥 Compra registrada e inventario actualizado');
+
+    // Supabase Sync
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: cData } = await supabase.from('compras').insert({
+          id_usuario: user?.id,
+          id_proveedor: pObj.providerId,
+          sub_total: sub,
+          igv,
+          tot_pago: tot,
+          estado: 1
+        }).select().single();
+
+        if (cData) {
+          const detailRows = pObj.items.map(item => {
+            const prodRef = products.find(p => p.id === item.productId);
+            const vRef = (item.version && prodRef) ? prodRef.versions.find(v => v.name === item.version) : null;
+            return {
+              id_compra: cData.id_compra,
+              id_producto: item.productId,
+              id_version: vRef ? vRef.id : null,
+              num_cantidad: item.qty,
+              precio_compra: item.cost
+            };
+          });
+          await supabase.from('detalle_compra').insert(detailRows);
+        }
+      } catch (err) {
+        console.error('Error al sincronizar compra con Supabase', err);
+      }
+    }
   };
 
   // --- CONTROL DE CAJA (APERTURA Y CIERRE) ---
@@ -1379,29 +1412,101 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast('🔴 Caja cerrada correctamente. POS bloqueado.');
   };
 
-  // --- CONTROL DE PANES (PRODUCCION Y DESCARTE) ---
-  const saveProduct = (pObj: any) => {
-    let updated;
-    if (pObj.id) {
-      updated = products.map(p => p.id === pObj.id ? { ...p, ...pObj } : p);
-      toast('📦 Producto actualizado');
+  // --- CRUD PRODUCTOS ---
+  const saveProduct = async (pObj: any) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        // Resolver id_categoria desde nombre usando el estado local
+        const catMatch = categories.find((c) => c.name === pObj.cat);
+        const idCat = catMatch?.id || null;
+
+        if (pObj.id) {
+          await supabase.from('productos').update({
+            nombre: pObj.name,
+            id_categoria: idCat,
+            em: pObj.em || '📦',
+            precio_unitario: pObj.price,
+            num_stock: pObj.stock || 0
+          }).eq('id_producto', pObj.id);
+          toast('📦 Producto actualizado en la nube');
+        } else {
+          const { data: newProd } = await supabase.from('productos').insert({
+            nombre: pObj.name,
+            id_categoria: idCat,
+            em: pObj.em || '📦',
+            precio_unitario: pObj.price,
+            num_stock: pObj.stock || 0,
+            estado: 1
+          }).select().single();
+
+          // Insertar versiones si las hay
+          if (newProd && pObj.versions?.length > 0) {
+            const versionRows = pObj.versions.map((v: any) => ({
+              id_producto: newProd.id_producto,
+              nombre_version: v.name,
+              precio_unitario: v.price,
+              num_stock: v.stock || 0,
+              estado: 1
+            }));
+            await supabase.from('producto_versiones').insert(versionRows);
+          }
+          toast('📦 Producto creado en la nube');
+        }
+
+        // Recargar productos desde Supabase
+        const { data: prods } = await supabase.from('productos').select('*, producto_versiones(*), categorias(nombre)').eq('estado', 1);
+        if (prods) {
+          setProducts((prods as any[]).map(p => ({
+            id: p.id_producto,
+            name: p.nombre,
+            cat: p.categorias?.nombre || 'Sin categoría',
+            price: parseFloat(p.precio_unitario),
+            stock: p.num_stock,
+            em: p.em,
+            versions: p.producto_versiones ? (p.producto_versiones as any[]).map(v => ({
+              id: v.id_version,
+              name: v.nombre_version,
+              price: parseFloat(v.precio_unitario),
+              stock: v.num_stock
+            })) : []
+          })));
+        }
+      } catch (err: any) {
+        toast(`❌ Error en Supabase: ${err.message}`);
+      }
     } else {
-      const newProd = { ...pObj, id: Date.now(), stock: pObj.stock || 0, versions: pObj.versions || [] };
-      updated = [...products, newProd];
-      toast('📦 Producto creado');
+      let updated;
+      if (pObj.id) {
+        updated = products.map(p => p.id === pObj.id ? { ...p, ...pObj } : p);
+        toast('📦 Producto actualizado');
+      } else {
+        const newProd = { ...pObj, id: Date.now(), stock: pObj.stock || 0, versions: pObj.versions || [] };
+        updated = [...products, newProd];
+        toast('📦 Producto creado');
+      }
+      setProducts(updated);
+      saveOffline('snack_products', updated);
     }
-    setProducts(updated);
-    saveOffline('snack_products', updated);
   };
 
-  const deleteProduct = (id: number) => {
-    const updated = products.filter(p => p.id !== id);
-    setProducts(updated);
-    saveOffline('snack_products', updated);
-    toast('🗑 Producto eliminado');
+  const deleteProduct = async (id: number) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('productos').update({ estado: 0 }).eq('id_producto', id);
+        setProducts(products.filter(p => p.id !== id));
+        toast('🗑 Producto eliminado de la nube');
+      } catch (err: any) {
+        toast(`❌ Error eliminando producto: ${err.message}`);
+      }
+    } else {
+      const updated = products.filter(p => p.id !== id);
+      setProducts(updated);
+      saveOffline('snack_products', updated);
+      toast('🗑 Producto eliminado');
+    }
   };
 
-  const logBreadProduction = (prodId: number, qty: number, version: string | null = null) => {
+  const logBreadProduction = async (prodId: number, qty: number, version: string | null = null) => {
     const updated = products.map(p => {
       if (p.id === prodId) {
         if (version) {
@@ -1419,10 +1524,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setProducts(updated);
     saveOffline('snack_products', updated);
 
+    const prod = products.find(x => x.id === prodId);
+    const vRef = (version && prod) ? prod.versions.find(v => v.name === version) : null;
+
     const log: BreadLog = {
       id: Date.now(),
       d: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
-      prodName: (products.find(x => x.id === prodId)?.name || 'Producto') + (version ? ` (${version})` : ''),
+      prodName: (prod?.name || 'Producto') + (version ? ` (${version})` : ''),
       type: 'produccion',
       qty,
       reason: 'Ingreso inicial de producción diaria'
@@ -1431,10 +1539,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const newLogs = [log, ...breadLogs];
     setBreadLogs(newLogs);
     saveOffline('snack_bread_logs', newLogs);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('produccion_descarte').insert({
+          id_producto: prodId,
+          id_version: vRef?.id || null,
+          tipo_registro: 'produccion',
+          num_cantidad: qty,
+          id_usuario: user?.id
+        });
+      } catch (err) {
+        console.error('Error al registrar producción en Supabase', err);
+      }
+    }
+
     toast('➕ Producción de panes registrada');
   };
 
-  const logBreadDiscard = (prodId: number, qty: number, reason: string, version: string | null = null) => {
+  const logBreadDiscard = async (prodId: number, qty: number, reason: string, version: string | null = null) => {
     const updated = products.map(p => {
       if (p.id === prodId) {
         if (version) {
@@ -1452,10 +1575,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setProducts(updated);
     saveOffline('snack_products', updated);
 
+    const prod = products.find(x => x.id === prodId);
+    const vRef = (version && prod) ? prod.versions.find(v => v.name === version) : null;
+
     const log: BreadLog = {
       id: Date.now(),
       d: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
-      prodName: (products.find(x => x.id === prodId)?.name || 'Producto') + (version ? ` (${version})` : ''),
+      prodName: (prod?.name || 'Producto') + (version ? ` (${version})` : ''),
       type: 'descarte',
       qty,
       reason
@@ -1464,11 +1590,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const newLogs = [log, ...breadLogs];
     setBreadLogs(newLogs);
     saveOffline('snack_bread_logs', newLogs);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('produccion_descarte').insert({
+          id_producto: prodId,
+          id_version: vRef?.id || null,
+          tipo_registro: 'descarte',
+          num_cantidad: qty,
+          motivo_descarte: reason,
+          id_usuario: user?.id
+        });
+      } catch (err) {
+        console.error('Error al registrar descarte en Supabase', err);
+      }
+    }
+
     toast('⚠️ Reporte de descarte registrado');
   };
 
   // --- RETIRO PARCIAL DE CAJA (CASH DROP) ---
-  const registerCashDrop = (monto: number, motivo: string) => {
+  const registerCashDrop = async (monto: number, motivo: string) => {
     if (!cashSession) {
       toast('⚠️ No hay caja activa para registrar un retiro.');
       return;
@@ -1492,6 +1634,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     setCashSession(updatedSession);
     saveOffline('snack_session', updatedSession);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('cierres_caja').update({
+          tot_ventas_efectivo: updatedSession.tot_ventas_efectivo,
+          tot_ventas_otros: updatedSession.tot_ventas_otros
+        }).eq('id_cierre_caja', cashSession.id);
+      } catch (err) {
+        console.error('Error al registrar retiro en Supabase', err);
+      }
+    }
+
     toast(`💸 Retiro de S/. ${monto.toFixed(2)} registrado y descontado de caja.`);
   };
 
@@ -1785,6 +1939,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       role,
       loading,
       products,
+      categories,
       usersList,
       providers,
       paymentMethods,

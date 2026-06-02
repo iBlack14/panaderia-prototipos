@@ -35,6 +35,12 @@ export async function POST(req: NextRequest) {
       email,
       password,
       email_confirm: true, // Confirmar automáticamente
+      user_metadata: {
+        username: userData?.username || email.split('@')[0],
+        nombre: userData?.nombre || '',
+        apellido_paterno: userData?.apellido_paterno || '',
+        id_rol: userData?.id_rol || 2
+      }
     });
 
     if (authError) {
