@@ -969,7 +969,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const toggleUserStatus = async (userId: number | string) => {
     const currentUser = usersList.find(u => u.id === userId);
-    const newStatus = currentUser?.st === 'act' ? 'inact' : 'act';
+    const newStatus = currentUser?.st === 'act' ? 'ina' : 'act';
     const updated = usersList.map(u => u.id === userId ? { ...u, st: newStatus } : u);
 
     setUsersList(updated);
@@ -977,8 +977,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (isSupabaseConfigured && supabase && currentUser) {
       try {
-        await supabase.from('profiles').update({ estado: newStatus === 'act' ? 1 : 0 }).eq('id', userId);
-        toast('👤 Estado de colaborador actualizado en la nube');
+        await supabase.from('profiles').update({ estado: newStatus }).eq('id', userId);
+        toast('✅ Estado de colaborador actualizado en la nube');
       } catch (err: any) {
         toast(`❌ Error actualizando estado en la nube: ${err.message}`);
       }
