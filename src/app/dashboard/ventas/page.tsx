@@ -17,7 +17,8 @@ export default function PointOfSalePage() {
     paymentMethods,
     user,
     clients,
-    toast
+    toast,
+    saveClient
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -34,8 +35,45 @@ export default function PointOfSalePage() {
   const [showVariantModal, setShowVariantModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
-  // Client Selection state
+  // Client Selection & Payment Step state
   const [selectedClientId, setSelectedClientId] = useState<number | string>('');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<number | null>(null);
+  
+  // Inline Client Creation state
+  const [isCreatingClient, setIsCreatingClient] = useState(false);
+  const [newClientData, setNewClientData] = useState({ nombre: '', dni: '', telefono: '' });
+  const [isDniLoading, setIsDniLoading] = useState(false);
+
+  // Auto-fetch DNI effect
+  useEffect(() => {
+    // Solo consultar si el DNI tiene 8 caracteres y el nombre está vacío
+    if (newClientData.dni.length === 8 && !newClientData.nombre) {
+      const fetchDni = async () => {
+        setIsDniLoading(true);
+        try {
+          const res = await fetch('/api/consulta-dni', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dni: newClientData.dni }),
+          });
+          const json = await res.json();
+          if (res.ok && json.success) {
+            const d = json.data;
+            const fullName = `${d.nombres || ''} ${d.apellido_paterno || ''} ${d.apellido_materno || ''}`.replace(/\s+/g, ' ').trim();
+            setNewClientData(prev => ({ ...prev, nombre: fullName }));
+            toast('✅ Datos de DNI encontrados y completados');
+          } else {
+            toast('⚠️ ' + (json.message || 'DNI no encontrado en RENIEC'));
+          }
+        } catch (error) {
+          console.error("Error fetching DNI", error);
+        } finally {
+          setIsDniLoading(false);
+        }
+      };
+      fetchDni();
+    }
+  }, [newClientData.dni, newClientData.nombre, toast]);
 
   // WhatsApp Baileys sending states inside receipt modal
   const [showWhatsAppSubModal, setShowWhatsAppSubModal] = useState(false);
@@ -66,18 +104,23 @@ export default function PointOfSalePage() {
   const handleOpenCheckout = () => {
     if (cart.length === 0) return;
     setSelectedClientId(''); // Default to generic client
+    setSelectedPaymentMethod(null);
+    setIsCreatingClient(false);
+    setNewClientData({ nombre: '', dni: '', telefono: '' });
     setShowCheckoutModal(true);
   };
 
-  const handleConfirmPayment = async (methodId: number) => {
-    const receipt = await checkoutCart(methodId, selectedClientId || undefined);
+  const handleConfirmPayment = async (methodId: number, overrideClientId?: number | string) => {
+    const finalClientId = overrideClientId !== undefined ? overrideClientId : selectedClientId;
+    const receipt = await checkoutCart(methodId, finalClientId || undefined);
     if (receipt) {
       setLastReceipt(receipt);
       setShowCheckoutModal(false);
       
       // Auto-prefill customer phone if they exist and have a registered phone number
-      if (selectedClientId) {
-        const foundCli = clients.find(c => String(c.id) === String(selectedClientId));
+      if (finalClientId) {
+        // Find in updated clients list or current list
+        const foundCli = clients.find(c => String(c.id) === String(finalClientId));
         if (foundCli && foundCli.telefono) {
           // Normalize phone (ensure it has country code if needed, but display cleanly)
           const normPhone = foundCli.telefono.startsWith('+') ? foundCli.telefono : `+51${foundCli.telefono}`;
@@ -451,79 +494,157 @@ export default function PointOfSalePage() {
         <div className="modal-overlay open">
           <div className="modal-card" style={{ width: '480px' }}>
             <span className="mc-icon">💳</span>
-            <div className="mc-title">Seleccionar Método de Pago</div>
+            <div className="mc-title">
+              {!selectedPaymentMethod ? 'Seleccionar Método de Pago' : 'Vincular Cliente (Opcional)'}
+            </div>
             <p className="mc-sub" style={{ marginBottom: '15px' }}>Monto Total a Cobrar: <strong>S/. {cartTotal.toFixed(2)}</strong></p>
 
-            {/* CLIENTE SELECTOR */}
-            <div className="inp-group" style={{ marginBottom: '18px', textAlign: 'left' }}>
-              <label style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: '6px' }}>
-                Vincular Cliente (Opcional)
-              </label>
-              <select 
-                value={selectedClientId} 
-                onChange={(e) => setSelectedClientId(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: '10px',
-                  border: '1.5px solid var(--border)',
-                  background: 'var(--bg-card2)',
-                  color: 'var(--text)',
-                  fontSize: '13px',
-                  fontFamily: 'Inter, sans-serif'
-                }}
-              >
-                <option value="">-- Cliente Genérico (Anonimo) --</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>
-                    👤 {c.nombre} (DNI: {c.dni || 'S/D'} · Cel: {c.telefono || 'S/T'})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', margin: '20px 0' }}>
-              {activeMethods.length === 0 ? (
-                <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '20px', color: 'var(--text-3)' }}>
-                  No hay métodos de pago activos.
-                </div>
-              ) : (
-                activeMethods.map((m) => {
-                  const icons: Record<string, string> = { Efectivo: '💵', Yape: '📱', Plin: '📱', 'Tarjeta Crédito/Débito': '💳', Tarjeta: '💳' };
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={() => handleConfirmPayment(m.id)}
+            {!selectedPaymentMethod ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', margin: '20px 0' }}>
+                {activeMethods.length === 0 ? (
+                  <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '20px', color: 'var(--text-3)' }}>
+                    No hay métodos de pago activos.
+                  </div>
+                ) : (
+                  activeMethods.map((m) => {
+                    const icons: Record<string, string> = { Efectivo: '💵', Yape: '📱', Plin: '📱', 'Tarjeta Crédito/Débito': '💳', Tarjeta: '💳' };
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => setSelectedPaymentMethod(m.id as number)}
+                        style={{
+                          padding: '18px 12px',
+                          border: '1.5px solid var(--border)',
+                          borderRadius: '12px',
+                          background: 'var(--bg-card2)',
+                          fontFamily: 'Inter, sans-serif',
+                          fontWeight: '700',
+                          fontSize: '13px',
+                          color: 'var(--text)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '8px',
+                          transition: 'all 0.18s'
+                        }}
+                        onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-bg)'; }}
+                        onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-card2)'; }}
+                      >
+                        <span style={{ fontSize: '24px' }}>{icons[m.name] || '💳'}</span>
+                        {m.name}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            ) : (
+              <>
+                {/* CLIENTE SELECTOR */}
+                <div className="inp-group" style={{ marginBottom: '18px', textAlign: 'left' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-3)' }}>
+                      Cliente a facturar
+                    </label>
+                    {!isCreatingClient ? (
+                      <button type="button" onClick={() => setIsCreatingClient(true)} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: '11.5px', fontWeight: '800', cursor: 'pointer' }}>+ Nuevo Cliente</button>
+                    ) : (
+                      <button type="button" onClick={() => setIsCreatingClient(false)} style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: '11.5px', fontWeight: '800', cursor: 'pointer' }}>Cancelar</button>
+                    )}
+                  </div>
+                  
+                  {!isCreatingClient ? (
+                    <select 
+                      value={selectedClientId} 
+                      onChange={(e) => setSelectedClientId(e.target.value)}
                       style={{
-                        padding: '18px 12px',
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
                         border: '1.5px solid var(--border)',
-                        borderRadius: '12px',
                         background: 'var(--bg-card2)',
-                        fontFamily: 'Inter, sans-serif',
-                        fontWeight: '700',
-                        fontSize: '13px',
                         color: 'var(--text)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: '8px',
-                        transition: 'all 0.18s'
+                        fontSize: '13px',
+                        fontFamily: 'Inter, sans-serif'
                       }}
-                      onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-bg)'; }}
-                      onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-card2)'; }}
                     >
-                      <span style={{ fontSize: '24px' }}>{icons[m.name] || '💳'}</span>
-                      {m.name}
-                    </button>
-                  );
-                })
-              )}
-            </div>
+                      <option value="">-- Cliente Genérico (Anonimo) --</option>
+                      {clients.map(c => (
+                        <option key={c.id} value={c.id}>
+                          👤 {c.nombre} {c.dni ? `(DNI: ${c.dni})` : ''} {c.telefono ? `· Cel: ${c.telefono}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px', padding: '14px', background: 'var(--bg)', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div style={{ position: 'relative' }}>
+                          <input 
+                            placeholder="DNI / RUC" 
+                            value={newClientData.dni} 
+                            onChange={e => setNewClientData({...newClientData, dni: e.target.value.replace(/\D/g, '')})} 
+                            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', fontSize: '13px', background: 'var(--bg-card)' }} 
+                            maxLength={11}
+                          />
+                          {isDniLoading && <span className="ci-em" style={{ position: 'absolute', right: '10px', top: '10px', animation: 'spin 1.5s linear infinite', fontSize: '14px' }}>🥐</span>}
+                        </div>
+                        <input 
+                          placeholder="Celular (ej: +51...)" 
+                          value={newClientData.telefono} 
+                          onChange={e => setNewClientData({...newClientData, telefono: e.target.value})} 
+                          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', fontSize: '13px', background: 'var(--bg-card)' }} 
+                        />
+                      </div>
+                      <input 
+                        placeholder="Nombre Completo *" 
+                        value={newClientData.nombre} 
+                        onChange={e => setNewClientData({...newClientData, nombre: e.target.value})} 
+                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', fontSize: '13px', background: 'var(--bg-card)' }} 
+                      />
+                    </div>
+                  )}
+                </div>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', margin: '20px 0' }}>
+                  <button 
+                    className="mc-pri" 
+                    onClick={async () => {
+                      if (isCreatingClient) {
+                        if (!newClientData.nombre.trim()) { toast('⚠️ El nombre es obligatorio para crear un cliente.'); return; }
+                        const saved = await saveClient(newClientData);
+                        if (saved) {
+                          setSelectedClientId(saved.id);
+                          setIsCreatingClient(false);
+                          setNewClientData({ nombre: '', dni: '', telefono: '' });
+                          handleConfirmPayment(selectedPaymentMethod as number, saved.id);
+                        }
+                      } else {
+                        handleConfirmPayment(selectedPaymentMethod as number, selectedClientId);
+                      }
+                    }}
+                    style={{ width: '100%', padding: '12px', background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))', color: 'white', borderRadius: '10px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    Confirmar Cobro y Emitir
+                  </button>
+                  <button 
+                    className="mc-sec" 
+                    onClick={() => {
+                      setSelectedPaymentMethod(null);
+                      setIsCreatingClient(false);
+                    }}
+                    style={{ width: '100%', padding: '12px', background: 'transparent', color: 'var(--text-2)', borderRadius: '10px', border: '1.5px solid var(--border)', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    Volver atrás
+                  </button>
+                </div>
+              </>
+            )}
 
-            <button type="button" className="mc-sec" style={{ width: '100%' }} onClick={() => setShowCheckoutModal(false)}>
-              Cancelar
-            </button>
+            {!selectedPaymentMethod && (
+              <button type="button" className="mc-sec" style={{ width: '100%', padding: '12px', background: 'transparent', color: 'var(--text-2)', borderRadius: '10px', border: '1.5px solid var(--border)', fontWeight: 'bold', cursor: 'pointer' }} onClick={() => setShowCheckoutModal(false)}>
+                Cancelar Venta
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -538,8 +659,26 @@ export default function PointOfSalePage() {
             <div className="mc-receipt" style={{ border: '2px dashed var(--border)', padding: '20px', borderRadius: '8px', background: 'var(--bg-card)', marginTop: '15px' }}>
               <div style={{ textAlign: 'center', marginBottom: '15px' }}>
                 <h4 style={{ margin: 0, fontSize: '18px' }}>SNACK ROQUE</h4>
-                <p style={{ fontSize: '11px', color: 'var(--text-3)' }}>Boleta #B-{lastReceipt.n}</p>
+                <p style={{ fontSize: '11px', color: 'var(--text-3)', margin: '2px 0' }}>Boleta #B-{lastReceipt.n}</p>
+                <p style={{ fontSize: '10.5px', color: 'var(--text-3)', margin: '2px 0' }}>{lastReceipt.d} · {lastReceipt.t || ''}</p>
               </div>
+
+              {/* Cajero y cliente */}
+              <div style={{ borderTop: '1px dashed var(--border)', borderBottom: '1px dashed var(--border)', padding: '8px 0', marginBottom: '10px', fontSize: '11.5px', color: 'var(--text-2)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Cajero</span>
+                  <span style={{ fontWeight: '600' }}>{lastReceipt.cajero || 'Admin'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                  <span>Cliente</span>
+                  <span style={{ fontWeight: '600' }}>{lastReceipt.clienteNombre || 'Cliente Genérico'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                  <span>Método de pago</span>
+                  <span style={{ fontWeight: '600' }}>{lastReceipt.method || 'Efectivo'}</span>
+                </div>
+              </div>
+
               {lastReceipt.items.map((i, idx) => (
                 <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', margin: '5px 0' }}>
                   <span>{i.name} (x{i.qty})</span>
