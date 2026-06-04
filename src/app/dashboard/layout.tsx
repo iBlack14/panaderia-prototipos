@@ -36,8 +36,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         '/dashboard/compras': adminOrSup,
         '/dashboard/categorias': adminOrSup,
         '/dashboard/metodos': adminOrSup,
-        '/dashboard/reportes': perms.includes('estadisticas_ver'),
-        '/dashboard/usuarios': role === 'Administrador'
+        '/dashboard/usuarios': role === 'Administrador',
+        '/dashboard/whatsapp': perms.includes('pos_ventas') || adminOrSup
       };
 
       if (routeReqs[pathname] === false) {
@@ -102,6 +102,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     { label: 'Análisis', type: 'section', show: hasPerm('estadisticas_ver') || isAdmin },
     { label: 'Estadísticas', path: '/dashboard/reportes', icon: '📈', type: 'item', show: hasPerm('estadisticas_ver') },
     { label: 'Personal', path: '/dashboard/usuarios', icon: '👤', type: 'item', show: isAdmin },
+    { label: 'WhatsApp Baileys', path: '/dashboard/whatsapp', icon: '💬', type: 'item', show: hasPerm('pos_ventas') || isAdmin || isSupervisor },
   ];
 
   // Filtramos por permisos
@@ -120,6 +121,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     '/dashboard/metodos': { title: 'Métodos de Pago Configurados', sub: 'Configuración de canales de cobro' },
     '/dashboard/reportes': { title: 'Estadísticas y Reportes', sub: 'Análisis y métricas de rendimiento' },
     '/dashboard/usuarios': { title: 'Gestión de Personal', sub: 'Control de accesos y roles del equipo' },
+    '/dashboard/whatsapp': { title: 'WhatsApp Gateway (Baileys)', sub: 'Vincular y monitorear servicio de mensajería' },
   };
 
   const currentPathDetails = pageDetails[pathname] || { title: 'Sistema de Gestión', sub: 'Snack Roque' };
@@ -266,10 +268,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <div className="md-body">
               <div className="md-grid">
                 {(hasPerm('pos_ventas') || isAdmin || isSupervisor) && (
-                  <div className="md-item-btn" onClick={() => { router.push('/dashboard/clientes'); setIsMoreMenuOpen(false); }}>
-                    <span className="md-btn-icon">👥</span>
-                    <span className="md-btn-lbl">Clientes</span>
-                  </div>
+                  <>
+                    <div className="md-item-btn" onClick={() => { router.push('/dashboard/clientes'); setIsMoreMenuOpen(false); }}>
+                      <span className="md-btn-icon">👥</span>
+                      <span className="md-btn-lbl">Clientes</span>
+                    </div>
+                    <div className="md-item-btn" onClick={() => { router.push('/dashboard/whatsapp'); setIsMoreMenuOpen(false); }}>
+                      <span className="md-btn-icon">💬</span>
+                      <span className="md-btn-lbl">WhatsApp</span>
+                    </div>
+                  </>
                 )}
                 {(isAdmin || isSupervisor) && (
                   <>

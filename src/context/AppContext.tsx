@@ -217,7 +217,7 @@ export interface AppContextType {
   deleteProduct: (id: number) => Promise<void>;
   logBreadProduction: (prodId: number, qty: number, version?: string | null) => Promise<void>;
   logBreadDiscard: (prodId: number, qty: number, reason: string, version?: string | null) => Promise<void>;
-  saveClient: (cObj: any) => void;
+  saveClient: (cObj: any) => Promise<Client | undefined>;
   toggleClient: (id: number | string) => void;
   payCreditBalance: (clientId: number | string, monto: number, concepto: string, metodoPago?: string) => void;
   logBreadConversion: (prodId: number, qty: number, destino: string, costoEstimado?: number, version?: string | null) => void;
@@ -1650,7 +1650,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // --- CRUD CLIENTES FRECUENTES ---
-  const saveClient = async (cObj: any) => {
+  const saveClient = async (cObj: any): Promise<Client | undefined> => {
     if (isSupabaseConfigured && supabase) {
       try {
         if (cObj.id) {
@@ -1664,9 +1664,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }).eq('id_cliente', cObj.id);
           if (error) throw error;
           toast('👤 Cliente actualizado en la nube');
+          return clients.find(c => c.id === cObj.id);
         } else {
           // Insertar en Supabase
-          const { error } = await supabase.from('clientes').insert({
+          const { data, error } = await supabase.from('clientes').insert({
             nombre: cObj.nombre,
             dni: cObj.dni || '',
             telefono: cObj.telefono || '',
@@ -1675,25 +1676,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
             saldo_credito: 0,
             historial_pagos: [],
             estado: 1
-          });
+          }).select().single();
           if (error) throw error;
           toast('👤 Cliente registrado en la nube');
-        }
-
-        // Recargar clientes desde Supabase
-        const { data } = await supabase.from('clientes').select('*').order('id_cliente', { ascending: true });
-        if (data) {
-          setClients((data as any[]).map(c => ({
-            id: c.id_cliente,
-            nombre: c.nombre,
-            dni: c.dni || '',
-            telefono: c.telefono || '',
-            email: c.email || '',
-            limiteCred: parseFloat(c.limite_credito || 0),
-            saldoCred: parseFloat(c.saldo_credito || 0),
-            historialPagos: c.historial_pagos ? (typeof c.historial_pagos === 'string' ? JSON.parse(c.historial_pagos) : c.historial_pagos) : [],
-            active: c.estado === 1
-          })));
+          if (data) {
+            const newCli: Client = {
+              id: data.id_cliente,
+              nombre: data.nombre,
+              dni: data.dni || '',
+              telefono: data.telefono || '',
+              email: data.email || '',
+              limiteCred: parseFloat(data.limite_credito || 0),
+              saldoCred: parseFloat(data.saldo_credito || 0),
+              historialPagos: [],
+              active: true
+            };
+            setClients(prev => [...prev.filter(c => c.id !== newCli.id), newCli]);
+            return newCli;
+          }
         }
       } catch (err: any) {
         toast(`❌ Error en Supabase: ${err.message}`);
@@ -1701,11 +1701,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } else {
       // Modo offline
       let updated;
+      let newClient: Client;
       if (cObj.id && clients.find(c => c.id === cObj.id)) {
         updated = clients.map(c => c.id === cObj.id ? { ...c, ...cObj } : c);
         toast('👤 Cliente actualizado');
+        newClient = updated.find(c => c.id === cObj.id)!;
       } else {
-        const newClient: Client = {
+        newClient = {
           id: Date.now(),
           nombre: cObj.nombre,
           dni: cObj.dni || '',
@@ -1721,7 +1723,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       setClients(updated);
       saveOffline('snack_clients', updated);
+      return newClient;
     }
+    return undefined;
   };
 
   const toggleClient = async (id: number | string) => {

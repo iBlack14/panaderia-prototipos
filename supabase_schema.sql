@@ -1,7 +1,8 @@
 -- ============================================================
--- SUPABASE SCHEMA - PANADERÍA SNACK ROQUE (PROTOTIPO 3)
+-- SUPABASE SCHEMA - PANADERÍA SNACK ROQUE (FINAL DEPLOY)
 -- ============================================================
 -- Ejecutar este script en el SQL Editor de tu proyecto Supabase.
+-- Este script realiza una instalación/reinstalación limpia desde 0.
 -- ORDEN: DROP → CREATE TABLES → TRIGGERS → RLS → SEED DATA
 -- ============================================================
 
@@ -12,6 +13,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 1. LIMPIEZA COMPLETA (DROP en orden inverso de dependencias)
 -- ============================================================
 DROP TABLE IF EXISTS public.produccion_descarte  CASCADE;
+DROP TABLE IF EXISTS public.whatsapp_baileys_auth CASCADE;
 DROP TABLE IF EXISTS public.detalle_compra        CASCADE;
 DROP TABLE IF EXISTS public.compras               CASCADE;
 DROP TABLE IF EXISTS public.detalle_venta         CASCADE;
@@ -51,7 +53,7 @@ CREATE TABLE public.profiles (
     nombre            VARCHAR(100) NOT NULL,
     apellido_paterno  VARCHAR(100) NOT NULL,
     apellido_materno  VARCHAR(100),
-    correo            VARCHAR(150) NOT NULL,
+    correo            VARCHAR(150),
     num_telefono      VARCHAR(20),
     numero_documento  VARCHAR(20),          -- DNI u otro documento de identidad
     id_rol            INT REFERENCES public.roles(id_rol) DEFAULT 2,  -- 2: Cajero
@@ -81,7 +83,7 @@ CREATE TABLE public.clientes (
     telefono        VARCHAR(50),
     email           VARCHAR(150),
     limite_credito  DECIMAL(10,2) NOT NULL DEFAULT 0.00
-                        CONSTRAINT chk_limite_credito CHECK (limite_credito <= 100.00),
+                        CONSTRAINT chk_limite_credito CHECK (limite_credito >= 0),
     saldo_credito   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     historial_pagos JSONB DEFAULT '[]'::jsonb,
     fec_registro    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -199,6 +201,15 @@ CREATE TABLE public.produccion_descarte (
     fec_registro     TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 2.15 Sesión real de WhatsApp Baileys
+-- Guarda credenciales Signal/Baileys en BD para evitar archivos locales .json.
+-- Acceso esperado: solo servidor con SUPABASE_SERVICE_ROLE_KEY.
+CREATE TABLE public.whatsapp_baileys_auth (
+    key        TEXT PRIMARY KEY,
+    value      JSONB NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 
 -- ============================================================
 -- 3. TRIGGERS DE STOCK AUTOMÁTICO
@@ -295,12 +306,12 @@ BEGIN
   )
   VALUES (
     new.id,
-    COALESCE(new.raw_user_meta_data->>'username', split_part(new.email, '@', 1)),
+    COALESCE(new.raw_user_meta_data->>'username', split_part(new.email, '@', 1), new.id::text),
     COALESCE(new.raw_user_meta_data->>'nombre', 'Nuevo'),
     COALESCE(new.raw_user_meta_data->>'apellido_paterno', 'Colaborador'),
     new.raw_user_meta_data->>'apellido_materno',
     new.email,
-    new.raw_user_meta_data->>'num_telefono',
+    COALESCE(new.raw_user_meta_data->>'num_telefono', new.phone),
     COALESCE((new.raw_user_meta_data->>'id_rol')::int, 2),
     'act'
   )
@@ -425,6 +436,9 @@ DROP POLICY IF EXISTS "produccion_descarte_mod" ON public.produccion_descarte;
 CREATE POLICY "produccion_descarte_select" ON public.produccion_descarte FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 3, 5)));
 CREATE POLICY "produccion_descarte_mod" ON public.produccion_descarte FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 3, 5)));
 
+-- whatsapp_baileys_auth
+-- Sin políticas para usuarios cliente; la API de Next accede con service role.
+ALTER TABLE public.whatsapp_baileys_auth ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- 6. DATOS SEMILLA (SEED DATA)
@@ -478,7 +492,7 @@ ON CONFLICT (id_producto) DO UPDATE SET nombre = EXCLUDED.nombre;
 INSERT INTO public.profiles (id, username, nombre, apellido_paterno, correo, id_rol, estado)
 SELECT
     id,
-    COALESCE(raw_user_meta_data->>'username', split_part(email, '@', 1)),
+    COALESCE(raw_user_meta_data->>'username', split_part(email, '@', 1), id::text),
     COALESCE(raw_user_meta_data->>'nombre', 'Admin'),
     COALESCE(raw_user_meta_data->>'apellido_paterno', 'Sistema'),
     email,
