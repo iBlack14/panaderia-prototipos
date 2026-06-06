@@ -102,7 +102,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     { label: 'Análisis', type: 'section', show: hasPerm('estadisticas_ver') || isAdmin },
     { label: 'Estadísticas', path: '/dashboard/reportes', icon: '📈', type: 'item', show: hasPerm('estadisticas_ver') },
     { label: 'Personal', path: '/dashboard/usuarios', icon: '👤', type: 'item', show: isAdmin },
-    { label: 'WhatsApp Baileys', path: '/dashboard/whatsapp', icon: '💬', type: 'item', show: hasPerm('pos_ventas') || isAdmin || isSupervisor },
+    { label: 'WhatsApp', path: '/dashboard/whatsapp', icon: '💬', type: 'item', show: hasPerm('pos_ventas') || isAdmin || isSupervisor },
   ];
 
   // Filtramos por permisos
@@ -121,7 +121,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     '/dashboard/metodos': { title: 'Métodos de Pago Configurados', sub: 'Configuración de canales de cobro' },
     '/dashboard/reportes': { title: 'Estadísticas y Reportes', sub: 'Análisis y métricas de rendimiento' },
     '/dashboard/usuarios': { title: 'Gestión de Personal', sub: 'Control de accesos y roles del equipo' },
-    '/dashboard/whatsapp': { title: 'WhatsApp Gateway (Baileys)', sub: 'Vincular y monitorear servicio de mensajería' },
+    '/dashboard/whatsapp': { title: 'WhatsApp', sub: 'Mensajería automatizada · Gateway Baileys' },
   };
 
   const currentPathDetails = pageDetails[pathname] || { title: 'Sistema de Gestión', sub: 'Snack Roque' };

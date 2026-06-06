@@ -1,0 +1,26 @@
+{
+  "name": "Snack Roque POS",
+  "short_name": "Snack Roque",
+  "description": "Sistema de Punto de Venta para Panadería Snack Roque",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0f1117",
+  "theme_color": "#7c6af7",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/asset/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/asset/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "es-PE"
+}
