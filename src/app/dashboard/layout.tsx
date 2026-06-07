@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useEffect, useState, ReactNode } from 'react';
+import React, { useEffect, useState, useMemo, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, role, logout, loading, rolesList } = useApp();
+  const { user, role, logout, loading, rolesList, products } = useApp();
   const [timeStr, setTimeStr] = useState('');
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 
@@ -15,6 +15,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const isAdmin = role === 'Administrador';
   const isSupervisor = role === 'Supervisor';
   const hasPerm = (p: string) => userPermissions.includes(p);
+
+  const lowStockCount = useMemo(() => {
+    const LOW_STOCK_THRESHOLD = 10;
+    return products.filter(p => {
+      const effectiveStock = p.versions.length > 0
+        ? p.versions.reduce((a, v) => a + v.stock, 0)
+        : p.stock;
+      return effectiveStock < LOW_STOCK_THRESHOLD && effectiveStock >= 0;
+    }).length;
+  }, [products]);
 
   // --- AUTH SECURITY & ROUTE GUARD ---
   useEffect(() => {
@@ -32,6 +42,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         '/dashboard/ventas': perms.includes('pos_ventas'),
         '/dashboard/caja': perms.includes('caja_operaciones') || perms.includes('caja_auditoria'),
         '/dashboard/productos': perms.includes('inventario_ver'),
+        '/dashboard/pedidos': perms.includes('pos_ventas') || adminOrSup,
         '/dashboard/proveedores': adminOrSup,
         '/dashboard/compras': adminOrSup,
         '/dashboard/categorias': adminOrSup,
@@ -90,6 +101,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     { label: 'Punto de Venta', path: '/dashboard/ventas', icon: '🛒', type: 'item', show: hasPerm('pos_ventas') },
     { label: 'Control de Caja', path: '/dashboard/caja', icon: '💰', type: 'item', show: hasPerm('caja_operaciones') || hasPerm('caja_auditoria') },
     { label: 'Inventario', path: '/dashboard/productos', icon: '📦', type: 'item', show: hasPerm('inventario_ver') },
+    { label: 'Pedidos / Reservas', path: '/dashboard/pedidos', icon: '📅', type: 'item', show: hasPerm('pos_ventas') || isAdmin || isSupervisor },
     
     { label: 'Logística', type: 'section', show: isAdmin || isSupervisor },
     { label: 'Proveedores', path: '/dashboard/proveedores', icon: '🏭', type: 'item', show: isAdmin || isSupervisor },
@@ -115,6 +127,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     '/dashboard/ventas': { title: 'Punto de Venta (POS)', sub: 'Registrar nueva venta al detalle' },
     '/dashboard/caja': { title: 'Control de Caja', sub: 'Apertura, cierre y movimientos de efectivo' },
     '/dashboard/productos': { title: 'Inventario de Productos', sub: 'Control de stock y variantes' },
+    '/dashboard/pedidos': { title: 'Pedidos y Reservas', sub: 'Control de apartados y fechas de entrega' },
     '/dashboard/proveedores': { title: 'Directorio de Proveedores', sub: 'Gestión de socios estratégicos' },
     '/dashboard/compras': { title: 'Gestión de Compras', sub: 'Registro de abastecimiento de insumos' },
     '/dashboard/categorias': { title: 'Mantenimiento de Categorías', sub: 'Organización jerárquica de productos' },
@@ -169,8 +182,24 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   key={item.path} 
                   className={`sb-item ${active ? 'active' : ''}`}
                   onClick={() => item.path && router.push(item.path)}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
                 >
-                  <span className="sb-icon">{item.icon}</span> {item.label}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="sb-icon">{item.icon}</span> {item.label}
+                  </div>
+                  {item.label === 'Inventario' && lowStockCount > 0 && (
+                    <span style={{
+                      background: 'var(--red, #dc3545)',
+                      color: 'white',
+                      fontSize: '10.5px',
+                      fontWeight: 800,
+                      padding: '2px 6px',
+                      borderRadius: '10px',
+                      lineHeight: 1
+                    }}>
+                      {lowStockCount}
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -241,9 +270,25 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         )}
         
         {hasPerm('inventario_ver') && (
-          <div className={`mb-item ${pathname === '/dashboard/productos' ? 'active' : ''}`} onClick={() => router.push('/dashboard/productos')}>
+          <div className={`mb-item ${pathname === '/dashboard/productos' ? 'active' : ''}`} onClick={() => router.push('/dashboard/productos')} style={{ position: 'relative' }}>
             <span className="mb-icon">📦</span>
             <span className="mb-label">Inventario</span>
+            {lowStockCount > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: '2px',
+                right: 'calc(50% - 22px)',
+                background: 'var(--red, #dc3545)',
+                color: 'white',
+                fontSize: '9.5px',
+                fontWeight: 800,
+                padding: '2px 5px',
+                borderRadius: '8px',
+                lineHeight: 1
+              }}>
+                {lowStockCount}
+              </span>
+            )}
           </div>
         )}
         
@@ -272,6 +317,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     <div className="md-item-btn" onClick={() => { router.push('/dashboard/clientes'); setIsMoreMenuOpen(false); }}>
                       <span className="md-btn-icon">👥</span>
                       <span className="md-btn-lbl">Clientes</span>
+                    </div>
+                    <div className="md-item-btn" onClick={() => { router.push('/dashboard/pedidos'); setIsMoreMenuOpen(false); }}>
+                      <span className="md-btn-icon">📅</span>
+                      <span className="md-btn-lbl">Pedidos</span>
                     </div>
                     <div className="md-item-btn" onClick={() => { router.push('/dashboard/whatsapp'); setIsMoreMenuOpen(false); }}>
                       <span className="md-btn-icon">💬</span>

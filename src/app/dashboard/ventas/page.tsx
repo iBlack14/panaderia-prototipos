@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useApp, Product, ProductVersion, Sale } from '@/context/AppContext';
+import { useApp, Product, ProductVersion, Sale, CartItem } from '@/context/AppContext';
+import { loadJsPDF } from '@/lib/cdn';
 
 export default function PointOfSalePage() {
   const router = useRouter();
@@ -43,6 +44,13 @@ export default function PointOfSalePage() {
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [newClientData, setNewClientData] = useState({ nombre: '', dni: '', telefono: '' });
   const [isDniLoading, setIsDniLoading] = useState(false);
+
+  // Weight/Decimal Quantity Selector states
+  const [showWeightModal, setShowWeightModal] = useState(false);
+  const [selectedProductForWeight, setSelectedProductForWeight] = useState<{ prod: Product; version: ProductVersion | null } | null>(null);
+  const [weightInput, setWeightInput] = useState('');
+  const [isEditingCartItem, setIsEditingCartItem] = useState(false);
+  const [selectedCartItemId, setSelectedCartItemId] = useState('');
 
   // Auto-fetch DNI effect
   useEffect(() => {
@@ -90,14 +98,84 @@ export default function PointOfSalePage() {
       setSelectedProduct(prod);
       setShowVariantModal(true);
     } else {
-      addToCart(prod.name, prod.price, prod.em, prod.id);
+      if (prod.unidad_medida === 'kg' || prod.unidad_medida === 'gr') {
+        setSelectedProductForWeight({ prod, version: null });
+        setWeightInput('');
+        setIsEditingCartItem(false);
+        setShowWeightModal(true);
+      } else {
+        addToCart(prod.name, prod.price, prod.em, prod.id);
+      }
     }
   };
 
   const handleVariantSelect = (v: ProductVersion) => {
     if (selectedProduct) {
-      addToCart(selectedProduct.name, v.price, selectedProduct.em, selectedProduct.id, v);
-      setShowVariantModal(false);
+      if (selectedProduct.unidad_medida === 'kg' || selectedProduct.unidad_medida === 'gr') {
+        setSelectedProductForWeight({ prod: selectedProduct, version: v });
+        setWeightInput('');
+        setIsEditingCartItem(false);
+        setShowWeightModal(true);
+        setShowVariantModal(false);
+      } else {
+        addToCart(selectedProduct.name, v.price, selectedProduct.em, selectedProduct.id, v);
+        setShowVariantModal(false);
+      }
+    }
+  };
+
+  const handleConfirmWeight = () => {
+    if (!selectedProductForWeight) return;
+    const qty = parseFloat(weightInput);
+    if (isNaN(qty) || qty <= 0) {
+      toast('⚠️ Por favor ingresa una cantidad válida.');
+      return;
+    }
+
+    const { prod, version } = selectedProductForWeight;
+    const maxStock = version ? version.stock : prod.stock;
+    if (qty > maxStock) {
+      toast(`⚠️ Stock insuficiente. Disponible: ${maxStock}`);
+      return;
+    }
+
+    if (isEditingCartItem) {
+      const existingItem = cart.find(item => version ? item.cartId === selectedCartItemId : (item.id === prod.id && !item.version));
+      if (existingItem) {
+        const delta = qty - existingItem.qty;
+        updateCartQty(prod.id, delta, version?.name);
+        toast('🛒 Cantidad actualizada');
+      }
+    } else {
+      addToCart(prod.name, version ? version.price : prod.price, prod.em, prod.id, version, qty);
+    }
+    setShowWeightModal(false);
+    setSelectedProductForWeight(null);
+  };
+
+  const handleCartQtyClick = (item: CartItem) => {
+    const prod = products.find(p => p.id === item.id);
+    if (!prod) return;
+    const versionObj = item.version ? prod.versions.find(v => v.name === item.version) : null;
+    setSelectedProductForWeight({ prod, version: versionObj as ProductVersion | null });
+    setWeightInput(String(item.qty));
+    setIsEditingCartItem(true);
+    setSelectedCartItemId(item.cartId || String(item.id));
+    setShowWeightModal(true);
+  };
+
+  const handleCartQtyChange = (item: CartItem, isIncrement: boolean) => {
+    const prod = products.find(p => p.id === item.id);
+    if (!prod) return;
+    if (prod.unidad_medida === 'kg' || prod.unidad_medida === 'gr') {
+      const versionObj = item.version ? prod.versions.find(v => v.name === item.version) : null;
+      setSelectedProductForWeight({ prod, version: versionObj as ProductVersion | null });
+      setWeightInput(String(item.qty));
+      setIsEditingCartItem(true);
+      setSelectedCartItemId(item.cartId || String(item.id));
+      setShowWeightModal(true);
+    } else {
+      updateCartQty(item.id, isIncrement ? 1 : -1, item.version);
     }
   };
 
@@ -169,6 +247,7 @@ export default function PointOfSalePage() {
   }
 
   const totalCartCount = cart.reduce((a, b) => a + b.qty, 0);
+  const totalCartCountStr = Number.isInteger(totalCartCount) ? String(totalCartCount) : totalCartCount.toFixed(3).replace(/\.?0+$/, '');
 
   // Fallback wa.me redirect
   const handleShareWhatsApp = (receipt: Sale) => {
@@ -177,12 +256,16 @@ export default function PointOfSalePage() {
                  `Fecha: ${receipt.d}  Hora: ${receipt.t || '08:50'}\n` +
                  `Cajero: ${receipt.cajero || 'Admin'}\n` +
                  `----------------------------------------\n` +
-                 receipt.items.map(i => `• ${i.name} (x${i.qty}): S/. ${(i.price * i.qty).toFixed(2)}`).join('\n') + `\n` +
+                 receipt.items.map(i => {
+                   const prod = products.find(p => p.id === i.id);
+                   const uMedida = prod?.unidad_medida || 'und';
+                   return `• ${i.name} (x${i.qty} ${uMedida}): S/. ${(i.price * i.qty).toFixed(2)}`;
+                 }).join('\n') + `\n` +
                  `----------------------------------------\n` +
                  `*TOTAL COMPRA: S/. ${receipt.total.toFixed(2)}*\n` +
                  `Método de pago: ${receipt.method || 'Efectivo'}\n\n` +
                  `¡Muchas gracias por su preferencia!`;
-                 
+
     const encodedText = encodeURIComponent(text);
     window.open(`https://wa.me/?text=${encodedText}`, '_blank');
   };
@@ -260,7 +343,9 @@ export default function PointOfSalePage() {
       
       // Qty
       ctx.textAlign = 'right';
-      ctx.fillText(String(item.qty), width - 110, currentY);
+      const prod = products.find(p => p.id === item.id);
+      const uMedida = prod?.unidad_medida || 'und';
+      ctx.fillText(`${item.qty} ${uMedida}`, width - 110, currentY);
       
       // Price / Total
       ctx.fillText(`S/. ${(item.price * item.qty).toFixed(2)}`, width - padding, currentY);
@@ -306,6 +391,93 @@ export default function PointOfSalePage() {
     toast('📥 Ticket descargado como PNG con éxito');
   };
 
+  const downloadTicketAsPdf = async (receipt: Sale) => {
+    try {
+      const jspdfModule = await loadJsPDF();
+      const { jsPDF } = jspdfModule;
+      
+      const itemHeight = 6;
+      const baseHeight = 90;
+      const height = baseHeight + (receipt.items.length * itemHeight);
+      
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: [80, height]
+      });
+      
+      doc.setFont('courier', 'bold');
+      doc.setFontSize(14);
+      doc.text('SNACK ROQUE', 40, 10, { align: 'center' });
+      
+      doc.setFont('courier', 'normal');
+      doc.setFontSize(8);
+      doc.text('Av. Panamericana Sur #456, Ica', 40, 15, { align: 'center' });
+      doc.text('RUC: 10432187659', 40, 19, { align: 'center' });
+      doc.text('Teléfono: (056) 219876', 40, 23, { align: 'center' });
+      doc.text('====================================', 40, 27, { align: 'center' });
+      
+      doc.setFont('courier', 'bold');
+      doc.setFontSize(9);
+      doc.text(`BOLETA ELECTRÓNICA: B-${receipt.n}`, 40, 32, { align: 'center' });
+      
+      doc.setFont('courier', 'normal');
+      doc.setFontSize(8);
+      doc.text(`Fecha: ${receipt.d}`, 6, 38);
+      doc.text(`Hora: ${receipt.t || '08:50'}`, 45, 38);
+      doc.text(`Cajero: ${receipt.cajero || 'Admin'}`, 6, 42);
+      doc.text(`Cliente: ${receipt.clienteNombre || 'Genérico'}`, 6, 46);
+      doc.text('------------------------------------', 40, 50, { align: 'center' });
+      
+      doc.setFont('courier', 'bold');
+      doc.text('DESCRIPCIÓN', 6, 54);
+      doc.text('CANT', 50, 54, { align: 'right' });
+      doc.text('TOTAL', 74, 54, { align: 'right' });
+      doc.text('------------------------------------', 40, 58, { align: 'center' });
+      
+      doc.setFont('courier', 'normal');
+      let currentY = 62;
+      receipt.items.forEach(item => {
+        const name = item.name.length > 18 ? item.name.substring(0, 18) : item.name;
+        doc.text(name, 6, currentY);
+        const prod = products.find(p => p.id === item.id);
+        const uMedida = prod?.unidad_medida || 'und';
+        doc.text(`${item.qty} ${uMedida}`, 50, currentY, { align: 'right' });
+        doc.text(`S/. ${(item.price * item.qty).toFixed(2)}`, 74, currentY, { align: 'right' });
+        currentY += itemHeight;
+      });
+      
+      doc.text('------------------------------------', 40, currentY, { align: 'center' });
+      currentY += 5;
+      
+      doc.setFont('courier', 'bold');
+      doc.setFontSize(10);
+      doc.text('TOTAL A PAGAR:', 6, currentY);
+      doc.text(`S/. ${receipt.total.toFixed(2)}`, 74, currentY, { align: 'right' });
+      currentY += 6;
+      
+      doc.setFont('courier', 'normal');
+      doc.setFontSize(8);
+      doc.text(`Método de Pago: ${receipt.method || 'Efectivo'}`, 6, currentY);
+      currentY += 6;
+      doc.text('====================================', 40, currentY, { align: 'center' });
+      currentY += 6;
+      
+      doc.setFont('courier', 'bold');
+      doc.text('¡MUCHAS GRACIAS POR SU COMPRA!', 40, currentY, { align: 'center' });
+      currentY += 4;
+      doc.setFont('courier', 'normal');
+      doc.setFontSize(6);
+      doc.text('Representación impresa de la Boleta Electrónica', 40, currentY, { align: 'center' });
+      
+      doc.save(`boleta_B-${receipt.n}.pdf`);
+      toast('📥 Ticket descargado como PDF con éxito');
+    } catch (err: any) {
+      console.error(err);
+      toast('❌ Error al generar PDF: ' + err.message);
+    }
+  };
+
   // Real WhatsApp sending via Baileys API route
   const handleSendWhatsAppBaileys = async (receipt: Sale) => {
     if (!waPhoneInput) {
@@ -320,7 +492,11 @@ export default function PointOfSalePage() {
                    `Fecha: ${receipt.d}  Hora: ${receipt.t || '08:50'}\n` +
                    `Cajero: ${receipt.cajero || 'Admin'}\n` +
                    `----------------------------------------\n` +
-                   receipt.items.map(i => `• ${i.name} (x${i.qty}): S/. ${(i.price * i.qty).toFixed(2)}`).join('\n') + `\n` +
+                   receipt.items.map(i => {
+                     const prod = products.find(p => p.id === i.id);
+                     const uMedida = prod?.unidad_medida || 'und';
+                     return `• ${i.name} (x${i.qty} ${uMedida}): S/. ${(i.price * i.qty).toFixed(2)}`;
+                   }).join('\n') + `\n` +
                    `----------------------------------------\n` +
                    `*TOTAL COMPRA: S/. ${receipt.total.toFixed(2)}*\n` +
                    `Método de pago: ${receipt.method || 'Efectivo'}\n\n` +
@@ -428,7 +604,7 @@ export default function PointOfSalePage() {
         <div className={`order-panel ${activeMobileTab === 'pedido' ? 'mobile-active' : 'mobile-hidden'}`}>
           <div className="op-head">
             <h3>Pedido Actual</h3>
-            <span>{totalCartCount} items</span>
+            <span>{totalCartCountStr} items</span>
           </div>
 
           <div id="orderList">
@@ -444,9 +620,16 @@ export default function PointOfSalePage() {
                     {item.name}
                   </div>
                   <div className="ol-ctrl">
-                    <button className="q-btn" onClick={() => updateCartQty(item.id, -1, item.version)}>−</button>
-                    <span className="q-num">{item.qty}</span>
-                    <button className="q-btn" onClick={() => updateCartQty(item.id, 1, item.version)}>+</button>
+                    <button className="q-btn" onClick={() => handleCartQtyChange(item, false)}>−</button>
+                    <span 
+                      className="q-num" 
+                      onClick={() => handleCartQtyClick(item)}
+                      style={{ cursor: 'pointer', textDecoration: 'underline decoration-dotted', padding: '0 4px', fontWeight: 'bold' }}
+                      title="Haz clic para ingresar cantidad"
+                    >
+                      {item.qty} {products.find(p => p.id === item.id)?.unidad_medida || 'und'}
+                    </span>
+                    <button className="q-btn" onClick={() => handleCartQtyChange(item, true)}>+</button>
                   </div>
                   <div className="ol-price">S/. {(item.price * item.qty).toFixed(2)}</div>
                 </div>
@@ -679,12 +862,16 @@ export default function PointOfSalePage() {
                 </div>
               </div>
 
-              {lastReceipt.items.map((i, idx) => (
-                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', margin: '5px 0' }}>
-                  <span>{i.name} (x{i.qty})</span>
-                  <span>S/. {(i.price * i.qty).toFixed(2)}</span>
-                </div>
-              ))}
+              {lastReceipt.items.map((i, idx) => {
+                const prod = products.find(p => p.id === i.id);
+                const uMedida = prod?.unidad_medida || 'und';
+                return (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', margin: '5px 0' }}>
+                    <span>{i.name} (x{i.qty} {uMedida})</span>
+                    <span>S/. {(i.price * i.qty).toFixed(2)}</span>
+                  </div>
+                );
+              })}
               <div style={{ borderTop: '1px solid var(--border)', marginTop: '10px', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
                 <span>TOTAL</span>
                 <span>S/. {lastReceipt.total.toFixed(2)}</span>
@@ -702,14 +889,19 @@ export default function PointOfSalePage() {
               </button>
               <button 
                 className="mc-pri" 
-                onClick={() => {
-                  setShowWhatsAppSubModal(true);
-                }}
-                style={{ background: '#25D366', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                onClick={() => downloadTicketAsPdf(lastReceipt)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
               >
-                💬 Enviar WhatsApp
+                📄 Descargar PDF
               </button>
             </div>
+            <button 
+              className="mc-pri" 
+              onClick={() => setShowWhatsAppSubModal(true)}
+              style={{ background: '#25D366', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', marginTop: '10px' }}
+            >
+              💬 Enviar WhatsApp
+            </button>
 
             {/* BAILEYS SENDING SUB-PANEL */}
             {showWhatsAppSubModal && (
@@ -836,6 +1028,211 @@ export default function PointOfSalePage() {
             <button type="button" className="mc-sec" style={{ width: '100%' }} onClick={() => setShowVariantModal(false)}>
               Cancelar
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* WEIGHT & DECIMAL QUANTITY MODAL */}
+      {showWeightModal && selectedProductForWeight && (
+        <div className="modal-overlay open">
+          <div className="modal-card" style={{ width: '400px' }}>
+            <span className="ci-em" style={{ fontSize: '38px', textAlign: 'center' }}>
+              {selectedProductForWeight.prod.em}
+            </span>
+            <div className="mc-title">
+              {isEditingCartItem ? 'Editar Cantidad' : 'Ingresar Cantidad / Peso'}
+            </div>
+            <div className="mc-sub" style={{ fontSize: '13px', color: 'var(--text-2)', marginBottom: '8px' }}>
+              {selectedProductForWeight.prod.name} 
+              {selectedProductForWeight.version ? ` (${selectedProductForWeight.version.name})` : ''}
+            </div>
+            <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+              <span style={{ fontSize: '14px', color: 'var(--text-3)' }}>Precio: </span>
+              <strong style={{ fontSize: '16px', color: 'var(--accent)' }}>
+                S/. {(selectedProductForWeight.version ? selectedProductForWeight.version.price : selectedProductForWeight.prod.price).toFixed(2)}
+              </strong>
+              <span style={{ fontSize: '12px', color: 'var(--text-3)' }}>
+                {' '}por {selectedProductForWeight.prod.unidad_medida || 'unidades'}
+              </span>
+            </div>
+
+            {/* Display Screen */}
+            <div style={{
+              background: 'var(--bg)',
+              border: '2px solid var(--border)',
+              borderRadius: '12px',
+              padding: '16px',
+              textAlign: 'right',
+              marginBottom: '16px',
+              position: 'relative'
+            }}>
+              <span style={{
+                position: 'absolute',
+                left: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                fontSize: '12px',
+                color: 'var(--text-3)',
+                fontWeight: '600',
+                textTransform: 'uppercase'
+              }}>
+                Cantidad
+              </span>
+              <div style={{ fontSize: '28px', fontWeight: '800', color: 'var(--text)' }}>
+                {weightInput || '0'}
+                <span style={{ fontSize: '16px', marginLeft: '6px', color: 'var(--text-3)' }}>
+                  {selectedProductForWeight.prod.unidad_medida || 'unidades'}
+                </span>
+              </div>
+              <div style={{ fontSize: '13px', color: 'var(--text-3)', marginTop: '4px' }}>
+                Subtotal: S/. {((selectedProductForWeight.version ? selectedProductForWeight.version.price : selectedProductForWeight.prod.price) * (parseFloat(weightInput) || 0)).toFixed(2)}
+              </div>
+            </div>
+
+            {/* Presets */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+              {selectedProductForWeight.prod.unidad_medida === 'kg' ? (
+                <>
+                  <button type="button" className="btn-new" style={{ padding: '8px', fontSize: '12px' }} onClick={() => setWeightInput('0.100')}>0.100 kg</button>
+                  <button type="button" className="btn-new" style={{ padding: '8px', fontSize: '12px' }} onClick={() => setWeightInput('0.250')}>0.250 kg</button>
+                  <button type="button" className="btn-new" style={{ padding: '8px', fontSize: '12px' }} onClick={() => setWeightInput('0.500')}>0.500 kg</button>
+                  <button type="button" className="btn-new" style={{ padding: '8px', fontSize: '12px' }} onClick={() => setWeightInput('1.000')}>1.000 kg</button>
+                </>
+              ) : selectedProductForWeight.prod.unidad_medida === 'gr' ? (
+                <>
+                  <button type="button" className="btn-new" style={{ padding: '8px', fontSize: '12px' }} onClick={() => setWeightInput('100')}>100 gr</button>
+                  <button type="button" className="btn-new" style={{ padding: '8px', fontSize: '12px' }} onClick={() => setWeightInput('250')}>250 gr</button>
+                  <button type="button" className="btn-new" style={{ padding: '8px', fontSize: '12px' }} onClick={() => setWeightInput('500')}>500 gr</button>
+                  <button type="button" className="btn-new" style={{ padding: '8px', fontSize: '12px' }} onClick={() => setWeightInput('1000')}>1000 gr</button>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="btn-new" style={{ padding: '8px', fontSize: '12px' }} onClick={() => setWeightInput('1')}>1 und</button>
+                  <button type="button" className="btn-new" style={{ padding: '8px', fontSize: '12px' }} onClick={() => setWeightInput('2')}>2 und</button>
+                  <button type="button" className="btn-new" style={{ padding: '8px', fontSize: '12px' }} onClick={() => setWeightInput('5')}>5 und</button>
+                  <button type="button" className="btn-new" style={{ padding: '8px', fontSize: '12px' }} onClick={() => setWeightInput('10')}>10 und</button>
+                </>
+              )}
+            </div>
+
+            {/* Keypad */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr 1fr',
+              gap: '8px',
+              marginBottom: '20px'
+            }}>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => setWeightInput(prev => prev + String(num))}
+                  style={{
+                    padding: '16px',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    background: 'var(--bg-card2)',
+                    border: '1.5px solid var(--border)',
+                    borderRadius: '10px',
+                    color: 'var(--text)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {num}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!weightInput.includes('.')) {
+                    setWeightInput(prev => prev === '' ? '0.' : prev + '.');
+                  }
+                }}
+                style={{
+                  padding: '16px',
+                  fontSize: '18px',
+                  fontWeight: 'bold',
+                  background: 'var(--bg-card2)',
+                  border: '1.5px solid var(--border)',
+                  borderRadius: '10px',
+                  color: 'var(--text)',
+                  cursor: 'pointer'
+                }}
+              >
+                .
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeightInput(prev => prev + '0')}
+                style={{
+                  padding: '16px',
+                  fontSize: '18px',
+                  fontWeight: 'bold',
+                  background: 'var(--bg-card2)',
+                  border: '1.5px solid var(--border)',
+                  borderRadius: '10px',
+                  color: 'var(--text)',
+                  cursor: 'pointer'
+                }}
+              >
+                0
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeightInput(prev => prev.slice(0, -1))}
+                style={{
+                  padding: '16px',
+                  fontSize: '18px',
+                  fontWeight: 'bold',
+                  background: 'var(--bg-card2)',
+                  border: '1.5px solid var(--border)',
+                  borderRadius: '10px',
+                  color: 'var(--text)',
+                  cursor: 'pointer'
+                }}
+              >
+                ⌫
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setWeightInput('')}
+                style={{
+                  gridColumn: 'span 3',
+                  padding: '10px',
+                  fontSize: '13px',
+                  fontWeight: 'bold',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  borderRadius: '8px',
+                  color: 'var(--red)',
+                  cursor: 'pointer'
+                }}
+              >
+                Limpiar todo
+              </button>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <button
+                type="button"
+                className="mc-sec"
+                onClick={() => {
+                  setShowWeightModal(false);
+                  setSelectedProductForWeight(null);
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="mc-pri"
+                onClick={handleConfirmWeight}
+              >
+                Confirmar
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp, CashHistoryRecord, DenominacionArqueo } from '@/context/AppContext';

@@ -12,7 +12,8 @@ export default function InventarioPage() {
     breadLogs, 
     logBreadProduction, 
     logBreadDiscard,
-    logBreadConversion
+    logBreadConversion,
+    fractionateProduct
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -27,12 +28,21 @@ export default function InventarioPage() {
   const [em, setEm] = useState('🥐');
   const [price, setPrice] = useState('');
   const [stock, setStock] = useState('0');
+  const [unidadMedida, setUnidadMedida] = useState('unidades');
   
   // Variants states
   const [variantsList, setVariantsList] = useState<ProductVersion[]>([]);
   const [vName, setVName] = useState('');
   const [vPrice, setVPrice] = useState('');
   const [vStock, setVStock] = useState('0');
+
+  // Fraction modal states
+  const [showFractionModal, setShowFractionModal] = useState(false);
+  const [fractionProduct, setFractionProduct] = useState<Product | null>(null);
+  const [parentVersionId, setParentVersionId] = useState<number>(0);
+  const [childVersionId, setChildVersionId] = useState<number>(0);
+  const [qtyToDeduct, setQtyToDeduct] = useState('1');
+  const [qtyToAdd, setQtyToAdd] = useState('10');
 
   // --- FORM STATES FOR PRODUCTION/DISCARD LOGS ---
   const [logProductId, setLogProductId] = useState('');
@@ -56,7 +66,7 @@ export default function InventarioPage() {
       id: Date.now(),
       name: vName,
       price: parseFloat(vPrice),
-      stock: parseInt(vStock) || 0
+      stock: parseFloat(vStock) || 0
     };
     setVariantsList([...variantsList, newV]);
     setVName('');
@@ -76,6 +86,7 @@ export default function InventarioPage() {
     setPrice('');
     setStock('0');
     setVariantsList([]);
+    setUnidadMedida('unidades');
     setShowProductModal(true);
   };
 
@@ -87,6 +98,7 @@ export default function InventarioPage() {
     setPrice(String(p.price));
     setStock(String(p.stock));
     setVariantsList(p.versions || []);
+    setUnidadMedida(p.unidad_medida || 'unidades');
     setShowProductModal(true);
   };
 
@@ -100,19 +112,57 @@ export default function InventarioPage() {
       cat,
       em: em || '📦',
       price: parseFloat(price) || 0,
-      stock: parseInt(stock) || 0,
-      versions: variantsList
+      stock: parseFloat(stock) || 0,
+      versions: variantsList,
+      unidad_medida: unidadMedida
     };
 
     saveProduct(prodObj);
     setShowProductModal(false);
   };
 
+  const handleOpenFractionModal = (p: Product) => {
+    setFractionProduct(p);
+    if (p.versions && p.versions.length >= 2) {
+      setParentVersionId(p.versions[0].id);
+      setChildVersionId(p.versions[1].id);
+    }
+    setQtyToDeduct('1');
+    setQtyToAdd('10');
+    setShowFractionModal(true);
+  };
+
+  const handleFractionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fractionProduct || !parentVersionId || !childVersionId) return;
+    const parentV = fractionProduct.versions.find(v => v.id === parentVersionId);
+    const deductVal = parseFloat(qtyToDeduct);
+    const addVal = parseFloat(qtyToAdd);
+
+    if (isNaN(deductVal) || deductVal <= 0 || isNaN(addVal) || addVal <= 0) {
+      alert('Por favor ingrese cantidades válidas.');
+      return;
+    }
+
+    if (parentV && parentV.stock < deductVal) {
+      if (!confirm(`La cantidad a restar (${deductVal}) supera el stock actual (${parentV.stock}). ¿Desea continuar de todos modos?`)) {
+        return;
+      }
+    }
+
+    try {
+      await fractionateProduct(parentVersionId, childVersionId, deductVal, addVal);
+      setShowFractionModal(false);
+    } catch (err: any) {
+      alert('Error al fraccionar variante: ' + err.message);
+    }
+  };
+
   // --- PRODUCTION, DISCARD & CONVERSION SUBMIT ---
   const handleBreadLogSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const pId = parseInt(logProductId);
-    const qty = parseInt(logQty);
+    const qty = parseFloat(logQty);
     if (isNaN(pId) || isNaN(qty) || qty <= 0) return;
 
     if (logType === 'produccion') {
@@ -224,7 +274,7 @@ export default function InventarioPage() {
                         }
                       </td>
                       <td style={{ fontWeight: '700', color: 'var(--text)' }}>
-                        {totalStock} <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>und.</span>
+                        {totalStock} <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{p.unidad_medida || 'unidades'}</span>
                       </td>
                       <td style={{ fontSize: '11.5px', color: 'var(--text-2)' }}>
                         {p.versions.length > 0 
@@ -244,6 +294,16 @@ export default function InventarioPage() {
                       <td>
                         <div className="act-row">
                           <button className="act-btn" onClick={() => handleOpenEdit(p)} title="Editar">✏️</button>
+                          {p.versions && p.versions.length >= 2 && (
+                            <button 
+                              className="act-btn" 
+                              style={{ background: 'rgba(20, 184, 166, 0.1)', color: '#0d9488', border: '1px solid rgba(20, 184, 166, 0.2)' }} 
+                              onClick={() => handleOpenFractionModal(p)} 
+                              title="Fraccionar Variante"
+                            >
+                              ✂️
+                            </button>
+                          )}
                           <button className="act-btn del" onClick={() => { if(confirm('¿Eliminar?')) deleteProduct(p.id); }} title="Eliminar">🗑</button>
                         </div>
                       </td>
@@ -438,6 +498,16 @@ export default function InventarioPage() {
                 </div>
               </div>
 
+              <div className="inp-group" style={{ gridColumn: 'span 2' }}>
+                <label>Unidad de Medida</label>
+                <select value={unidadMedida} onChange={(e) => setUnidadMedida(e.target.value)}>
+                  <option value="unidades">Unidades (und)</option>
+                  <option value="kg">Kilogramos (kg)</option>
+                  <option value="gr">Gramos (gr)</option>
+                  <option value="porciones">Porciones (porc)</option>
+                </select>
+              </div>
+
               {/* Si tiene variantes, bloqueamos el precio/stock base */}
               <div className="inp-group" style={{ opacity: variantsList.length > 0 ? 0.5 : 1 }}>
                 <label>Precio Unitario S/.</label>
@@ -449,7 +519,7 @@ export default function InventarioPage() {
               <div className="inp-group" style={{ opacity: variantsList.length > 0 ? 0.5 : 1 }}>
                 <label>Stock Base</label>
                 <div className="inp-wrap">
-                  <input type="number" value={stock} onChange={(e) => setStock(e.target.value)} placeholder="0" disabled={variantsList.length > 0} required={variantsList.length === 0} />
+                  <input type="number" step="any" value={stock} onChange={(e) => setStock(e.target.value)} placeholder="0" disabled={variantsList.length > 0} required={variantsList.length === 0} />
                 </div>
               </div>
 
@@ -470,7 +540,7 @@ export default function InventarioPage() {
                   </div>
                   <div className="inp-group" style={{ margin: 0 }}>
                     <label style={{ fontSize: '9px' }}>Stock</label>
-                    <input type="number" value={vStock} onChange={(e) => setVStock(e.target.value)} placeholder="0" style={{ padding: '8px 10px', fontSize: '12px' }} />
+                    <input type="number" step="any" value={vStock} onChange={(e) => setVStock(e.target.value)} placeholder="0" style={{ padding: '8px 10px', fontSize: '12px' }} />
                   </div>
                   <button type="button" onClick={handleAddVariant} className="btn-new" style={{ padding: '8px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', width: '100%', margin: 0 }}>
                     ＋
@@ -617,6 +687,101 @@ export default function InventarioPage() {
                 <button type="submit" className="mc-pri">
                   {logType === 'conversion' ? '♻️ Registrar Conversión' : logType === 'descarte' ? '⚠️ Registrar Merma' : '✅ Registrar Producción'}
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: FRACCIONAMIENTO MANUAL DE VARIANTES */}
+      {showFractionModal && fractionProduct && (
+        <div className="modal-overlay open">
+          <div className="modal-card" style={{ width: '480px' }}>
+            <span className="mc-icon" style={{ fontSize: '36px', textAlign: 'center', display: 'block', marginBottom: '8px' }}>✂️</span>
+            <div className="mc-title">Fraccionar Variante / Versión</div>
+            <p className="mc-sub" style={{ marginBottom: '18px' }}>
+              Divide una presentación grande en porciones o variantes más pequeñas (Ej: Torta Entera → Porciones).
+            </p>
+
+            <form onSubmit={handleFractionSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="inp-group">
+                <label>Variante Origen (Se restará stock)</label>
+                <select 
+                  value={parentVersionId} 
+                  onChange={e => {
+                    const val = parseInt(e.target.value);
+                    setParentVersionId(val);
+                    if (val === childVersionId) {
+                      const other = fractionProduct.versions.find(v => v.id !== val);
+                      if (other) setChildVersionId(other.id);
+                    }
+                  }}
+                  required
+                >
+                  {fractionProduct.versions.map(v => (
+                    <option key={v.id} value={v.id}>{v.name} (Stock: {v.stock})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="inp-group">
+                <label>Cantidad a Restar de Origen</label>
+                <div className="inp-wrap">
+                  <input 
+                    type="number" 
+                    step="any" 
+                    min="0.001" 
+                    value={qtyToDeduct} 
+                    onChange={e => setQtyToDeduct(e.target.value)} 
+                    placeholder="Ej: 1" 
+                    required 
+                  />
+                </div>
+              </div>
+
+              <div className="inp-group">
+                <label>Variante Destino (Se sumará stock)</label>
+                <select 
+                  value={childVersionId} 
+                  onChange={e => setChildVersionId(parseInt(e.target.value))} 
+                  required
+                >
+                  {fractionProduct.versions.filter(v => v.id !== parentVersionId).map(v => (
+                    <option key={v.id} value={v.id}>{v.name} (Stock: {v.stock})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="inp-group">
+                <label>Cantidad a Sumar a Destino</label>
+                <div className="inp-wrap">
+                  <input 
+                    type="number" 
+                    step="any" 
+                    min="0.001" 
+                    value={qtyToAdd} 
+                    onChange={e => setQtyToAdd(e.target.value)} 
+                    placeholder="Ej: 10" 
+                    required 
+                  />
+                </div>
+              </div>
+
+              <div style={{ 
+                background: 'rgba(20, 184, 166, 0.06)', 
+                border: '1px solid rgba(20, 184, 166, 0.15)', 
+                borderRadius: '8px', 
+                padding: '12px', 
+                fontSize: '12px', 
+                color: 'var(--text-2)', 
+                lineHeight: '1.5' 
+              }}>
+                ℹ️ Esta acción disminuirá el stock de la variante origen y aumentará el stock de la variante destino. Se registrará un evento de tipo conversión en el Kardex.
+              </div>
+
+              <div className="mc-btns" style={{ marginTop: '10px' }}>
+                <button type="button" className="mc-sec" onClick={() => setShowFractionModal(false)}>Cancelar</button>
+                <button type="submit" className="mc-pri" style={{ background: '#0d9488' }}>Realizar Fraccionamiento</button>
               </div>
             </form>
           </div>

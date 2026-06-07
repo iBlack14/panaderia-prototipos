@@ -108,7 +108,7 @@ function fixKeyName(key: string) {
   return key.replace(/\//g, '__').replace(/:/g, '-');
 }
 
-async function useSupabaseAuthState() {
+async function getSupabaseAuthState() {
   const supabase = getSupabaseAdmin();
 
   const writeData = async (key: string, value: any) => {
@@ -209,7 +209,7 @@ export async function startWhatsAppGateway() {
   addLog('🔄 [Baileys-Core] Inicializando socket real...');
 
   try {
-    const { state: authState, saveCreds } = await useSupabaseAuthState();
+    const { state: authState, saveCreds } = await getSupabaseAuthState();
     const { version } = await fetchLatestBaileysVersion();
 
     const socket = makeWASocket({

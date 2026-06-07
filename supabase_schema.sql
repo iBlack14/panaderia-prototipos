@@ -108,10 +108,11 @@ CREATE TABLE public.productos (
     id_categoria    INT REFERENCES public.categorias(id_categoria),
     nombre          VARCHAR(150) NOT NULL UNIQUE,
     em              VARCHAR(10)  DEFAULT '📦',
-    num_stock       INT          DEFAULT 0
+    num_stock       DECIMAL(10,3) DEFAULT 0.000
                         CONSTRAINT chk_product_stock CHECK (num_stock >= 0),
     precio_unitario DECIMAL(10,2) NOT NULL DEFAULT 0.00
                         CONSTRAINT chk_product_price CHECK (precio_unitario >= 0),
+    unidad_medida   VARCHAR(20)  DEFAULT 'unidades',
     estado          INT DEFAULT 1
 );
 
@@ -120,7 +121,7 @@ CREATE TABLE public.producto_versiones (
     id_version      SERIAL PRIMARY KEY,
     id_producto     INT REFERENCES public.productos(id_producto) ON DELETE CASCADE,
     nombre_version  VARCHAR(100) NOT NULL,
-    num_stock       INT          DEFAULT 0
+    num_stock       DECIMAL(10,3) DEFAULT 0.000
                         CONSTRAINT chk_version_stock CHECK (num_stock >= 0),
     precio_unitario DECIMAL(10,2) NOT NULL DEFAULT 0.00
                         CONSTRAINT chk_version_price CHECK (precio_unitario >= 0),
@@ -162,7 +163,7 @@ CREATE TABLE public.detalle_venta (
     id_venta         INT REFERENCES public.ventas(id_venta)              ON DELETE CASCADE,
     id_producto      INT REFERENCES public.productos(id_producto),
     id_version       INT REFERENCES public.producto_versiones(id_version),  -- NULL si sin variante
-    num_cantidad     INT           NOT NULL CONSTRAINT chk_sale_qty CHECK (num_cantidad > 0),
+    num_cantidad     DECIMAL(10,3) NOT NULL CONSTRAINT chk_sale_qty CHECK (num_cantidad > 0),
     precio_unitario  DECIMAL(10,2) NOT NULL
 );
 
@@ -184,7 +185,7 @@ CREATE TABLE public.detalle_compra (
     id_compra         INT REFERENCES public.compras(id_compra)              ON DELETE CASCADE,
     id_producto       INT REFERENCES public.productos(id_producto),
     id_version        INT REFERENCES public.producto_versiones(id_version),
-    num_cantidad      INT           NOT NULL CONSTRAINT chk_purchase_qty CHECK (num_cantidad > 0),
+    num_cantidad      DECIMAL(10,3) NOT NULL CONSTRAINT chk_purchase_qty CHECK (num_cantidad > 0),
     precio_compra     DECIMAL(10,2) NOT NULL
 );
 
@@ -195,7 +196,7 @@ CREATE TABLE public.produccion_descarte (
     id_version       INT REFERENCES public.producto_versiones(id_version)  ON DELETE SET NULL,
     tipo_registro    VARCHAR(20) NOT NULL
                          CONSTRAINT chk_reg_type CHECK (tipo_registro IN ('produccion', 'descarte')),
-    num_cantidad     INT NOT NULL CONSTRAINT chk_pan_qty CHECK (num_cantidad > 0),
+    num_cantidad     DECIMAL(10,3) NOT NULL CONSTRAINT chk_pan_qty CHECK (num_cantidad > 0),
     motivo_descarte  VARCHAR(100),
     id_usuario       UUID REFERENCES public.profiles(id),
     fec_registro     TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -501,5 +502,67 @@ SELECT
 FROM auth.users
 ON CONFLICT (id) DO NOTHING;
 
+
+-- ============================================================
+-- 7. PEDIDOS Y DEVOLUCIONES (NUEVAS MEJORAS)
+-- ============================================================
+
+-- 7.1 Pedidos y Reservas
+CREATE TABLE public.pedidos_reserva (
+    id_pedido      SERIAL PRIMARY KEY,
+    id_cliente     INT REFERENCES public.clientes(id_cliente),
+    producto_texto TEXT NOT NULL,
+    fec_entrega    TIMESTAMP WITH TIME ZONE NOT NULL,
+    adelanto       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    notas          TEXT,
+    estado         VARCHAR(50) DEFAULT 'Pendiente', -- 'Pendiente', 'Listo', 'Entregado', 'Cancelado'
+    id_usuario     UUID REFERENCES public.profiles(id),
+    created_at     TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at     TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 7.2 Devoluciones
+CREATE TABLE public.devoluciones (
+    id_devolucion  SERIAL PRIMARY KEY,
+    id_venta       INT NOT NULL REFERENCES public.ventas(id_venta) ON DELETE CASCADE,
+    id_cliente     INT REFERENCES public.clientes(id_cliente),
+    motivo         TEXT,
+    total_devuelto DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    id_usuario     UUID REFERENCES public.profiles(id),
+    fec_devolucion TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 7.3 Detalle de Devoluciones
+CREATE TABLE public.detalle_devolucion (
+    id_detalle_devolucion SERIAL PRIMARY KEY,
+    id_devolucion         INT NOT NULL REFERENCES public.devoluciones(id_devolucion) ON DELETE CASCADE,
+    id_producto           INT REFERENCES public.productos(id_producto),
+    id_version            INT REFERENCES public.producto_versiones(id_version),
+    num_cantidad          DECIMAL(10,3) NOT NULL CONSTRAINT chk_dev_qty CHECK (num_cantidad > 0),
+    precio_unitario       DECIMAL(10,2) NOT NULL
+);
+
+-- RLS y políticas consistentes con ventas (cajero/supervisor/admin inserta, contador/supervisor/admin consulta)
+ALTER TABLE public.pedidos_reserva ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "pedidos_reserva_select" ON public.pedidos_reserva;
+DROP POLICY IF EXISTS "pedidos_reserva_insert" ON public.pedidos_reserva;
+DROP POLICY IF EXISTS "pedidos_reserva_update" ON public.pedidos_reserva;
+CREATE POLICY "pedidos_reserva_select" ON public.pedidos_reserva FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 4, 5)));
+CREATE POLICY "pedidos_reserva_insert" ON public.pedidos_reserva FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 2, 5)));
+CREATE POLICY "pedidos_reserva_update" ON public.pedidos_reserva FOR UPDATE TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 2, 5)));
+
+ALTER TABLE public.devoluciones ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "devoluciones_select" ON public.devoluciones;
+DROP POLICY IF EXISTS "devoluciones_insert" ON public.devoluciones;
+CREATE POLICY "devoluciones_select" ON public.devoluciones FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 4, 5)));
+CREATE POLICY "devoluciones_insert" ON public.devoluciones FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 2, 5)));
+
+ALTER TABLE public.detalle_devolucion ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "detalle_devolucion_select" ON public.detalle_devolucion;
+DROP POLICY IF EXISTS "detalle_devolucion_insert" ON public.detalle_devolucion;
+CREATE POLICY "detalle_devolucion_select" ON public.detalle_devolucion FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 4, 5)));
+CREATE POLICY "detalle_devolucion_insert" ON public.detalle_devolucion FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 2, 5)));
+
 -- Recargar caché del esquema PostgREST
 NOTIFY pgrst, 'reload schema';
+
