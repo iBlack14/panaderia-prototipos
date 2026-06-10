@@ -19,7 +19,8 @@ export default function PointOfSalePage() {
     user,
     clients,
     toast,
-    saveClient
+    saveClient,
+    fractionateProduct
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,6 +52,10 @@ export default function PointOfSalePage() {
   const [weightInput, setWeightInput] = useState('');
   const [isEditingCartItem, setIsEditingCartItem] = useState(false);
   const [selectedCartItemId, setSelectedCartItemId] = useState('');
+ 
+  // Auto-fractioning dialog states
+  const [showAutoFractionModal, setShowAutoFractionModal] = useState(false);
+  const [autoFractionData, setAutoFractionData] = useState<{ parentV: ProductVersion; childV: ProductVersion; prod: Product } | null>(null);
 
   // Auto-fetch DNI effect
   useEffect(() => {
@@ -111,6 +116,16 @@ export default function PointOfSalePage() {
 
   const handleVariantSelect = (v: ProductVersion) => {
     if (selectedProduct) {
+      if (v.stock <= 0 && v.parent_version_id) {
+        const parentV = selectedProduct.versions.find(p => p.id === v.parent_version_id);
+        if (parentV && parentV.stock > 0) {
+          setAutoFractionData({ parentV, childV: v, prod: selectedProduct });
+          setShowAutoFractionModal(true);
+          setShowVariantModal(false);
+          return;
+        }
+      }
+
       if (selectedProduct.unidad_medida === 'kg' || selectedProduct.unidad_medida === 'gr') {
         setSelectedProductForWeight({ prod: selectedProduct, version: v });
         setWeightInput('');
@@ -121,6 +136,33 @@ export default function PointOfSalePage() {
         addToCart(selectedProduct.name, v.price, selectedProduct.em, selectedProduct.id, v);
         setShowVariantModal(false);
       }
+    }
+  };
+
+  const handleConfirmAutoFraction = async () => {
+    if (!autoFractionData) return;
+    const { parentV, childV, prod } = autoFractionData;
+    const ratio = childV.fraction_ratio || 10;
+
+    try {
+      await fractionateProduct(parentV.id, childV.id, 1, ratio);
+      setShowAutoFractionModal(false);
+      
+      const updatedChildV = { ...childV, stock: childV.stock + ratio };
+      
+      if (prod.unidad_medida === 'kg' || prod.unidad_medida === 'gr') {
+        setSelectedProductForWeight({ prod, version: updatedChildV });
+        setWeightInput('');
+        setIsEditingCartItem(false);
+        setShowWeightModal(true);
+      } else {
+        addToCart(prod.name, childV.price, prod.em, prod.id, updatedChildV);
+      }
+      toast(`🍰 Se fraccionó 1 ${parentV.name} para obtener ${ratio} ${childV.name}`);
+    } catch (err: any) {
+      toast('❌ Error al auto-fraccionar: ' + err.message);
+    } finally {
+      setAutoFractionData(null);
     }
   };
 
@@ -195,6 +237,7 @@ export default function PointOfSalePage() {
       setLastReceipt(receipt);
       setShowCheckoutModal(false);
       
+      let clientPhone = '';
       // Auto-prefill customer phone if they exist and have a registered phone number
       if (finalClientId) {
         // Find in updated clients list or current list
@@ -203,6 +246,7 @@ export default function PointOfSalePage() {
           // Normalize phone (ensure it has country code if needed, but display cleanly)
           const normPhone = foundCli.telefono.startsWith('+') ? foundCli.telefono : `+51${foundCli.telefono}`;
           setWaPhoneInput(normPhone);
+          clientPhone = normPhone;
         } else {
           setWaPhoneInput('');
         }
@@ -211,6 +255,17 @@ export default function PointOfSalePage() {
       }
 
       setShowReceiptModal(true);
+
+      // Auto-notify if configured
+      if (typeof window !== 'undefined' && clientPhone) {
+        const autoNotifySaved = localStorage.getItem('whatsapp_auto_notify');
+        const isAutoNotify = autoNotifySaved === null ? true : autoNotifySaved === 'true'; // Default to true if not set
+        if (isAutoNotify) {
+          setTimeout(() => {
+            handleSendWhatsAppBaileys(receipt, clientPhone);
+          }, 800);
+        }
+      }
     }
   };
 
@@ -391,85 +446,89 @@ export default function PointOfSalePage() {
     toast('📥 Ticket descargado como PNG con éxito');
   };
 
+  const generateTicketPdfDoc = (receipt: Sale, jsPDF: any) => {
+    const itemHeight = 6;
+    const baseHeight = 90;
+    const height = baseHeight + (receipt.items.length * itemHeight);
+    
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: [80, height]
+    });
+    
+    doc.setFont('courier', 'bold');
+    doc.setFontSize(14);
+    doc.text('SNACK ROQUE', 40, 10, { align: 'center' });
+    
+    doc.setFont('courier', 'normal');
+    doc.setFontSize(8);
+    doc.text('Av. Panamericana Sur #456, Ica', 40, 15, { align: 'center' });
+    doc.text('RUC: 10432187659', 40, 19, { align: 'center' });
+    doc.text('Teléfono: (056) 219876', 40, 23, { align: 'center' });
+    doc.text('====================================', 40, 27, { align: 'center' });
+    
+    doc.setFont('courier', 'bold');
+    doc.setFontSize(9);
+    doc.text(`BOLETA ELECTRÓNICA: B-${receipt.n}`, 40, 32, { align: 'center' });
+    
+    doc.setFont('courier', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Fecha: ${receipt.d}`, 6, 38);
+    doc.text(`Hora: ${receipt.t || '08:50'}`, 45, 38);
+    doc.text(`Cajero: ${receipt.cajero || 'Admin'}`, 6, 42);
+    doc.text(`Cliente: ${receipt.clienteNombre || 'Genérico'}`, 6, 46);
+    doc.text('------------------------------------', 40, 50, { align: 'center' });
+    
+    doc.setFont('courier', 'bold');
+    doc.text('DESCRIPCIÓN', 6, 54);
+    doc.text('CANT', 50, 54, { align: 'right' });
+    doc.text('TOTAL', 74, 54, { align: 'right' });
+    doc.text('------------------------------------', 40, 58, { align: 'center' });
+    
+    doc.setFont('courier', 'normal');
+    let currentY = 62;
+    receipt.items.forEach(item => {
+      const name = item.name.length > 18 ? item.name.substring(0, 18) : item.name;
+      doc.text(name, 6, currentY);
+      const prod = products.find(p => p.id === item.id);
+      const uMedida = prod?.unidad_medida || 'und';
+      doc.text(`${item.qty} ${uMedida}`, 50, currentY, { align: 'right' });
+      doc.text(`S/. ${(item.price * item.qty).toFixed(2)}`, 74, currentY, { align: 'right' });
+      currentY += itemHeight;
+    });
+    
+    doc.text('------------------------------------', 40, currentY, { align: 'center' });
+    currentY += 5;
+    
+    doc.setFont('courier', 'bold');
+    doc.setFontSize(10);
+    doc.text('TOTAL A PAGAR:', 6, currentY);
+    doc.text(`S/. ${receipt.total.toFixed(2)}`, 74, currentY, { align: 'right' });
+    currentY += 6;
+    
+    doc.setFont('courier', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Método de Pago: ${receipt.method || 'Efectivo'}`, 6, currentY);
+    currentY += 6;
+    doc.text('====================================', 40, currentY, { align: 'center' });
+    currentY += 6;
+    
+    doc.setFont('courier', 'bold');
+    doc.text('¡MUCHAS GRACIAS POR SU COMPRA!', 40, currentY, { align: 'center' });
+    currentY += 4;
+    doc.setFont('courier', 'normal');
+    doc.setFontSize(6);
+    doc.text('Representación impresa de la Boleta Electrónica', 40, currentY, { align: 'center' });
+    
+    return doc;
+  };
+
   const downloadTicketAsPdf = async (receipt: Sale) => {
     try {
       const jspdfModule = await loadJsPDF();
       const { jsPDF } = jspdfModule;
-      
-      const itemHeight = 6;
-      const baseHeight = 90;
-      const height = baseHeight + (receipt.items.length * itemHeight);
-      
-      const doc = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: [80, height]
-      });
-      
-      doc.setFont('courier', 'bold');
-      doc.setFontSize(14);
-      doc.text('SNACK ROQUE', 40, 10, { align: 'center' });
-      
-      doc.setFont('courier', 'normal');
-      doc.setFontSize(8);
-      doc.text('Av. Panamericana Sur #456, Ica', 40, 15, { align: 'center' });
-      doc.text('RUC: 10432187659', 40, 19, { align: 'center' });
-      doc.text('Teléfono: (056) 219876', 40, 23, { align: 'center' });
-      doc.text('====================================', 40, 27, { align: 'center' });
-      
-      doc.setFont('courier', 'bold');
-      doc.setFontSize(9);
-      doc.text(`BOLETA ELECTRÓNICA: B-${receipt.n}`, 40, 32, { align: 'center' });
-      
-      doc.setFont('courier', 'normal');
-      doc.setFontSize(8);
-      doc.text(`Fecha: ${receipt.d}`, 6, 38);
-      doc.text(`Hora: ${receipt.t || '08:50'}`, 45, 38);
-      doc.text(`Cajero: ${receipt.cajero || 'Admin'}`, 6, 42);
-      doc.text(`Cliente: ${receipt.clienteNombre || 'Genérico'}`, 6, 46);
-      doc.text('------------------------------------', 40, 50, { align: 'center' });
-      
-      doc.setFont('courier', 'bold');
-      doc.text('DESCRIPCIÓN', 6, 54);
-      doc.text('CANT', 50, 54, { align: 'right' });
-      doc.text('TOTAL', 74, 54, { align: 'right' });
-      doc.text('------------------------------------', 40, 58, { align: 'center' });
-      
-      doc.setFont('courier', 'normal');
-      let currentY = 62;
-      receipt.items.forEach(item => {
-        const name = item.name.length > 18 ? item.name.substring(0, 18) : item.name;
-        doc.text(name, 6, currentY);
-        const prod = products.find(p => p.id === item.id);
-        const uMedida = prod?.unidad_medida || 'und';
-        doc.text(`${item.qty} ${uMedida}`, 50, currentY, { align: 'right' });
-        doc.text(`S/. ${(item.price * item.qty).toFixed(2)}`, 74, currentY, { align: 'right' });
-        currentY += itemHeight;
-      });
-      
-      doc.text('------------------------------------', 40, currentY, { align: 'center' });
-      currentY += 5;
-      
-      doc.setFont('courier', 'bold');
-      doc.setFontSize(10);
-      doc.text('TOTAL A PAGAR:', 6, currentY);
-      doc.text(`S/. ${receipt.total.toFixed(2)}`, 74, currentY, { align: 'right' });
-      currentY += 6;
-      
-      doc.setFont('courier', 'normal');
-      doc.setFontSize(8);
-      doc.text(`Método de Pago: ${receipt.method || 'Efectivo'}`, 6, currentY);
-      currentY += 6;
-      doc.text('====================================', 40, currentY, { align: 'center' });
-      currentY += 6;
-      
-      doc.setFont('courier', 'bold');
-      doc.text('¡MUCHAS GRACIAS POR SU COMPRA!', 40, currentY, { align: 'center' });
-      currentY += 4;
-      doc.setFont('courier', 'normal');
-      doc.setFontSize(6);
-      doc.text('Representación impresa de la Boleta Electrónica', 40, currentY, { align: 'center' });
-      
+      const doc = generateTicketPdfDoc(receipt, jsPDF);
       doc.save(`boleta_B-${receipt.n}.pdf`);
       toast('📥 Ticket descargado como PDF con éxito');
     } catch (err: any) {
@@ -479,42 +538,56 @@ export default function PointOfSalePage() {
   };
 
   // Real WhatsApp sending via Baileys API route
-  const handleSendWhatsAppBaileys = async (receipt: Sale) => {
-    if (!waPhoneInput) {
+  const handleSendWhatsAppBaileys = async (receipt: Sale, overridePhone?: string) => {
+    const targetPhone = overridePhone || waPhoneInput;
+    if (!targetPhone) {
       toast('⚠️ Por favor ingresa un número de teléfono válido.');
       return;
     }
     
     setIsWaSending(true);
     try {
-      const text = `*SNACK ROQUE 🥐*\n` +
-                   `*Boleta de Venta Electrónica: B-${receipt.n}*\n` +
-                   `Fecha: ${receipt.d}  Hora: ${receipt.t || '08:50'}\n` +
-                   `Cajero: ${receipt.cajero || 'Admin'}\n` +
-                   `----------------------------------------\n` +
-                   receipt.items.map(i => {
-                     const prod = products.find(p => p.id === i.id);
-                     const uMedida = prod?.unidad_medida || 'und';
-                     return `• ${i.name} (x${i.qty} ${uMedida}): S/. ${(i.price * i.qty).toFixed(2)}`;
-                   }).join('\n') + `\n` +
-                   `----------------------------------------\n` +
-                   `*TOTAL COMPRA: S/. ${receipt.total.toFixed(2)}*\n` +
-                   `Método de pago: ${receipt.method || 'Efectivo'}\n\n` +
-                   `¡Muchas gracias por su preferencia! Su ticket ha sido procesado automáticamente vía Baileys Gateway.`;
+      // Load template from localStorage
+      let template = '🧾 Tu boleta #{numero} de S/ {monto} ya está disponible. ¡Gracias por tu compra en Snack Roque!';
+      if (typeof window !== 'undefined') {
+        const savedTemplate = localStorage.getItem('whatsapp_msg_template');
+        if (savedTemplate) {
+          template = savedTemplate;
+        }
+      }
+
+      const text = template
+        .replace(/{numero}/g, `B-${receipt.n}`)
+        .replace(/{monto}/g, receipt.total.toFixed(2))
+        .replace(/{cliente}/g, receipt.clienteNombre || 'Cliente');
+
+      // Generate PDF Base64 string from browser
+      let pdfBase64 = '';
+      try {
+        const jspdfModule = await loadJsPDF();
+        const { jsPDF } = jspdfModule;
+        const doc = generateTicketPdfDoc(receipt, jsPDF);
+        const dataUri = doc.output('datauristring');
+        pdfBase64 = dataUri.split(',')[1];
+      } catch (pdfErr) {
+        console.error('Error generating PDF for WhatsApp attachment', pdfErr);
+      }
 
       const response = await fetch('/api/send-whatsapp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone: waPhoneInput,
+          phone: targetPhone,
           message: text,
-          saleId: receipt.id
+          saleId: receipt.id,
+          pdfBase64: pdfBase64 || null,
+          fileName: `boleta_B-${receipt.n}.pdf`
         })
       });
 
       const resData = await response.json();
       if (resData.success) {
-        toast(`✅ Comprobante enviado con éxito a ${waPhoneInput} vía Baileys.`);
+        toast(`✅ Comprobante y PDF enviados con éxito a ${targetPhone} vía Baileys.`);
         setShowWhatsAppSubModal(false);
       } else {
         toast(`❌ Error en Baileys: ${resData.error}`);
@@ -897,28 +970,52 @@ export default function PointOfSalePage() {
             </div>
             <button 
               className="mc-pri" 
-              onClick={() => setShowWhatsAppSubModal(true)}
-              style={{ background: '#25D366', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', marginTop: '10px' }}
+              onClick={() => setShowWhatsAppSubModal(!showWhatsAppSubModal)}
+              style={{ 
+                background: showWhatsAppSubModal ? 'var(--bg-card2)' : '#25D366', 
+                color: showWhatsAppSubModal ? 'var(--text-2)' : 'white', 
+                border: showWhatsAppSubModal ? '1.5px solid var(--border)' : 'none',
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                gap: '6px', 
+                width: '100%', 
+                marginTop: '10px',
+                transition: 'all 0.2s'
+              }}
             >
-              💬 Enviar WhatsApp
+              {showWhatsAppSubModal ? '✕ Cancelar Envío' : '💬 Enviar por WhatsApp'}
             </button>
 
             {/* BAILEYS SENDING SUB-PANEL */}
             {showWhatsAppSubModal && (
               <div style={{ 
-                marginTop: '15px', 
-                padding: '14px', 
-                border: '1.5px solid var(--border)', 
-                borderRadius: '10px', 
-                background: 'var(--bg-card2)',
-                textAlign: 'left'
+                marginTop: '12px', 
+                padding: '16px', 
+                border: '1.5px solid rgba(37, 211, 102, 0.18)', 
+                borderRadius: '12px', 
+                background: 'rgba(37, 211, 102, 0.04)',
+                textAlign: 'left',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.02)'
               }}>
-                <h5 style={{ margin: '0 0 6px 0', fontSize: '12.5px', color: 'var(--text)', fontWeight: '700', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>💬 Enviar vía Baileys API</span>
-                  <span style={{ fontSize: '10px', color: 'var(--green)', fontWeight: 'bold' }}>● Gateway real</span>
-                </h5>
-                <p style={{ margin: '0 0 10px 0', fontSize: '10.5px', color: 'var(--text-3)' }}>
-                  La boleta electrónica se despachará de forma directa y automatizada a través del servidor de mensajería.
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)' }}>
+                    Enviar Comprobante Digital
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '10.5px', color: '#25D366', fontWeight: 'bold' }}>
+                    <span style={{ 
+                      width: '6px', 
+                      height: '6px', 
+                      borderRadius: '50%', 
+                      background: '#25D366', 
+                      display: 'inline-block',
+                      boxShadow: '0 0 6px #25D366'
+                    }}></span>
+                    Servicio Activo
+                  </span>
+                </div>
+                <p style={{ margin: '0 0 12px 0', fontSize: '11px', color: 'var(--text-3)', lineHeight: '1.4' }}>
+                  El ticket de venta será generado y enviado directamente al teléfono indicado a través del Gateway.
                 </p>
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <input 
@@ -928,50 +1025,56 @@ export default function PointOfSalePage() {
                     onChange={(e) => setWaPhoneInput(e.target.value.replace(/[^\d+]/g, ''))}
                     style={{ 
                       flex: 1, 
-                      padding: '8px 10px', 
-                      fontSize: '12.5px', 
+                      padding: '10px 12px', 
+                      fontSize: '13px', 
                       borderRadius: '8px', 
                       border: '1.5px solid var(--border)',
                       background: 'var(--bg-card)',
-                      color: 'var(--text)'
+                      color: 'var(--text)',
+                      outline: 'none',
+                      transition: 'border-color 0.2s'
                     }}
+                    onFocus={(e) => e.target.style.borderColor = '#25D366'}
+                    onBlur={(e) => e.target.style.borderColor = 'var(--border)'}
                   />
                   <button 
                     onClick={() => handleSendWhatsAppBaileys(lastReceipt)}
                     disabled={isWaSending}
                     style={{ 
-                      padding: '8px 14px', 
+                      padding: '10px 18px', 
                       background: '#25D366', 
                       color: 'white', 
                       fontWeight: '700', 
                       borderRadius: '8px', 
                       border: 'none',
-                      fontSize: '12px',
+                      fontSize: '12.5px',
                       cursor: 'pointer',
-                      opacity: isWaSending ? 0.6 : 1
+                      opacity: isWaSending ? 0.7 : 1,
+                      boxShadow: '0 2px 6px rgba(37, 211, 102, 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      transition: 'all 0.2s'
                     }}
                   >
-                    {isWaSending ? 'Enviando...' : 'Enviar ahora'}
+                    {isWaSending ? 'Enviando...' : 'Enviar'}
                   </button>
                 </div>
-                <p style={{ margin: '6px 0 0 0', fontSize: '9.5px', color: 'var(--accent)', fontStyle: 'italic' }}>
-                  ⚠️ Requiere WhatsApp vinculado en el panel WhatsApp Baileys. Si no está conectado, el envío será rechazado.
-                </p>
-                <button 
-                  onClick={() => setShowWhatsAppSubModal(false)}
-                  style={{ 
-                    marginTop: '8px', 
-                    background: 'transparent', 
-                    border: 'none', 
-                    fontSize: '10px', 
-                    color: 'var(--text-3)', 
-                    cursor: 'pointer', 
-                    padding: '2px 0', 
-                    textDecoration: 'underline' 
-                  }}
-                >
-                  Ocultar panel
-                </button>
+                <div style={{ 
+                  marginTop: '12px', 
+                  display: 'flex', 
+                  gap: '6px', 
+                  alignItems: 'flex-start', 
+                  background: 'rgba(239, 68, 68, 0.03)', 
+                  border: '1px solid rgba(239, 68, 68, 0.1)', 
+                  borderRadius: '8px', 
+                  padding: '8px 10px' 
+                }}>
+                  <span style={{ fontSize: '11px', lineHeight: '1' }}>⚠️</span>
+                  <p style={{ margin: 0, fontSize: '9.5px', color: 'var(--text-3)', lineHeight: '1.3' }}>
+                    Requiere que el dispositivo móvil emisor esté enlazado y activo en el panel de control **WhatsApp Baileys**.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -990,7 +1093,10 @@ export default function PointOfSalePage() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '18px 0' }}>
               {selectedProduct.versions.map((v) => {
-                const isAgotado = v.stock <= 0;
+                const parent = v.parent_version_id 
+                  ? selectedProduct.versions.find(p => p.id === v.parent_version_id) 
+                  : null;
+                const isAgotado = v.stock <= 0 && (!parent || parent.stock <= 0);
                 return (
                   <button
                     key={v.id}
@@ -1014,7 +1120,12 @@ export default function PointOfSalePage() {
                     <div style={{ textAlign: 'left' }}>
                       <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>{v.name}</strong>
                       <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>
-                        {isAgotado ? 'Agotado' : `${v.stock} disponibles`}
+                        {v.stock <= 0 && parent && parent.stock > 0 
+                          ? `Agotado (Cortar de ${parent.name})` 
+                          : isAgotado 
+                            ? 'Agotado' 
+                            : `${v.stock} disponibles`
+                        }
                       </div>
                     </div>
                     <span style={{ fontWeight: '800', color: 'var(--accent)', fontSize: '13.5px' }}>
@@ -1231,6 +1342,56 @@ export default function PointOfSalePage() {
                 onClick={handleConfirmWeight}
               >
                 Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AUTO-FRACTIONING OPTIONAL POPUP */}
+      {showAutoFractionModal && autoFractionData && (
+        <div className="modal-overlay open">
+          <div className="modal-card" style={{ width: '420px', padding: '24px' }}>
+            <span className="mc-icon" style={{ fontSize: '42px', textAlign: 'center', display: 'block' }}>🍰</span>
+            <div className="mc-title">Auto-Fraccionamiento Dinámico</div>
+            <p className="mc-sub" style={{ marginBottom: '16px' }}>
+              No quedan existencias de <strong>{autoFractionData.childV.name}</strong> en vitrina.
+            </p>
+
+            <div style={{
+              background: 'rgba(20, 184, 166, 0.05)',
+              border: '1px solid rgba(20, 184, 166, 0.2)',
+              borderRadius: '12px',
+              padding: '16px',
+              textAlign: 'center',
+              marginBottom: '20px'
+            }}>
+              <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: 'var(--text-2)' }}>
+                Se detectó stock disponible de <strong>{autoFractionData.parentV.name}</strong> ({autoFractionData.parentV.stock} und).
+              </p>
+              <strong style={{ fontSize: '15px', color: '#0d9488' }}>
+                ¿Deseas cortar 1 {autoFractionData.parentV.name} para obtener {autoFractionData.childV.fraction_ratio || 10} {autoFractionData.childV.name}?
+              </strong>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <button
+                type="button"
+                className="mc-sec"
+                onClick={() => {
+                  setShowAutoFractionModal(false);
+                  setAutoFractionData(null);
+                }}
+              >
+                No, cancelar
+              </button>
+              <button
+                type="button"
+                className="mc-pri"
+                style={{ background: '#0d9488' }}
+                onClick={handleConfirmAutoFraction}
+              >
+                Sí, fraccionar y vender
               </button>
             </div>
           </div>

@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { phone, message, saleId } = body;
+    const { phone, message, saleId, pdfBase64, fileName } = body;
 
     if (!phone) {
       return NextResponse.json({ success: false, error: 'Falta el número de teléfono' }, { status: 400 });
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const result = await sendWhatsAppMessage(phone, message);
+    const result = await sendWhatsAppMessage(phone, message, pdfBase64, fileName);
 
     return NextResponse.json({
       success: true,

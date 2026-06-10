@@ -58,6 +58,29 @@ export default function WhatsAppPage() {
 
   const logsEndRef = useRef<HTMLDivElement>(null);
 
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedTemplate = localStorage.getItem('whatsapp_msg_template');
+      if (savedTemplate) {
+        setMsgTemplate(savedTemplate);
+      }
+      const savedNotify = localStorage.getItem('whatsapp_auto_notify');
+      if (savedNotify !== null) {
+        setAutoNotify(savedNotify === 'true');
+      }
+    }
+  }, []);
+
+  const handleToggleAutoNotify = () => {
+    const newValue = !autoNotify;
+    setAutoNotify(newValue);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('whatsapp_auto_notify', String(newValue));
+    }
+    toast(newValue ? '✅ Envío automático activado' : '⚠️ Envío automático desactivado');
+  };
+
   /* ── Log helper ─────────────────────────────────────────── */
   const addLog = useCallback((message: string) => {
     const ts = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -379,7 +402,7 @@ export default function WhatsAppPage() {
               </div>
               <div
                 className={`toggle-track ${autoNotify ? 'on' : ''}`}
-                onClick={() => setAutoNotify(v => !v)}
+                onClick={handleToggleAutoNotify}
               >
                 <div className="toggle-thumb" />
               </div>
@@ -399,6 +422,9 @@ export default function WhatsAppPage() {
                   onClick={() => {
                     if (editingTemplate) {
                       setEditingTemplate(false);
+                      if (typeof window !== 'undefined') {
+                        localStorage.setItem('whatsapp_msg_template', msgTemplate);
+                      }
                       toast('✅ Plantilla guardada');
                     } else {
                       setEditingTemplate(true);

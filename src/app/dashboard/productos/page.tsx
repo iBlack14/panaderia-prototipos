@@ -35,6 +35,8 @@ export default function InventarioPage() {
   const [vName, setVName] = useState('');
   const [vPrice, setVPrice] = useState('');
   const [vStock, setVStock] = useState('0');
+  const [vParentVersionId, setVParentVersionId] = useState<number | null>(null);
+  const [vFractionRatio, setVFractionRatio] = useState('1');
 
   // Fraction modal states
   const [showFractionModal, setShowFractionModal] = useState(false);
@@ -66,12 +68,16 @@ export default function InventarioPage() {
       id: Date.now(),
       name: vName,
       price: parseFloat(vPrice),
-      stock: parseFloat(vStock) || 0
+      stock: parseFloat(vStock) || 0,
+      parent_version_id: vParentVersionId,
+      fraction_ratio: parseFloat(vFractionRatio) || 1
     };
     setVariantsList([...variantsList, newV]);
     setVName('');
     setVPrice('');
     setVStock('0');
+    setVParentVersionId(null);
+    setVFractionRatio('1');
   };
 
   const handleRemoveVariant = (id: number) => {
@@ -87,6 +93,8 @@ export default function InventarioPage() {
     setStock('0');
     setVariantsList([]);
     setUnidadMedida('unidades');
+    setVParentVersionId(null);
+    setVFractionRatio('1');
     setShowProductModal(true);
   };
 
@@ -99,6 +107,8 @@ export default function InventarioPage() {
     setStock(String(p.stock));
     setVariantsList(p.versions || []);
     setUnidadMedida(p.unidad_medida || 'unidades');
+    setVParentVersionId(null);
+    setVFractionRatio('1');
     setShowProductModal(true);
   };
 
@@ -529,35 +539,80 @@ export default function InventarioPage() {
                   ⚙️ Versiones / Presentaciones (Opcional)
                 </span>
                 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 40px', gap: '8px', alignItems: 'end', marginTop: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '10px' }}>
                   <div className="inp-group" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '9px' }}>Nombre Versión</label>
-                    <input type="text" value={vName} onChange={(e) => setVName(e.target.value)} placeholder="Ej: Grande" style={{ padding: '8px 10px', fontSize: '12px' }} />
+                    <label style={{ fontSize: '9.5px' }}>Nombre Versión</label>
+                    <input type="text" value={vName} onChange={(e) => setVName(e.target.value)} placeholder="Ej: Porción" style={{ padding: '8px 10px', fontSize: '12px' }} />
                   </div>
                   <div className="inp-group" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '9px' }}>Precio (S/.)</label>
+                    <label style={{ fontSize: '9.5px' }}>Precio (S/.)</label>
                     <input type="number" step="0.01" value={vPrice} onChange={(e) => setVPrice(e.target.value)} placeholder="0.00" style={{ padding: '8px 10px', fontSize: '12px' }} />
                   </div>
                   <div className="inp-group" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '9px' }}>Stock</label>
+                    <label style={{ fontSize: '9.5px' }}>Stock</label>
                     <input type="number" step="any" value={vStock} onChange={(e) => setVStock(e.target.value)} placeholder="0" style={{ padding: '8px 10px', fontSize: '12px' }} />
                   </div>
-                  <button type="button" onClick={handleAddVariant} className="btn-new" style={{ padding: '8px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', width: '100%', margin: 0 }}>
-                    ＋
-                  </button>
                 </div>
+
+                {/* Parent-child relation (equivalences) */}
+                {variantsList.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 40px', gap: '8px', marginTop: '8px', alignItems: 'end' }}>
+                    <div className="inp-group" style={{ margin: 0 }}>
+                      <label style={{ fontSize: '9.5px' }}>¿Es porción/fracción de otra variante?</label>
+                      <select 
+                        value={vParentVersionId || ''} 
+                        onChange={e => setVParentVersionId(e.target.value ? parseInt(e.target.value) : null)}
+                        style={{ padding: '8px 10px', fontSize: '12px', width: '100%', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text)' }}
+                      >
+                        <option value="">-- No, es independiente --</option>
+                        {variantsList.map(pv => (
+                          <option key={pv.id} value={pv.id}>{pv.name} (Stock: {pv.stock})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="inp-group" style={{ margin: 0 }}>
+                      <label style={{ fontSize: '9.5px' }}>Ratio (ej: 10 del hijo por 1 del padre)</label>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        value={vFractionRatio} 
+                        onChange={e => setVFractionRatio(e.target.value)} 
+                        disabled={!vParentVersionId}
+                        style={{ padding: '8px 10px', fontSize: '12px', width: '100%' }} 
+                      />
+                    </div>
+                    <button type="button" onClick={handleAddVariant} className="btn-new" style={{ padding: '8px', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', width: '100%', margin: 0 }}>
+                      ＋
+                    </button>
+                  </div>
+                )}
+                
+                {/* Fallback add button when variantsList is empty */}
+                {variantsList.length === 0 && (
+                  <button type="button" onClick={handleAddVariant} className="btn-new" style={{ marginTop: '8px', width: '100%', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                    ＋ Añadir Variante
+                  </button>
+                )}
 
                 {/* Lista de variantes añadidas */}
                 {variantsList.length > 0 && (
                   <div style={{ marginTop: '12px', background: 'var(--bg-card2)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {variantsList.map((v, idx) => (
-                      <div key={v.id || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12.5px' }}>
-                        <span>
-                          <strong>{v.name}</strong> · S/. {v.price.toFixed(2)} · <span style={{ color: 'var(--text-3)' }}>{v.stock} und.</span>
-                        </span>
-                        <span onClick={() => handleRemoveVariant(v.id)} style={{ color: 'var(--red)', fontWeight: '700', cursor: 'pointer' }}>✕</span>
-                      </div>
-                    ))}
+                    {variantsList.map((v, idx) => {
+                      const parent = variantsList.find(p => p.id === v.parent_version_id);
+                      return (
+                        <div key={v.id || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12.5px' }}>
+                          <span>
+                            <strong>{v.name}</strong> · S/. {v.price.toFixed(2)} · <span style={{ color: 'var(--text-3)' }}>{v.stock} und.</span>
+                            {parent && (
+                              <span style={{ fontSize: '10px', color: '#0d9488', marginLeft: '6px', background: 'rgba(20,184,166,0.1)', padding: '2px 6px', borderRadius: '12px', fontWeight: 'bold' }}>
+                                ✂️ Fracciona de: {parent.name} (Ratio: {v.fraction_ratio})
+                              </span>
+                            )}
+                          </span>
+                          <span onClick={() => handleRemoveVariant(v.id)} style={{ color: 'var(--red)', fontWeight: '700', cursor: 'pointer' }}>✕</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

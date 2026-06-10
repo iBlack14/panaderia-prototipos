@@ -310,14 +310,28 @@ export async function disconnectWhatsAppGateway() {
   return getWhatsAppStatus();
 }
 
-export async function sendWhatsAppMessage(phone: string, message: string) {
+export async function sendWhatsAppMessage(phone: string, message: string, documentBase64?: string, fileName?: string) {
   if (!state.socket || state.status !== 'connected') {
     throw new Error('WhatsApp no está conectado. Vincula el gateway antes de enviar.');
   }
 
   const jid = normalizePhone(phone);
-  const result = await state.socket.sendMessage(jid, { text: message });
-  addLog(`📤 [Baileys-Out] Mensaje enviado a ${phone}`);
+  let result;
+
+  if (documentBase64 && fileName) {
+    const buffer = Buffer.from(documentBase64, 'base64');
+    result = await state.socket.sendMessage(jid, { 
+      document: buffer, 
+      mimetype: 'application/pdf', 
+      fileName: fileName,
+      caption: message 
+    });
+    addLog(`📤 [Baileys-Out] Mensaje con PDF enviado a ${phone}`);
+  } else {
+    result = await state.socket.sendMessage(jid, { text: message });
+    addLog(`📤 [Baileys-Out] Mensaje de texto enviado a ${phone}`);
+  }
+
   return result;
 }
 

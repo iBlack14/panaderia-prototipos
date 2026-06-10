@@ -33,6 +33,63 @@ export function useInventoryOps({
         const catMatch = categories.find((c) => c.name === pObj.cat);
         const idCat = catMatch?.id || null;
 
+        const syncProductVersions = async (productId: number, versions: any[]) => {
+          if (!versions || versions.length === 0) {
+            await supabase.from('producto_versiones').delete().eq('id_producto', productId);
+            return;
+          }
+
+          // Step 1: Delete versions no longer in the list
+          const realIds = versions.map((v: any) => v.id).filter((id: number) => id < 1000000000);
+          if (realIds.length > 0) {
+            await supabase.from('producto_versiones').delete().eq('id_producto', productId).not('id_version', 'in', `(${realIds.join(',')})`);
+          } else {
+            await supabase.from('producto_versiones').delete().eq('id_producto', productId);
+          }
+
+          // Step 2: Insert or update all versions (without parent_version_id first to prevent constraint issues)
+          const versionRows = versions.map((v: any) => {
+            const row: any = {
+              id_producto: productId,
+              nombre_version: v.name,
+              precio_unitario: v.price,
+              num_stock: v.stock || 0,
+              estado: 1,
+              fraction_ratio: v.fraction_ratio || 1
+            };
+            if (v.id && v.id < 1000000000) {
+              row.id_version = v.id;
+            }
+            return row;
+          });
+
+          const { data: savedVersions, error } = await supabase.from('producto_versiones').upsert(versionRows).select();
+          if (error) throw error;
+
+          // Step 3: Set parent_version_id on children based on parent-child relations
+          if (savedVersions) {
+            const updatePromises = savedVersions.map(async (vSaved: any) => {
+              const orig = versions.find((v: any) => v.name === vSaved.nombre_version);
+              if (orig && orig.parent_version_id) {
+                const origParent = versions.find((v: any) => v.id === orig.parent_version_id);
+                if (origParent) {
+                  const realParentSaved = savedVersions.find((v: any) => v.nombre_version === origParent.name);
+                  if (realParentSaved) {
+                    await supabase.from('producto_versiones').update({
+                      parent_version_id: realParentSaved.id_version
+                    }).eq('id_version', vSaved.id_version);
+                  }
+                }
+              } else {
+                await supabase.from('producto_versiones').update({
+                  parent_version_id: null
+                }).eq('id_version', vSaved.id_version);
+              }
+            });
+            await Promise.all(updatePromises);
+          }
+        };
+
         if (pObj.id) {
           await supabase.from('productos').update({
             nombre: pObj.name,
@@ -42,6 +99,7 @@ export function useInventoryOps({
             num_stock: pObj.stock || 0,
             unidad_medida: pObj.unidad_medida || 'unidades'
           }).eq('id_producto', pObj.id);
+          await syncProductVersions(pObj.id, pObj.versions || []);
           toast('📦 Producto actualizado en la nube');
         } else {
           const { data: newProd } = await supabase.from('productos').insert({
@@ -54,15 +112,8 @@ export function useInventoryOps({
             estado: 1
           }).select().single();
 
-          if (newProd && pObj.versions?.length > 0) {
-            const versionRows = pObj.versions.map((v: any) => ({
-              id_producto: newProd.id_producto,
-              nombre_version: v.name,
-              precio_unitario: v.price,
-              num_stock: v.stock || 0,
-              estado: 1
-            }));
-            await supabase.from('producto_versiones').insert(versionRows);
+          if (newProd) {
+            await syncProductVersions(newProd.id_producto, pObj.versions || []);
           }
           toast('📦 Producto creado en la nube');
         }
@@ -81,7 +132,9 @@ export function useInventoryOps({
               id: v.id_version,
               name: v.nombre_version,
               price: parseFloat(v.precio_unitario),
-              stock: parseFloat(v.num_stock || 0)
+              stock: parseFloat(v.num_stock || 0),
+              parent_version_id: v.parent_version_id,
+              fraction_ratio: v.fraction_ratio ? parseFloat(v.fraction_ratio) : 1
             })) : []
           })));
         }

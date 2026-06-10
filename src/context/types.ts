@@ -5,6 +5,8 @@ export interface ProductVersion {
   name: string;
   price: number;
   stock: number;
+  parent_version_id?: number | null;
+  fraction_ratio?: number;
 }
 
 export interface Product {
