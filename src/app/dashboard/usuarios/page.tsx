@@ -542,17 +542,49 @@ export default function PersonalPage() {
 
                 <div className="inp-group">
                   <label>Nombres</label>
-                  <input type="text" placeholder="Ej: Ana María" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+                  <input 
+                    type="text" 
+                    placeholder="Ej: Ana María" 
+                    value={firstName} 
+                    onChange={(e) => setFirstName(e.target.value)} 
+                    required 
+                    readOnly={dniOk}
+                    style={{
+                      background: dniOk ? 'var(--bg-hover)' : undefined,
+                      cursor: dniOk ? 'not-allowed' : undefined
+                    }}
+                  />
                 </div>
 
                 <div className="inp-group">
                   <label>Apellido Paterno</label>
-                  <input type="text" placeholder="Ej: Rodríguez" value={apePaterno} onChange={(e) => setApePaterno(e.target.value)} required />
+                  <input 
+                    type="text" 
+                    placeholder="Ej: Rodríguez" 
+                    value={apePaterno} 
+                    onChange={(e) => setApePaterno(e.target.value)} 
+                    required 
+                    readOnly={dniOk}
+                    style={{
+                      background: dniOk ? 'var(--bg-hover)' : undefined,
+                      cursor: dniOk ? 'not-allowed' : undefined
+                    }}
+                  />
                 </div>
 
                 <div className="inp-group">
                   <label>Apellido Materno</label>
-                  <input type="text" placeholder="Ej: López" value={apeMaterno} onChange={(e) => setApeMaterno(e.target.value)} />
+                  <input 
+                    type="text" 
+                    placeholder="Ej: López" 
+                    value={apeMaterno} 
+                    onChange={(e) => setApeMaterno(e.target.value)} 
+                    readOnly={dniOk}
+                    style={{
+                      background: dniOk ? 'var(--bg-hover)' : undefined,
+                      cursor: dniOk ? 'not-allowed' : undefined
+                    }}
+                  />
                 </div>
 
                 <div className="inp-group">

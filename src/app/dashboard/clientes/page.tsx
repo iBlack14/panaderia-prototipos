@@ -379,18 +379,6 @@ export default function ClientesPage() {
               <form onSubmit={handleClientSubmit}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                   <div className="inp-group" style={{ gridColumn: '1/-1', textAlign: 'left' }}>
-                    <label>Nombres</label>
-                    <input type="text" value={fNombres} onChange={e => setFNombres(e.target.value)} placeholder="Ej: Rosa" required />
-                  </div>
-                  <div className="inp-group" style={{ textAlign: 'left' }}>
-                    <label>Apellido Paterno</label>
-                    <input type="text" value={fApePaterno} onChange={e => setFApePaterno(e.target.value)} placeholder="Ej: Quispe" required />
-                  </div>
-                  <div className="inp-group" style={{ textAlign: 'left' }}>
-                    <label>Apellido Materno</label>
-                    <input type="text" value={fApeMaterno} onChange={e => setFApeMaterno(e.target.value)} placeholder="Ej: Mamani" required />
-                  </div>
-                  <div className="inp-group" style={{ textAlign: 'left' }}>
                     <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span>DNI</span>
                       {dniLoading && <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: '600' }}>⏳ Consultando RENIEC...</span>}
@@ -406,6 +394,51 @@ export default function ClientesPage() {
                       style={{
                         borderColor: dniOk ? 'var(--green)' : dniError ? 'var(--red)' : undefined,
                         transition: 'border-color 0.2s ease'
+                      }}
+                    />
+                  </div>
+                  <div className="inp-group" style={{ gridColumn: '1/-1', textAlign: 'left' }}>
+                    <label>Nombres</label>
+                    <input 
+                      type="text" 
+                      value={fNombres} 
+                      onChange={e => setFNombres(e.target.value)} 
+                      placeholder="Ej: Rosa" 
+                      required 
+                      readOnly={dniOk}
+                      style={{
+                        background: dniOk ? 'var(--bg-hover)' : undefined,
+                        cursor: dniOk ? 'not-allowed' : undefined
+                      }}
+                    />
+                  </div>
+                  <div className="inp-group" style={{ textAlign: 'left' }}>
+                    <label>Apellido Paterno</label>
+                    <input 
+                      type="text" 
+                      value={fApePaterno} 
+                      onChange={e => setFApePaterno(e.target.value)} 
+                      placeholder="Ej: Quispe" 
+                      required 
+                      readOnly={dniOk}
+                      style={{
+                        background: dniOk ? 'var(--bg-hover)' : undefined,
+                        cursor: dniOk ? 'not-allowed' : undefined
+                      }}
+                    />
+                  </div>
+                  <div className="inp-group" style={{ textAlign: 'left' }}>
+                    <label>Apellido Materno</label>
+                    <input 
+                      type="text" 
+                      value={fApeMaterno} 
+                      onChange={e => setFApeMaterno(e.target.value)} 
+                      placeholder="Ej: Mamani" 
+                      required 
+                      readOnly={dniOk}
+                      style={{
+                        background: dniOk ? 'var(--bg-hover)' : undefined,
+                        cursor: dniOk ? 'not-allowed' : undefined
                       }}
                     />
                   </div>

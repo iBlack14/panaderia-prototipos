@@ -45,6 +45,7 @@ export default function PointOfSalePage() {
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [newClientData, setNewClientData] = useState({ nombre: '', dni: '', telefono: '' });
   const [isDniLoading, setIsDniLoading] = useState(false);
+  const [dniOk, setDniOk] = useState(false);
 
   // Weight/Decimal Quantity Selector states
   const [showWeightModal, setShowWeightModal] = useState(false);
@@ -74,6 +75,7 @@ export default function PointOfSalePage() {
             const d = json.data;
             const fullName = `${d.nombres || ''} ${d.apellido_paterno || ''} ${d.apellido_materno || ''}`.replace(/\s+/g, ' ').trim();
             setNewClientData(prev => ({ ...prev, nombre: fullName }));
+            setDniOk(true);
             toast('✅ Datos de DNI encontrados y completados');
           } else {
             toast('⚠️ ' + (json.message || 'DNI no encontrado en RENIEC'));
@@ -227,6 +229,7 @@ export default function PointOfSalePage() {
     setSelectedPaymentMethod(null);
     setIsCreatingClient(false);
     setNewClientData({ nombre: '', dni: '', telefono: '' });
+    setDniOk(false);
     setShowCheckoutModal(true);
   };
 
@@ -805,7 +808,7 @@ export default function PointOfSalePage() {
                     {!isCreatingClient ? (
                       <button type="button" onClick={() => setIsCreatingClient(true)} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: '11.5px', fontWeight: '800', cursor: 'pointer' }}>+ Nuevo Cliente</button>
                     ) : (
-                      <button type="button" onClick={() => setIsCreatingClient(false)} style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: '11.5px', fontWeight: '800', cursor: 'pointer' }}>Cancelar</button>
+                      <button type="button" onClick={() => { setIsCreatingClient(false); setNewClientData({ nombre: '', dni: '', telefono: '' }); setDniOk(false); }} style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: '11.5px', fontWeight: '800', cursor: 'pointer' }}>Cancelar</button>
                     )}
                   </div>
                   
@@ -838,7 +841,7 @@ export default function PointOfSalePage() {
                           <input 
                             placeholder="DNI / RUC" 
                             value={newClientData.dni} 
-                            onChange={e => setNewClientData({...newClientData, dni: e.target.value.replace(/\D/g, '')})} 
+                            onChange={e => { setNewClientData({...newClientData, dni: e.target.value.replace(/\D/g, '')}); setDniOk(false); }} 
                             style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', fontSize: '13px', background: 'var(--bg-card)' }} 
                             maxLength={11}
                           />
@@ -855,7 +858,16 @@ export default function PointOfSalePage() {
                         placeholder="Nombre Completo *" 
                         value={newClientData.nombre} 
                         onChange={e => setNewClientData({...newClientData, nombre: e.target.value})} 
-                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', fontSize: '13px', background: 'var(--bg-card)' }} 
+                        readOnly={dniOk}
+                        style={{ 
+                          width: '100%', 
+                          padding: '10px', 
+                          borderRadius: '8px', 
+                          border: '1.5px solid var(--border)', 
+                          fontSize: '13px', 
+                          background: dniOk ? 'var(--bg-hover)' : 'var(--bg-card)',
+                          cursor: dniOk ? 'not-allowed' : undefined
+                        }} 
                       />
                     </div>
                   )}
@@ -872,6 +884,7 @@ export default function PointOfSalePage() {
                           setSelectedClientId(saved.id);
                           setIsCreatingClient(false);
                           setNewClientData({ nombre: '', dni: '', telefono: '' });
+                          setDniOk(false);
                           handleConfirmPayment(selectedPaymentMethod as number, saved.id);
                         }
                       } else {
