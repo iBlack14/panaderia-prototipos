@@ -215,18 +215,17 @@ export function useCartOperations({
     setCashSession(updatedSession);
     saveOffline('snack_session', updatedSession);
 
-    const isCredito = paymentMethodId === 999;
-    const clienteObj = clienteId ? clients.find(c => c.id === clienteId) : null;
+    const isPrepago = paymentMethodId === 999;
+    const clienteObj = clienteId ? clients.find(c => String(c.id) === String(clienteId)) : null;
 
-    if (isCredito && clienteObj) {
-      const disponible = clienteObj.limiteCred - clienteObj.saldoCred;
-      if (tot > disponible) {
-        toast(`⚠️ Límite de crédito insuficiente. Disponible: S/. ${disponible.toFixed(2)}`);
+    if (isPrepago && clienteObj) {
+      if (tot > clienteObj.saldoCred) {
+        toast(`⚠️ Saldo prepago insuficiente. Disponible: S/. ${clienteObj.saldoCred.toFixed(2)}`);
         return;
       }
-      const nuevoPago: CreditPayment = { id: Date.now(), fecha: new Date().toLocaleDateString(), concepto: `Compra a crédito — ${cart.map(i => i.name).join(', ')}`, monto: tot, tipo: 'cargo' };
+      const nuevoPago: CreditPayment = { id: Date.now(), fecha: new Date().toLocaleDateString(), concepto: `Consumo Prepago — ${cart.map(i => i.name).join(', ')}`, monto: tot, tipo: 'cargo' };
       
-      const newSaldo = clienteObj.saldoCred + tot;
+      const newSaldo = clienteObj.saldoCred - tot;
       const newHistorial = [...clienteObj.historialPagos, nuevoPago];
 
       if (isSupabaseConfigured && supabase) {
@@ -236,11 +235,11 @@ export function useCartOperations({
             historial_pagos: newHistorial
           }).eq('id_cliente', clienteId);
         } catch (err) {
-          console.error('Error al actualizar crédito de cliente en Supabase', err);
+          console.error('Error al actualizar saldo prepago de cliente en Supabase', err);
         }
       }
 
-      const updClients = clients.map(c => c.id === clienteId ? { ...c, saldoCred: newSaldo, historialPagos: newHistorial } : c);
+      const updClients = clients.map(c => String(c.id) === String(clienteId) ? { ...c, saldoCred: newSaldo, historialPagos: newHistorial } : c);
       setClients(updClients);
       saveOffline('snack_clients', updClients);
     }
@@ -250,7 +249,7 @@ export function useCartOperations({
       n: sales.length + 501,
       items: [...cart],
       total: tot,
-      method: isCredito ? `Crédito${clienteObj ? ' — ' + clienteObj.nombre : ''}` : methodStr,
+      method: isPrepago ? `Prepago${clienteObj ? ' — ' + clienteObj.nombre : ''}` : methodStr,
       methodId: paymentMethodId,
       d: new Date().toLocaleDateString(),
       t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),

@@ -14,7 +14,7 @@ interface CustomShift {
 }
 
 export default function ControlCajaPage() {
-  const { cashSession, cashHistory, cashDrops, openCashSession, closeCashSession, registerCashDrop, user } = useApp();
+  const { cashSession, cashHistory, cashDrops, openCashSession, closeCashSession, registerCashDrop, user, clients } = useApp();
   
   const [activeTab, setActiveTab] = useState<'operacion' | 'turnos'>('operacion');
 
@@ -47,6 +47,37 @@ export default function ControlCajaPage() {
     return DENOM_BILLETES.reduce((a, d) => a + (denom[d.key] * d.value), 0)
       + DENOM_MONEDAS.reduce((a, d) => a + (denom[d.key] * d.value), 0);
   }, [denom]);
+
+  // --- RECARGAS EN SESIÓN DE CAJA ---
+  const recargasEfectivo = useMemo(() => {
+    if (!cashSession) return 0;
+    const sessionStart = new Date(cashSession.fec_apertura).getTime();
+    let total = 0;
+    clients.forEach(c => {
+      c.historialPagos.forEach(p => {
+        if (p.id >= sessionStart && p.tipo === 'abono') {
+          const isEf = (p.metodoPago || 'Efectivo').toLowerCase().includes('efectivo');
+          if (isEf) total += p.monto;
+        }
+      });
+    });
+    return total;
+  }, [clients, cashSession]);
+
+  const recargasOtros = useMemo(() => {
+    if (!cashSession) return 0;
+    const sessionStart = new Date(cashSession.fec_apertura).getTime();
+    let total = 0;
+    clients.forEach(c => {
+      c.historialPagos.forEach(p => {
+        if (p.id >= sessionStart && p.tipo === 'abono') {
+          const isEf = (p.metodoPago || 'Efectivo').toLowerCase().includes('efectivo');
+          if (!isEf) total += p.monto;
+        }
+      });
+    });
+    return total;
+  }, [clients, cashSession]);
 
   // --- CASH DROP (RETIRO PARCIAL) STATE ---
   const [showDropModal, setShowDropModal] = useState(false);
@@ -351,12 +382,20 @@ export default function ControlCajaPage() {
                   <div className="st-val" style={{ fontSize: '24px', color: 'var(--text-2)' }}>
                     S/. {cashSession.tot_ventas_efectivo.toFixed(2)}
                   </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px', textAlign: 'left' }}>
+                    <span>🛍️ Ventas: S/. {(cashSession.tot_ventas_efectivo - recargasEfectivo).toFixed(2)}</span>
+                    <span>💳 Recargas: S/. {recargasEfectivo.toFixed(2)}</span>
+                  </div>
                 </div>
-
+                
                 <div className="stat-tile" style={{ padding: '16px 20px' }}>
                   <div className="st-lbl" style={{ fontSize: '10px' }}>Otros Medios (Yape/Card/etc.)</div>
                   <div className="st-val" style={{ fontSize: '24px', color: 'var(--text-2)' }}>
                     S/. {cashSession.tot_ventas_otros.toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px', textAlign: 'left' }}>
+                    <span>🛍️ Ventas: S/. {(cashSession.tot_ventas_otros - recargasOtros).toFixed(2)}</span>
+                    <span>💳 Recargas: S/. {recargasOtros.toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -665,6 +704,14 @@ export default function ControlCajaPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Cajero:</span><strong>{cashSession.cajero}</strong></div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border)', paddingTop: '6px' }}><span>Apertura:</span><strong>S/. {cashSession.tot_saldo_inicial.toFixed(2)}</strong></div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Ventas Efectivo:</span><strong>+S/. {cashSession.tot_ventas_efectivo.toFixed(2)}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '12px', fontSize: '11px', color: 'var(--text-3)' }}>
+                <span>↳ Ventas Prod:</span>
+                <span>S/. {(cashSession.tot_ventas_efectivo - recargasEfectivo).toFixed(2)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '12px', fontSize: '11px', color: 'var(--text-3)' }}>
+                <span>↳ Recargas Saldo:</span>
+                <span>S/. {recargasEfectivo.toFixed(2)}</span>
+              </div>
               {(cashSession.tot_retiros || 0) > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Retiros Parciales:</span><strong style={{ color: 'var(--red)' }}>-S/. {(cashSession.tot_retiros || 0).toFixed(2)}</strong></div>
               )}

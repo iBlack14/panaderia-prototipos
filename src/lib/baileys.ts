@@ -75,8 +75,12 @@ function scheduleReconnect(reason: string) {
 
   setTimeout(async () => {
     state.reconnecting = false;
+    if (state.status === 'disconnected') {
+      addLog('🚫 [Baileys-Core] Reconexión cancelada porque el gateway está desvinculado/desconectado.');
+      return;
+    }
     await startWhatsAppGateway();
-  }, 1200);
+  }, 3000);
 }
 
 function getSupabaseAdmin() {
@@ -191,6 +195,22 @@ async function clearSupabaseAuthState() {
   if (error) throw error;
 }
 
+async function getBaileysVersion(): Promise<[number, number, number]> {
+  const fallbackVersion: [number, number, number] = [2, 3000, 1035194821];
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Timeout')), 3000)
+    );
+    const fetchPromise = (async () => {
+      const { version } = await fetchLatestBaileysVersion();
+      return version;
+    })();
+    return await Promise.race([fetchPromise, timeoutPromise]);
+  } catch (error) {
+    return fallbackVersion;
+  }
+}
+
 export async function startWhatsAppGateway() {
   if (state.status === 'connected' && state.socket) {
     return getWhatsAppStatus();
@@ -204,13 +224,25 @@ export async function startWhatsAppGateway() {
   state.status = 'initializing';
   state.qr = '';
   state.qrDataUrl = '';
-  state.socket?.end(undefined);
-  state.socket = null;
+
+  // Safe cleanup of the old socket to prevent connection loops
+  if (state.socket) {
+    const oldSocket = state.socket;
+    state.socket = null; // Set to null before closing so that events are ignored
+    try {
+      oldSocket.ev.removeAllListeners('connection.update');
+      oldSocket.ev.removeAllListeners('creds.update');
+      oldSocket.end(undefined);
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+  }
+
   addLog('🔄 [Baileys-Core] Inicializando socket real...');
 
   try {
     const { state: authState, saveCreds } = await getSupabaseAuthState();
-    const { version } = await fetchLatestBaileysVersion();
+    const version = await getBaileysVersion();
 
     const socket = makeWASocket({
       version,
@@ -228,9 +260,20 @@ export async function startWhatsAppGateway() {
     state.status = 'connecting';
     state.device = 'Snack Roque POS - Baileys Real';
 
-    socket.ev.on('creds.update', saveCreds);
+    socket.ev.on('creds.update', () => {
+      if (state.socket === socket) {
+        saveCreds().catch((err) => {
+          addLog(`❌ [Baileys-Core] Error al guardar credenciales en BD: ${err.message}`);
+        });
+      }
+    });
 
     socket.ev.on('connection.update', async (update) => {
+      // Ignore updates if this socket is no longer the active gateway socket
+      if (state.socket !== socket) {
+        return;
+      }
+
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
@@ -266,10 +309,19 @@ export async function startWhatsAppGateway() {
         state.qrDataUrl = '';
         addLog(`🔴 [Baileys-Core] Conexión cerrada por WhatsApp. Código: ${statusCode || 'sin código'}`);
 
-        if (statusCode === DisconnectReason.loggedOut) {
+        const isLoggedOut = statusCode === DisconnectReason.loggedOut || 
+                            statusCode === 401 || 
+                            statusCode === 400 || 
+                            statusCode === 403;
+
+        if (isLoggedOut) {
           state.status = 'disconnected';
           state.phone = '';
+          state.device = '';
           addLog('🔴 [Baileys-Core] Sesión cerrada desde WhatsApp. Debes vincular de nuevo.');
+          clearSupabaseAuthState().catch((err) => {
+            addLog(`❌ [Baileys-Core] Error al limpiar sesión inválida en BD: ${err.message}`);
+          });
         } else {
           scheduleReconnect(String(statusCode || 'network'));
         }
@@ -291,8 +343,16 @@ export async function startWhatsAppGateway() {
 export async function disconnectWhatsAppGateway() {
   try {
     if (state.socket) {
-      await state.socket.logout();
-      state.socket.end(undefined);
+      const oldSocket = state.socket;
+      state.socket = null; // Set to null first so connection updates are ignored
+      try {
+        oldSocket.ev.removeAllListeners('connection.update');
+        oldSocket.ev.removeAllListeners('creds.update');
+        await oldSocket.logout();
+        oldSocket.end(undefined);
+      } catch (err) {
+        // ignore
+      }
     }
     await clearSupabaseAuthState();
   } catch (error: any) {

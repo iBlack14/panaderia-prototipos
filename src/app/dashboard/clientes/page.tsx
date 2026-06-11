@@ -14,7 +14,7 @@ const METODOS_COBRO = [
 ];
 
 export default function ClientesPage() {
-  const { clients, saveClient, toggleClient, payCreditBalance, user } = useApp();
+  const { clients, saveClient, toggleClient, payCreditBalance, user, toast } = useApp();
 
   const [activeTab, setActiveTab] = useState<'lista' | 'cobranza'>('lista');
   const [search, setSearch] = useState('');
@@ -32,7 +32,6 @@ export default function ClientesPage() {
   const [fDni, setFDni] = useState('');
   const [fTel, setFTel] = useState('');
   const [fEmail, setFEmail] = useState('');
-  const [fLimite, setFLimite] = useState('50');
 
   // DNI lookup state
   const [dniLoading, setDniLoading] = useState(false);
@@ -67,7 +66,7 @@ export default function ClientesPage() {
 
   const openNewClient = () => {
     setEditingClient(null);
-    setFNombres(''); setFApePaterno(''); setFApeMaterno(''); setFDni(''); setFTel(''); setFEmail(''); setFLimite('50');
+    setFNombres(''); setFApePaterno(''); setFApeMaterno(''); setFDni(''); setFTel(''); setFEmail('');
     resetDniState();
     setShowClientModal(true);
   };
@@ -100,11 +99,25 @@ export default function ClientesPage() {
   }, []);
 
   // Auto-consulta cuando el DNI llega a 8 dígitos
+  // Auto-consulta cuando el DNI llega a 8 dígitos con prevención de duplicados
   useEffect(() => {
     if (fDni.length === 8 && showClientModal) {
+      if (!editingClient) {
+        const existing = clients.find(c => c.dni && c.dni.trim() === fDni.trim());
+        if (existing) {
+          setDniError(`El cliente ${existing.nombre} ya está registrado con este DNI.`);
+          return;
+        }
+      } else {
+        const existing = clients.find(c => c.dni && c.dni.trim() === fDni.trim() && c.id !== editingClient.id);
+        if (existing) {
+          setDniError(`El cliente ${existing.nombre} ya está registrado con este DNI.`);
+          return;
+        }
+      }
       consultarDni(fDni);
     }
-  }, [fDni, showClientModal, consultarDni]);
+  }, [fDni, showClientModal, consultarDni, editingClient, clients]);
 
   const openEditClient = (c: Client) => {
     setEditingClient(c);
@@ -134,20 +147,39 @@ export default function ClientesPage() {
     setFDni(c.dni || '');
     setFTel(c.telefono || '');
     setFEmail(c.email || '');
-    setFLimite(String(c.limiteCred));
     resetDniState();
     setShowClientModal(true);
   };
 
   const handleClientSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const limit = parseFloat(fLimite) || 0;
-    if (limit > 100) {
-      alert("El límite de crédito máximo permitido es S/. 100.00");
+    const limit = editingClient ? editingClient.limiteCred : 0;
+    const fullName = `${fNombres} ${fApePaterno} ${fApeMaterno}`.trim().replace(/\s+/g, ' ');
+    
+    // Validar nombre (solo letras/espacios)
+    const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s'\-]+$/;
+    if (!nameRegex.test(fullName)) {
+      toast("⚠️ El nombre del cliente solo debe contener letras.");
       return;
     }
-    const fullName = `${fNombres} ${fApePaterno} ${fApeMaterno}`.trim().replace(/\s+/g, ' ');
-    saveClient({ id: editingClient?.id, nombre: fullName, dni: fDni, telefono: fTel, email: fEmail, limiteCred: limit });
+
+    // Validar teléfono (máximo 9 dígitos)
+    const cleanPhone = fTel.replace(/\D/g, '');
+    if (cleanPhone.length > 9) {
+      toast("⚠️ El teléfono no debe exceder los 9 dígitos.");
+      return;
+    }
+
+    // Validar duplicado de DNI antes de enviar
+    if (fDni) {
+      const existing = clients.find(c => c.dni && c.dni.trim() === fDni.trim() && (!editingClient || c.id !== editingClient.id));
+      if (existing) {
+        toast(`⚠️ Ya existe un cliente registrado con el DNI ${fDni} (${existing.nombre}).`);
+        return;
+      }
+    }
+
+    saveClient({ id: editingClient?.id, nombre: fullName, dni: fDni, telefono: cleanPhone, email: fEmail, limiteCred: limit });
     setShowClientModal(false);
   };
 
@@ -164,7 +196,15 @@ export default function ClientesPage() {
     if (!selectedClient) return;
     const amt = parseFloat(payMonto);
     if (isNaN(amt) || amt <= 0) return;
-    payCreditBalance(selectedClient.id, Math.min(amt, selectedClient.saldoCred), payConcepto, payMetodo);
+    if (amt > 100) {
+      toast("⚠️ El monto máximo de recarga es S/. 100.00");
+      return;
+    }
+    if (selectedClient.saldoCred + amt > 100) {
+      toast(`⚠️ El saldo total no puede superar el límite de S/. 100.00. Saldo actual: S/. ${selectedClient.saldoCred.toFixed(2)}. Máximo a recargar: S/. ${(100 - selectedClient.saldoCred).toFixed(2)}.`);
+      return;
+    }
+    payCreditBalance(selectedClient.id, amt, payConcepto, payMetodo);
     setShowPayModal(false);
   };
 
@@ -185,19 +225,19 @@ export default function ClientesPage() {
           <div className="st-sub">clientes activos</div>
         </div>
         <div className="stat-tile" style={{ padding: '16px 20px' }}>
-          <div className="st-lbl" style={{ color: 'var(--red)' }}>Deuda Total Fiados</div>
-          <div className="st-val" style={{ color: 'var(--red)' }}>S/. {totalDeudaPendiente.toFixed(2)}</div>
-          <div className="st-sub">{clientesConDeuda.length} cuentas por cobrar</div>
+          <div className="st-lbl" style={{ color: 'var(--green)' }}>Saldo Prepago Total</div>
+          <div className="st-val" style={{ color: 'var(--green)' }}>S/. {totalDeudaPendiente.toFixed(2)}</div>
+          <div className="st-sub">{clientesConDeuda.length} clientes con saldo prepago</div>
         </div>
         <div className="stat-tile" style={{ padding: '16px 20px' }}>
-          <div className="st-lbl">Al Día</div>
-          <div className="st-val" style={{ color: 'var(--green)' }}>{clients.filter(c => c.saldoCred === 0 && c.active).length}</div>
-          <div className="st-sub">sin deuda pendiente</div>
+          <div className="st-lbl">Sin Saldo</div>
+          <div className="st-val">{clients.filter(c => c.saldoCred === 0 && c.active).length}</div>
+          <div className="st-sub">sin saldo disponible</div>
         </div>
         <div className="stat-tile" style={{ padding: '16px 20px' }}>
-          <div className="st-lbl">Crédito Total Otorgado</div>
+          <div className="st-lbl">Límite Total Saldo</div>
           <div className="st-val">S/. {clients.reduce((a, c) => a + c.limiteCred, 0).toFixed(0)}</div>
-          <div className="st-sub">en líneas de crédito</div>
+          <div className="st-sub">en cupos prepago asignados</div>
         </div>
       </div>
 
@@ -207,7 +247,7 @@ export default function ClientesPage() {
           <button key={t} onClick={() => setActiveTab(t)}
             style={{ padding: '6px 18px', fontSize: '12px', fontWeight: '700', borderRadius: '999px', border: 'none', background: activeTab === t ? 'var(--accent)' : 'transparent', color: activeTab === t ? '#fff' : 'var(--text-3)', cursor: 'pointer' }}
           >
-            {t === 'lista' ? '👤 Directorio' : '💰 Cobranza de Fiados'}
+            {t === 'lista' ? '👤 Directorio' : '💰 Recargas de Saldo'}
           </button>
         ))}
       </div>
@@ -224,11 +264,12 @@ export default function ClientesPage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
             {filteredClients.map(c => {
-              const pct = c.limiteCred > 0 ? Math.min(100, (c.saldoCred / c.limiteCred) * 100) : 0;
-              const isOverHalf = pct > 50;
-              const isFull = pct >= 90;
+              const pct = Math.min(100, (c.saldoCred / (c.limiteCred || 100)) * 100);
+              const isLow = pct < 20;
+              const isMed = pct >= 20 && pct < 50;
+              const barColor = isLow ? 'var(--red)' : isMed ? '#f59e0b' : 'var(--green)';
               return (
-                <div key={c.id} className="panel" style={{ padding: '18px 20px', border: `1.5px solid ${c.saldoCred > 0 ? 'rgba(192,72,58,0.3)' : 'var(--border)'}`, borderRadius: '16px', background: 'var(--bg-card)', opacity: c.active ? 1 : 0.6 }}>
+                <div key={c.id} className="panel" style={{ padding: '18px 20px', border: `1.5px solid ${c.saldoCred > 0 ? 'rgba(22,163,74,0.3)' : 'var(--border)'}`, borderRadius: '16px', background: 'var(--bg-card)', opacity: c.active ? 1 : 0.6 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
                     <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                       <div style={{ width: '40px', height: '40px', background: 'var(--accent-bg)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: '800', color: 'var(--accent)' }}>
@@ -248,26 +289,26 @@ export default function ClientesPage() {
                     </div>
                   </div>
 
-                  <div style={{ marginBottom: '10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '5px' }}>
-                      <span style={{ color: 'var(--text-3)', fontWeight: '600' }}>Crédito Usado</span>
-                      <span style={{ fontWeight: '800', color: isFull ? 'var(--red)' : isOverHalf ? '#f59e0b' : 'var(--green)' }}>
-                        S/. {c.saldoCred.toFixed(2)} / {c.limiteCred.toFixed(2)}
-                      </span>
-                    </div>
-                    <div style={{ height: '6px', background: 'var(--bg-card2)', borderRadius: '999px', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: isFull ? 'var(--red)' : isOverHalf ? '#f59e0b' : 'var(--green)', borderRadius: '999px', transition: 'width 0.4s ease' }} />
-                    </div>
-                    <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '3px' }}>
-                      Disponible: S/. {(c.limiteCred - c.saldoCred).toFixed(2)}
-                    </div>
-                  </div>
-
                   {c.saldoCred > 0 && (
-                    <button onClick={() => openPayModal(c)} style={{ width: '100%', padding: '8px', fontSize: '12px', fontWeight: '700', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, var(--green), #15803d)', color: '#fff', cursor: 'pointer' }}>
-                      💳 Registrar Cobro / Abono
-                    </button>
+                    <div style={{ marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '5px' }}>
+                        <span style={{ color: 'var(--text-3)', fontWeight: '600' }}>Saldo Prepago</span>
+                        <span style={{ fontWeight: '800', color: barColor }}>
+                          S/. {c.saldoCred.toFixed(2)} / {(c.limiteCred || 100).toFixed(2)}
+                        </span>
+                      </div>
+                      <div style={{ height: '6px', background: 'var(--bg-card2)', borderRadius: '999px', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: '999px', transition: 'width 0.4s ease' }} />
+                      </div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '3px' }}>
+                        Tope de Carga: S/. {(c.limiteCred || 100).toFixed(2)}
+                      </div>
+                    </div>
                   )}
+
+                  <button onClick={() => openPayModal(c)} style={{ width: '100%', padding: '8px', fontSize: '12px', fontWeight: '700', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, var(--green), #15803d)', color: '#fff', cursor: 'pointer' }}>
+                    💳 Registrar Recarga
+                  </button>
                 </div>
               );
             })}
@@ -281,14 +322,14 @@ export default function ClientesPage() {
         </>
       ) : (
         <>
-          {/* PANEL DE COBRANZA */}
-          <div className="panel" style={{ marginBottom: '20px', border: '1px solid rgba(192,72,58,0.25)', borderRadius: '16px' }}>
+          {/* PANEL DE COBRANZA (RECARGAS) */}
+          <div className="panel" style={{ marginBottom: '20px', border: '1px solid rgba(22,163,74,0.25)', borderRadius: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '18px' }}>
-              <span style={{ fontSize: '28px' }}>💰</span>
+              <span style={{ fontSize: '28px' }}>💳</span>
               <div>
-                <h3 style={{ margin: 0, fontFamily: 'DM Serif Display', fontSize: '20px', color: 'var(--text)' }}>Cobranza de Fiados</h3>
+                <h3 style={{ margin: 0, fontFamily: 'DM Serif Display', fontSize: '20px', color: 'var(--text)' }}>Recargas de Saldo Prepago</h3>
                 <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-3)' }}>
-                  Acepta pagos en <strong>cualquier medio</strong> — el sistema registra en caja automáticamente según el método.
+                  Agrega saldo a favor de tus clientes registrados. El monto ingresará a caja como método seleccionado.
                 </p>
               </div>
             </div>
@@ -304,8 +345,8 @@ export default function ClientesPage() {
 
             {clientesConDeuda.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)' }}>
-                <div style={{ fontSize: '40px', marginBottom: '8px' }}>✅</div>
-                <p>¡Ningún cliente tiene deuda pendiente! Todo está al día.</p>
+                <div style={{ fontSize: '40px', marginBottom: '8px' }}>👤</div>
+                <p>No hay clientes con saldo prepago disponible. ¡Realiza la primera recarga!</p>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -314,13 +355,13 @@ export default function ClientesPage() {
                   // Último pago registrado
                   const ultimoPago = c.historialPagos.filter(p => p.tipo === 'abono').slice(-1)[0];
                   return (
-                    <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: '12px', border: '1px solid rgba(192,72,58,0.15)' }}>
+                    <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: '12px', border: '1px solid rgba(22,163,74,0.15)' }}>
                       {/* Ranking */}
-                      <div style={{ width: '24px', height: '24px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: idx === 0 ? '#ef4444' : idx === 1 ? '#f59e0b' : 'var(--text-3)' }}>
+                      <div style={{ width: '24px', height: '24px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: idx === 0 ? 'var(--green)' : idx === 1 ? '#f59e0b' : 'var(--text-3)' }}>
                         #{idx + 1}
                       </div>
                       {/* Avatar */}
-                      <div style={{ width: '36px', height: '36px', background: 'rgba(192,72,58,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '800', color: 'var(--red)', flexShrink: 0 }}>
+                      <div style={{ width: '36px', height: '36px', background: 'rgba(22,163,74,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '800', color: 'var(--green)', flexShrink: 0 }}>
                         {c.nombre[0].toUpperCase()}
                       </div>
                       {/* Info */}
@@ -328,22 +369,22 @@ export default function ClientesPage() {
                         <div style={{ fontWeight: '800', fontSize: '13px', color: 'var(--text)' }}>{c.nombre}</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
                           <div style={{ flex: 1, height: '4px', background: 'var(--bg-card)', borderRadius: '999px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${pct}%`, background: 'var(--red)', borderRadius: '999px' }} />
+                            <div style={{ height: '100%', width: `${pct}%`, background: 'var(--green)', borderRadius: '999px' }} />
                           </div>
                           <span style={{ fontSize: '10px', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>
-                            {pct.toFixed(0)}% del límite
+                            {pct.toFixed(0)}% del tope
                           </span>
                         </div>
                         {ultimoPago && (
                           <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '2px' }}>
-                            Último abono: {ultimoPago.fecha} vía {ultimoPago.metodoPago || 'Efectivo'}
+                            Última recarga: {ultimoPago.fecha} vía {ultimoPago.metodoPago || 'Efectivo'}
                           </div>
                         )}
                       </div>
                       {/* Monto */}
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        <div style={{ fontWeight: '800', color: 'var(--red)', fontSize: '16px' }}>S/. {c.saldoCred.toFixed(2)}</div>
-                        <div style={{ fontSize: '10px', color: 'var(--text-3)' }}>de S/. {c.limiteCred.toFixed(0)} límite</div>
+                        <div style={{ fontWeight: '800', color: 'var(--green)', fontSize: '16px' }}>S/. {c.saldoCred.toFixed(2)}</div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-3)' }}>de S/. {c.limiteCred.toFixed(0)} tope</div>
                       </div>
                       {/* Acciones */}
                       <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
@@ -352,14 +393,14 @@ export default function ClientesPage() {
                           onClick={() => openPayModal(c)}
                           style={{ padding: '8px 16px', fontSize: '12px', fontWeight: '700', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, var(--green), #15803d)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}
                         >
-                          💳 Cobrar
+                          💳 Recargar
                         </button>
                       </div>
                     </div>
                   );
                 })}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 4px', fontWeight: '800', fontSize: '14px', color: 'var(--text)', borderTop: '1px solid var(--border)', marginTop: '4px' }}>
-                  Total por Cobrar: <span style={{ color: 'var(--red)', marginLeft: '8px' }}>S/. {totalDeudaPendiente.toFixed(2)}</span>
+                  Total Prepago Acumulado: <span style={{ color: 'var(--green)', marginLeft: '8px' }}>S/. {totalDeudaPendiente.toFixed(2)}</span>
                 </div>
               </div>
             )}
@@ -369,13 +410,12 @@ export default function ClientesPage() {
 
       {/* MODAL: NUEVO / EDITAR CLIENTE */}
       {showClientModal && (() => {
-        const isLimitInvalid = (parseFloat(fLimite) || 0) > 100;
         return (
           <div className="modal-overlay open">
             <div className="modal-card" style={{ width: '460px' }}>
               <span className="mc-icon">👤</span>
-              <div className="mc-title">{editingClient ? 'Editar Cliente' : 'Nuevo Cliente Frecuente'}</div>
-              <p className="mc-sub">Configura los datos y el límite de crédito para fiados</p>
+              <div className="mc-title">{editingClient ? 'Editar Cliente' : 'Nuevo Cliente Prepago'}</div>
+              <p className="mc-sub">Configura los datos y el tope de recarga del cliente</p>
               <form onSubmit={handleClientSubmit}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                   <div className="inp-group" style={{ gridColumn: '1/-1', textAlign: 'left' }}>
@@ -444,23 +484,17 @@ export default function ClientesPage() {
                   </div>
                   <div className="inp-group" style={{ textAlign: 'left' }}>
                     <label>Teléfono</label>
-                    <input type="tel" value={fTel} onChange={e => setFTel(e.target.value.replace(/\D/g, ''))} placeholder="987654321" />
+                    <input 
+                      type="tel" 
+                      value={fTel} 
+                      onChange={e => setFTel(e.target.value.replace(/\D/g, ''))} 
+                      placeholder="987654321" 
+                      maxLength={9}
+                    />
                   </div>
                   <div className="inp-group" style={{ textAlign: 'left' }}>
                     <label>Correo (opcional)</label>
                     <input type="email" value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="cliente@gmail.com" />
-                  </div>
-                  <div className="inp-group" style={{ textAlign: 'left' }}>
-                    <label>Límite de Crédito (S/.)</label>
-                    <div className="inp-wrap">
-                      <span className="inp-icon">💳</span>
-                      <input type="number" min="0" max="100" step="5" value={fLimite} onChange={e => setFLimite(e.target.value)} placeholder="50.00" required />
-                    </div>
-                    {isLimitInvalid && (
-                      <span style={{ fontSize: '10.5px', color: 'var(--red)', fontWeight: '700', marginTop: '4px', display: 'block' }}>
-                        ⚠️ Límite máx. permitido: S/. 100.00
-                      </span>
-                    )}
                   </div>
                 </div>
                 <div className="mc-btns" style={{ marginTop: '16px' }}>
@@ -468,13 +502,6 @@ export default function ClientesPage() {
                   <button 
                     type="submit" 
                     className="mc-pri" 
-                    disabled={isLimitInvalid} 
-                    style={{ 
-                      opacity: isLimitInvalid ? 0.55 : 1, 
-                      cursor: isLimitInvalid ? 'not-allowed' : 'pointer',
-                      background: isLimitInvalid ? 'var(--text-3)' : undefined,
-                      boxShadow: isLimitInvalid ? 'none' : undefined
-                    }}
                   >
                     {editingClient ? 'Guardar Cambios' : 'Registrar Cliente'}
                   </button>
@@ -485,23 +512,23 @@ export default function ClientesPage() {
         );
       })()}
 
-      {/* MODAL: COBRO DE FIADO — CON SELECTOR DE MÉTODO */}
+      {/* MODAL: RECARGA DE SALDO PREPAGO — CON SELECTOR DE MÉTODO */}
       {showPayModal && selectedClient && (
         <div className="modal-overlay open">
           <div className="modal-card" style={{ width: '440px' }}>
-            <span className="mc-icon">💰</span>
-            <div className="mc-title">Registrar Cobro de Fiado</div>
-            <p className="mc-sub">Deuda de <strong>{selectedClient.nombre}</strong></p>
+            <span className="mc-icon">💳</span>
+            <div className="mc-title">Recargar Saldo Prepago</div>
+            <p className="mc-sub">Cliente: <strong>{selectedClient.nombre}</strong></p>
 
-            {/* Info deuda */}
-            <div style={{ background: 'var(--bg-card2)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(192,72,58,0.25)', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {/* Info saldo */}
+            <div style={{ background: 'var(--bg-card2)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(22,163,74,0.25)', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: '600' }}>SALDO PENDIENTE</div>
-                <div style={{ fontSize: '22px', fontWeight: '800', color: 'var(--red)' }}>S/. {selectedClient.saldoCred.toFixed(2)}</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: '600' }}>SALDO PREPAGO DISPONIBLE</div>
+                <div style={{ fontSize: '22px', fontWeight: '800', color: 'var(--green)' }}>S/. {selectedClient.saldoCred.toFixed(2)}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>Límite crédito</div>
-                <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-2)' }}>S/. {selectedClient.limiteCred.toFixed(2)}</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>Tope de carga</div>
+                <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-2)' }}>S/. {(selectedClient.limiteCred || 100).toFixed(2)}</div>
               </div>
             </div>
 
@@ -509,7 +536,7 @@ export default function ClientesPage() {
               {/* Selector de método de pago — chips visuales */}
               <div style={{ marginBottom: '16px' }}>
                 <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '8px', letterSpacing: '0.5px' }}>
-                  Método de Pago del Cliente
+                  Método de Recarga del Cliente
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
                   {METODOS_COBRO.map(m => (
@@ -545,11 +572,11 @@ export default function ClientesPage() {
 
               {/* Monto */}
               <div className="inp-group" style={{ textAlign: 'left', marginBottom: '12px' }}>
-                <label>Monto a Cobrar (S/.)</label>
+                <label>Monto a Recargar (S/.)</label>
                 <div className="inp-wrap">
                   <span className="inp-icon">💵</span>
                   <input
-                    type="number" step="0.01" min="0.01" max={selectedClient.saldoCred}
+                    type="number" step="0.01" min="0.01" max="100"
                     value={payMonto}
                     onChange={e => setPayMonto(e.target.value)}
                     placeholder="0.00"
@@ -557,12 +584,8 @@ export default function ClientesPage() {
                   />
                 </div>
                 <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                  <button type="button" onClick={() => setPayMonto(selectedClient.saldoCred.toFixed(2))}
-                    style={{ padding: '3px 10px', fontSize: '10px', fontWeight: '700', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-card2)', color: 'var(--accent)', cursor: 'pointer' }}>
-                    Total: S/. {selectedClient.saldoCred.toFixed(2)}
-                  </button>
-                  {[10, 20, 50].map(amt => (
-                    <button key={amt} type="button" onClick={() => setPayMonto(String(Math.min(amt, selectedClient.saldoCred)))}
+                  {[10, 20, 50, 100].map(amt => (
+                    <button key={amt} type="button" onClick={() => setPayMonto(String(amt))}
                       style={{ padding: '3px 10px', fontSize: '10px', fontWeight: '700', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-card2)', color: 'var(--text-2)', cursor: 'pointer' }}>
                       S/. {amt}
                     </button>
@@ -573,13 +596,13 @@ export default function ClientesPage() {
               {/* Concepto */}
               <div className="inp-group" style={{ textAlign: 'left', marginBottom: '14px' }}>
                 <label>Concepto / Nota</label>
-                <input type="text" value={payConcepto} onChange={e => setPayConcepto(e.target.value)} placeholder="Abono de deuda..." />
+                <input type="text" value={payConcepto} onChange={e => setPayConcepto(e.target.value)} placeholder="Recarga de saldo prepago..." />
               </div>
 
               <div className="mc-btns" style={{ marginTop: '16px' }}>
                 <button type="button" className="mc-sec" onClick={() => setShowPayModal(false)}>Cancelar</button>
                 <button type="submit" className="mc-pri" style={{ background: 'linear-gradient(135deg, var(--green), #15803d)' }}>
-                  ✅ Confirmar Cobro vía {payMetodo}
+                  ✅ Confirmar Recarga vía {payMetodo}
                 </button>
               </div>
             </form>
@@ -587,13 +610,13 @@ export default function ClientesPage() {
         </div>
       )}
 
-      {/* MODAL: HISTORIAL CRÉDITO */}
+      {/* MODAL: HISTORIAL MOVIMIENTOS */}
       {showHistoryModal && historyClient && (
         <div className="modal-overlay open">
           <div className="modal-card" style={{ width: '520px', maxHeight: '80vh', overflowY: 'auto' }}>
             <span className="mc-icon">📋</span>
-            <div className="mc-title">Cuenta Corriente</div>
-            <p className="mc-sub"><strong>{historyClient.nombre}</strong> — Límite: S/. {historyClient.limiteCred} · Deuda: <span style={{ color: 'var(--red)' }}>S/. {historyClient.saldoCred.toFixed(2)}</span></p>
+            <div className="mc-title">Historial de Tarjeta Prepago</div>
+            <p className="mc-sub"><strong>{historyClient.nombre}</strong> — Tope de Carga: S/. {historyClient.limiteCred || 100} · Saldo Disponible: <span style={{ color: 'var(--green)', fontWeight: 'bold' }}>S/. {historyClient.saldoCred.toFixed(2)}</span></p>
             {historyClient.historialPagos.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-3)' }}>
                 <p>Sin movimientos registrados aún.</p>
@@ -622,11 +645,9 @@ export default function ClientesPage() {
             )}
             <div className="mc-btns" style={{ marginTop: '16px' }}>
               <button className="mc-sec" onClick={() => setShowHistoryModal(false)}>Cerrar</button>
-              {historyClient.saldoCred > 0 && (
-                <button className="mc-pri" onClick={() => { setShowHistoryModal(false); openPayModal(historyClient); }} style={{ background: 'linear-gradient(135deg, var(--green), #15803d)' }}>
-                  💳 Registrar Cobro
-                </button>
-              )}
+              <button className="mc-pri" onClick={() => { setShowHistoryModal(false); openPayModal(historyClient); }} style={{ background: 'linear-gradient(135deg, var(--green), #15803d)' }}>
+                💳 Registrar Recarga
+              </button>
             </div>
           </div>
         </div>

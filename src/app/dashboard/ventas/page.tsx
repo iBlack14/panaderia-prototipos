@@ -58,6 +58,22 @@ export default function PointOfSalePage() {
   const [showAutoFractionModal, setShowAutoFractionModal] = useState(false);
   const [autoFractionData, setAutoFractionData] = useState<{ parentV: ProductVersion; childV: ProductVersion; prod: Product } | null>(null);
 
+  // DNI duplicate detection in POS
+  useEffect(() => {
+    if (newClientData.dni.length >= 8) {
+      const existing = clients.find(c => c.dni && c.dni.trim() === newClientData.dni.trim());
+      if (existing) {
+        toast(`ℹ️ Cliente ya registrado: ${existing.nombre}. Se usarán sus datos.`);
+        setNewClientData({
+          nombre: existing.nombre,
+          dni: existing.dni,
+          telefono: existing.telefono || ''
+        });
+        setDniOk(true);
+      }
+    }
+  }, [newClientData.dni, clients, toast]);
+
   // Auto-fetch DNI effect
   useEffect(() => {
     // Solo consultar si el DNI tiene 8 caracteres y el nombre está vacío
@@ -796,6 +812,31 @@ export default function PointOfSalePage() {
                     );
                   })
                 )}
+                {/* Botón manual para Tarjeta Prepago */}
+                <button
+                  onClick={() => setSelectedPaymentMethod(999)}
+                  style={{
+                    padding: '18px 12px',
+                    border: '1.5px solid var(--border)',
+                    borderRadius: '12px',
+                    background: 'var(--bg-card2)',
+                    fontFamily: 'Inter, sans-serif',
+                    fontWeight: '700',
+                    fontSize: '13px',
+                    color: 'var(--text)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    transition: 'all 0.18s'
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-bg)'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--bg-card2)'; }}
+                >
+                  <span style={{ fontSize: '24px' }}>💳</span>
+                  Tarjeta Prepago
+                </button>
               </div>
             ) : (
               <>
@@ -827,10 +868,14 @@ export default function PointOfSalePage() {
                         fontFamily: 'Inter, sans-serif'
                       }}
                     >
-                      <option value="">-- Cliente Genérico (Anonimo) --</option>
+                      {selectedPaymentMethod === 999 ? (
+                        <option value="">-- Seleccionar Cliente Prepago (Obligatorio) --</option>
+                      ) : (
+                        <option value="">-- Cliente Genérico (Anonimo) --</option>
+                      )}
                       {clients.map(c => (
                         <option key={c.id} value={c.id}>
-                          👤 {c.nombre} {c.dni ? `(DNI: ${c.dni})` : ''} {c.telefono ? `· Cel: ${c.telefono}` : ''}
+                          👤 {c.nombre} · Saldo Prepago: S/. {c.saldoCred.toFixed(2)} {c.dni ? `(DNI: ${c.dni})` : ''}
                         </option>
                       ))}
                     </select>
@@ -848,10 +893,11 @@ export default function PointOfSalePage() {
                           {isDniLoading && <span className="ci-em" style={{ position: 'absolute', right: '10px', top: '10px', animation: 'spin 1.5s linear infinite', fontSize: '14px' }}>🥐</span>}
                         </div>
                         <input 
-                          placeholder="Celular (ej: +51...)" 
+                          placeholder="Celular (máx. 9 dígitos)" 
                           value={newClientData.telefono} 
-                          onChange={e => setNewClientData({...newClientData, telefono: e.target.value})} 
+                          onChange={e => setNewClientData({...newClientData, telefono: e.target.value.replace(/\D/g, '')})} 
                           style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', fontSize: '13px', background: 'var(--bg-card)' }} 
+                          maxLength={9}
                         />
                       </div>
                       <input 
@@ -877,8 +923,31 @@ export default function PointOfSalePage() {
                   <button 
                     className="mc-pri" 
                     onClick={async () => {
+                      if (selectedPaymentMethod === 999 && !selectedClientId && !isCreatingClient) {
+                        toast('⚠️ Para pagar con Tarjeta Prepago debe seleccionar un cliente.');
+                        return;
+                      }
+                      
+                      const finalCliId = isCreatingClient ? undefined : selectedClientId;
+                      if (selectedPaymentMethod === 999 && finalCliId) {
+                        const targetC = clients.find(c => String(c.id) === String(finalCliId));
+                        if (targetC && targetC.saldoCred < cartTotal) {
+                          toast(`⚠️ Saldo prepago insuficiente. Disponible: S/. ${targetC.saldoCred.toFixed(2)}`);
+                          return;
+                        }
+                      }
+
                       if (isCreatingClient) {
                         if (!newClientData.nombre.trim()) { toast('⚠️ El nombre es obligatorio para crear un cliente.'); return; }
+                        const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s'\-]+$/;
+                        if (!nameRegex.test(newClientData.nombre.trim())) {
+                          toast('⚠️ El nombre de cliente solo debe contener letras.');
+                          return;
+                        }
+                        if (newClientData.telefono && newClientData.telefono.replace(/\D/g, '').length > 9) {
+                          toast('⚠️ El celular no debe exceder los 9 dígitos.');
+                          return;
+                        }
                         const saved = await saveClient(newClientData);
                         if (saved) {
                           setSelectedClientId(saved.id);

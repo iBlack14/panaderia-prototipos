@@ -28,6 +28,44 @@ export function useClientOps({
 }: ClientOpsParams) {
 
   const saveClient = async (cObj: any): Promise<Client | undefined> => {
+    // 1. Validar nombre (solo letras, espacios, acentos, Ñ/ñ, sin números)
+    const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s'\-]+$/;
+    if (!cObj.nombre || !nameRegex.test(cObj.nombre.trim())) {
+      toast('⚠️ El nombre del cliente solo debe contener letras.');
+      return undefined;
+    }
+    cObj.nombre = cObj.nombre.trim().replace(/\s+/g, ' ');
+
+    // 2. Limpiar y validar teléfono (máx 9 dígitos, solo números)
+    let rawPhone = (cObj.telefono || '').replace(/\D/g, '');
+    if (rawPhone.length > 9) {
+      rawPhone = rawPhone.slice(0, 9);
+    }
+    cObj.telefono = rawPhone;
+
+    // 3. Buscar duplicados por DNI o Nombre antes de crear un nuevo registro
+    if (!cObj.id) {
+      let existing: Client | undefined = undefined;
+      
+      if (cObj.dni && cObj.dni.trim() !== '') {
+        const cleanDni = cObj.dni.trim();
+        existing = clients.find(c => c.dni && c.dni.trim() === cleanDni);
+      }
+      
+      if (!existing && cObj.nombre && cObj.nombre.trim() !== '') {
+        const cleanName = cObj.nombre.trim().toLowerCase();
+        existing = clients.find(c => c.nombre.trim().toLowerCase() === cleanName);
+      }
+      
+      if (existing) {
+        cObj.id = existing.id;
+        cObj.limiteCred = cObj.limiteCred !== undefined ? cObj.limiteCred : existing.limiteCred;
+        cObj.telefono = cObj.telefono || existing.telefono;
+        cObj.email = cObj.email || existing.email;
+        toast('👤 Cliente existente encontrado, usando sus datos.');
+      }
+    }
+
     if (isSupabaseConfigured && supabase) {
       try {
         if (cObj.id) {
@@ -36,18 +74,30 @@ export function useClientOps({
             dni: cObj.dni || '',
             telefono: cObj.telefono || '',
             email: cObj.email || '',
-            limite_credito: cObj.limiteCred || 0
           }).eq('id_cliente', cObj.id);
           if (error) throw error;
           toast('👤 Cliente actualizado en la nube');
-          return clients.find(c => c.id === cObj.id);
+          
+          const existingClient = clients.find(c => String(c.id) === String(cObj.id));
+          const updatedClient: Client = {
+            id: cObj.id,
+            nombre: cObj.nombre,
+            dni: cObj.dni || '',
+            telefono: cObj.telefono || '',
+            email: cObj.email || '',
+            limiteCred: typeof cObj.limiteCred === 'number' ? cObj.limiteCred : parseFloat(cObj.limiteCred || '0'),
+            saldoCred: existingClient?.saldoCred || 0,
+            historialPagos: existingClient?.historialPagos || [],
+            active: existingClient?.active ?? true
+          };
+          setClients(prev => prev.map(c => String(c.id) === String(cObj.id) ? updatedClient : c));
+          return updatedClient;
         } else {
           const { data, error } = await supabase.from('clientes').insert({
             nombre: cObj.nombre,
             dni: cObj.dni || '',
             telefono: cObj.telefono || '',
             email: cObj.email || '',
-            limite_credito: cObj.limiteCred || 0,
             saldo_credito: 0,
             historial_pagos: [],
             estado: 1
@@ -66,7 +116,7 @@ export function useClientOps({
               historialPagos: [],
               active: true
             };
-            setClients(prev => [...prev.filter(c => c.id !== newCli.id), newCli]);
+            setClients(prev => [...prev.filter(c => String(c.id) !== String(newCli.id)), newCli]);
             return newCli;
           }
         }
@@ -76,10 +126,10 @@ export function useClientOps({
     } else {
       let updated;
       let newClient: Client;
-      if (cObj.id && clients.find(c => c.id === cObj.id)) {
-        updated = clients.map(c => c.id === cObj.id ? { ...c, ...cObj } : c);
+      if (cObj.id && clients.find(c => String(c.id) === String(cObj.id))) {
+        updated = clients.map(c => String(c.id) === String(cObj.id) ? { ...c, ...cObj } : c);
         toast('👤 Cliente actualizado');
-        newClient = updated.find(c => c.id === cObj.id)!;
+        newClient = updated.find(c => String(c.id) === String(cObj.id))!;
       } else {
         newClient = {
           id: Date.now(),
@@ -105,7 +155,7 @@ export function useClientOps({
   const toggleClient = async (id: number | string) => {
     if (isSupabaseConfigured && supabase) {
       try {
-        const c = clients.find(x => x.id === id);
+        const c = clients.find(x => String(x.id) === String(id));
         if (!c) return;
         const newSt = c.active ? 0 : 1;
 
@@ -134,16 +184,27 @@ export function useClientOps({
         toast(`❌ Error en Supabase: ${err.message}`);
       }
     } else {
-      const updated = clients.map(c => c.id === id ? { ...c, active: !c.active } : c);
+      const updated = clients.map(c => String(c.id) === String(id) ? { ...c, active: !c.active } : c);
       setClients(updated);
       saveOffline('snack_clients', updated);
       toast('👤 Estado de cliente actualizado');
     }
   };
-
   const payCreditBalance = async (clientId: number | string, monto: number, concepto: string, metodoPago?: string) => {
+    const targetClient = clients.find(c => String(c.id) === String(clientId));
+    if (!targetClient) return;
+
+    if (monto > 100) {
+      toast("❌ El monto máximo de recarga es S/. 100.00");
+      return;
+    }
+    if (targetClient.saldoCred + monto > 100) {
+      toast(`❌ El saldo total no puede superar el límite de S/. 100.00. Saldo actual: S/. ${targetClient.saldoCred.toFixed(2)}`);
+      return;
+    }
+
     const metodoFinal = metodoPago || 'Efectivo';
-    const abono: CreditPayment = {
+    const recarga: CreditPayment = {
       id: Date.now(),
       fecha: new Date().toLocaleDateString(),
       concepto: `${concepto} (${metodoFinal})`,
@@ -152,11 +213,9 @@ export function useClientOps({
       metodoPago: metodoFinal
     };
 
-    const targetClient = clients.find(c => c.id === clientId);
-    if (!targetClient) return;
-
-    const newSaldo = Math.max(0, targetClient.saldoCred - monto);
-    const newHistorial = [...targetClient.historialPagos, abono];
+    const newSaldo = targetClient.saldoCred + monto; // Sumar al saldo prepago
+    const newLimit = targetClient.limiteCred <= 0 ? 100 : targetClient.limiteCred;
+    const newHistorial = [...targetClient.historialPagos, recarga];
 
     if (isSupabaseConfigured && supabase) {
       try {
@@ -166,13 +225,13 @@ export function useClientOps({
         }).eq('id_cliente', clientId);
         if (error) throw error;
       } catch (err: any) {
-        toast(`❌ Error en Supabase al registrar abono: ${err.message}`);
+        toast(`❌ Error en Supabase al registrar recarga: ${err.message}`);
       }
     }
 
     const updated = clients.map(c => {
-      if (c.id === clientId) {
-        return { ...c, saldoCred: newSaldo, historialPagos: newHistorial };
+      if (String(c.id) === String(clientId)) {
+        return { ...c, saldoCred: newSaldo, limiteCred: newLimit, historialPagos: newHistorial };
       }
       return c;
     });
@@ -189,7 +248,7 @@ export function useClientOps({
       setCashSession(updatedSession);
       saveOffline('snack_session', updatedSession);
     }
-    toast(`✅ Abono de S/. ${monto.toFixed(2)} vía ${metodoFinal} registrado en caja.`);
+    toast(`✅ Recarga de S/. ${monto.toFixed(2)} vía ${metodoFinal} registrada con éxito.`);
   };
 
   const saveProvider = async (pObj: any) => {

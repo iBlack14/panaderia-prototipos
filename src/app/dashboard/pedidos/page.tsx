@@ -19,6 +19,19 @@ export default function PedidosPage() {
   const [fAdelanto, setFAdelanto] = useState('0');
   const [fNotas, setFNotas] = useState('');
 
+  // Client search states
+  const [clientSearch, setClientSearch] = useState('');
+  const [showClientDropdown, setShowClientDropdown] = useState(false);
+
+  const filteredClients = useMemo(() => {
+    if (!clientSearch.trim()) return clients;
+    const query = clientSearch.toLowerCase();
+    return clients.filter(c => 
+      c.nombre.toLowerCase().includes(query) || 
+      (c.dni && c.dni.includes(query))
+    );
+  }, [clients, clientSearch]);
+
   const isAdmin = user?.rs?.includes('Administrador');
   const isSupervisor = user?.rs?.includes('Supervisor');
   const isCajero = user?.rs?.includes('Cajero');
@@ -50,6 +63,8 @@ export default function PedidosPage() {
   const openNewPedido = () => {
     setEditingPedido(null);
     setFClienteId('');
+    setClientSearch('');
+    setShowClientDropdown(false);
     setFProductoTexto('');
     // Prefill with tomorrow's date at 08:00 AM as a helper
     const tomorrow = new Date();
@@ -66,6 +81,8 @@ export default function PedidosPage() {
   const openEditPedido = (p: Pedido) => {
     setEditingPedido(p);
     setFClienteId(String(p.clienteId || ''));
+    setClientSearch(p.clienteNombre || '');
+    setShowClientDropdown(false);
     setFProductoTexto(p.productoTexto);
     // Convert to local datetime-local compatible format
     const date = new Date(p.fecEntrega);
@@ -79,6 +96,10 @@ export default function PedidosPage() {
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!fClienteId) {
+      alert('Por favor selecciona un cliente válido de la lista sugerida.');
+      return;
+    }
     if (!fProductoTexto.trim()) {
       alert('Por favor describe los productos del pedido.');
       return;
@@ -90,7 +111,7 @@ export default function PedidosPage() {
 
     const payload = {
       id: editingPedido?.id || undefined,
-      clienteId: fClienteId ? parseInt(fClienteId) : null,
+      clienteId: parseInt(fClienteId),
       productoTexto: fProductoTexto,
       fecEntrega: new Date(fFecEntrega).toISOString(),
       adelanto: parseFloat(fAdelanto) || 0,
@@ -114,6 +135,12 @@ export default function PedidosPage() {
 
   return (
     <div className="screen active">
+      <style>{`
+        .client-option:hover {
+          background: var(--bg-card2) !important;
+          color: var(--accent) !important;
+        }
+      `}</style>
       {/* KPI TILES */}
       <div className="stats-4" style={{ marginBottom: '22px' }}>
         <div className="stat-tile">
@@ -323,29 +350,119 @@ export default function PedidosPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', textAlign: 'left' }}>
                 
                 {/* Cliente Selector */}
-                <div className="inp-group">
-                  <label>Cliente Frecuente (Opcional)</label>
-                  <select 
-                    value={fClienteId} 
-                    onChange={e => setFClienteId(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '10px',
-                      border: '1.5px solid var(--border)',
-                      background: 'var(--bg-card2)',
-                      color: 'var(--text)',
-                      fontSize: '13px',
-                      fontFamily: 'Inter, sans-serif'
-                    }}
-                  >
-                    <option value="">-- Cliente Genérico (Anónimo) --</option>
-                    {clients.map(c => (
-                      <option key={c.id} value={c.id}>
-                        👤 {c.nombre} {c.dni ? `(DNI: ${c.dni})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                <div className="inp-group" style={{ position: 'relative' }}>
+                  <label>Cliente Pactado *</label>
+                  <div className="inp-wrap" style={{ position: 'relative' }}>
+                    <span className="inp-icon">👤</span>
+                    <input 
+                      type="text"
+                      placeholder="Escribe el nombre o DNI del cliente..."
+                      value={clientSearch}
+                      onFocus={() => setShowClientDropdown(true)}
+                      onChange={e => {
+                        setClientSearch(e.target.value);
+                        // Clear the selected ID if search is emptied
+                        if (!e.target.value.trim()) {
+                          setFClienteId('');
+                        }
+                        setShowClientDropdown(true);
+                      }}
+                      required
+                      style={{
+                        paddingRight: fClienteId ? '35px' : '12px'
+                      }}
+                    />
+                    {fClienteId && (
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          setFClienteId('');
+                          setClientSearch('');
+                        }}
+                        style={{
+                          position: 'absolute',
+                          right: '12px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-3)',
+                          cursor: 'pointer',
+                          fontWeight: 'bold',
+                          fontSize: '14px',
+                          zIndex: 10,
+                          padding: '4px'
+                        }}
+                        title="Limpiar cliente"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  
+                  {showClientDropdown && (
+                    <>
+                      {/* Background click catcher overlay */}
+                      <div 
+                        onClick={() => setShowClientDropdown(false)} 
+                        style={{
+                          position: 'fixed',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          zIndex: 998
+                        }}
+                      />
+                      <div 
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          background: 'var(--bg-card)',
+                          border: '1.5px solid var(--border)',
+                          borderRadius: '10px',
+                          boxShadow: '0 8px 20px rgba(0,0,0,0.15)',
+                          maxHeight: '180px',
+                          overflowY: 'auto',
+                          zIndex: 999,
+                          marginTop: '4px'
+                        }}
+                      >
+                        {filteredClients.length === 0 ? (
+                          <div style={{ padding: '10px 12px', fontSize: '12.5px', color: 'var(--text-3)', textAlign: 'center' }}>
+                            No se encontraron clientes
+                          </div>
+                        ) : (
+                          filteredClients.map(c => (
+                            <div 
+                              key={c.id}
+                              onClick={() => {
+                                setFClienteId(String(c.id));
+                                setClientSearch(c.nombre);
+                                setShowClientDropdown(false);
+                              }}
+                              style={{
+                                padding: '10px 12px',
+                                fontSize: '13px',
+                                color: 'var(--text)',
+                                cursor: 'pointer',
+                                borderBottom: '1px solid var(--border)',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                background: fClienteId === String(c.id) ? 'rgba(37,211,102,0.1)' : 'transparent'
+                              }}
+                              className="client-option"
+                            >
+                              <span>👤 {c.nombre}</span>
+                              {c.dni && <span style={{ color: 'var(--text-3)', fontSize: '11px' }}>DNI: {c.dni}</span>}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Producto/Texto Pedido */}
