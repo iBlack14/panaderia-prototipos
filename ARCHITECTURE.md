@@ -112,3 +112,56 @@ graph LR
 Las interfaces de TypeScript en `src/context/types.ts` definen contratos de datos específicos y delgados para cada entidad en lugar de interfaces genéricas sobrecargadas. Cada componente o función importa únicamente el tipo que necesita utilizar.
 * `Product` y `ProductVersion` están segregados para modelar productos estándar y variantes.
 * `CashSession` e `HistoryRecord` separan la caja activa de la auditoría histórica.
+
+---
+
+## 📝 Anexo B: Documentación Técnica de Conexión de Ventas a Supabase
+
+En la arquitectura del prototipo, la transacción de ventas conecta el frontend (React) con el backend serverless (Base de datos PostgreSQL en Supabase) a través de TypeScript utilizando una estructura de persistencia transaccional y relacional.
+
+### Flujo Técnico del Proceso de Ventas
+
+El guardado de una transacción de ventas se realiza dentro de la función `checkoutCart` del controlador del carrito (`src/hooks/useCartOperations.ts`), operando bajo el siguiente flujo:
+
+1. **Recopilación y Cálculos del Frontend**:
+   * Al confirmar la venta en el POS, se captura el estado del carrito (`cart`) y el método de pago seleccionado (`paymentMethodId`).
+   * Se calculan los montos transaccionales:
+     * **Subtotal**: Suma del precio por cantidad de cada producto.
+     * **IGV (18%)**: Impuesto a las ventas sobre el subtotal.
+     * **Total**: Suma de Subtotal + IGV.
+
+2. **Inserción de Cabecera (`ventas`)**:
+   * Se envía una petición HTTP `POST` asíncrona mediante el cliente de Supabase para insertar un registro en la tabla `ventas` representando la cabecera del comprobante:
+     ```typescript
+     const { data: vData } = await supabase.from('ventas').insert({
+       id_cliente: clienteId || null,
+       id_usuario: user?.id,
+       id_cierre_caja: activeSession.id,
+       id_metodo_pago: paymentMethodId,
+       sub_total: sub,
+       igv,
+       tot_pago: tot
+     }).select().single();
+     ```
+   * Supabase procesa la sentencia en la base de datos PostgreSQL, genera una llave primaria secuencial (`id_venta`) y retorna el objeto insertado (`vData`).
+
+3. **Inserción de Detalles (`detalle_venta`)**:
+   * Tras recuperar la cabecera (`id_venta`), se mapea el arreglo del carrito en memoria para preparar múltiples filas que representan los productos vendidos:
+     ```typescript
+     const detailRows = cart.map(item => ({
+       id_venta: vData.id_venta,
+       id_producto: item.id,
+       id_version: item.versionId || null,
+       num_cantidad: item.qty,
+       precio_unitario: item.price
+     }));
+     ```
+   * Se ejecuta una inserción en lote (bulk insert) a la tabla relacional `detalle_venta` vinculada por llave foránea a la cabecera:
+     ```typescript
+     await supabase.from('detalle_venta').insert(detailRows);
+     ```
+
+4. **Sincronización del Estado Local**:
+   * Tras la persistencia exitosa en Supabase, el hook actualiza el estado global de React llamando a `setSales` y limpiando el carrito localmente (`setCart([])`).
+   * Se registra el movimiento en el Kardex local/historial (`snack_bread_logs`) para la auditoría de stock.
+
