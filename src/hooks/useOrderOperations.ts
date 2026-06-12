@@ -76,7 +76,7 @@ export function useOrderOperations({
             updated_at: new Date().toISOString()
           }).eq('id_pedido', pedidoObj.id).select('*, clientes(nombre)').single();
           if (error) throw error;
-          
+
           savedObj = {
             id: data.id_pedido,
             clienteId: data.id_cliente,
@@ -90,7 +90,7 @@ export function useOrderOperations({
             createdAt: data.created_at,
             updatedAt: data.updated_at
           };
-          
+
           setPedidos(prev => prev.map(p => p.id === savedObj.id ? savedObj : p));
           toast('📅 Pedido actualizado en la nube');
         } else {
@@ -104,7 +104,7 @@ export function useOrderOperations({
             id_usuario: user?.id
           }).select('*, clientes(nombre)').single();
           if (error) throw error;
-          
+
           savedObj = {
             id: data.id_pedido,
             clienteId: data.id_cliente,
@@ -118,7 +118,7 @@ export function useOrderOperations({
             createdAt: data.created_at,
             updatedAt: data.updated_at
           };
-          
+
           setPedidos(prev => [...prev.filter(p => p.id !== pedidoObj.id), savedObj]);
           toast('📅 Pedido registrado en la nube');
         }
@@ -213,7 +213,7 @@ export function useOrderOperations({
 
       itemsToAdd.forEach(item => {
         if (item.version) {
-          newVersions = newVersions.map(v => 
+          newVersions = newVersions.map(v =>
             v.name === item.version ? { ...v, stock: v.stock + item.qty } : v
           );
         } else {
@@ -245,7 +245,7 @@ export function useOrderOperations({
       const prod = products.find(p => p.id === item.productId);
       return {
         id: Date.now() + Math.random(),
-        d: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
+        d: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         prodName: (prod?.name || 'Producto') + (item.version ? ` (${item.version})` : ''),
         type: 'compra',
         qty: item.qty,
@@ -336,14 +336,14 @@ export function useOrderOperations({
     const isTotalReturn = (pastReturnedQty + thisReturnQty) >= saleTotalQty;
 
     setSales(prev => prev.map(s => s.id === saleId ? { ...s, estado: isTotalReturn ? 0 : s.estado } : s));
-    
+
     const localSales = localStorage.getItem('snack_sales');
     if (localSales) {
       try {
         const parsed = JSON.parse(localSales);
         const updated = (parsed as Sale[]).map(s => s.id === saleId ? { ...s, estado: isTotalReturn ? 0 : s.estado } : s);
         localStorage.setItem('snack_sales', JSON.stringify(updated));
-      } catch(e) {}
+      } catch (e) { }
     }
 
     if (sale.clienteId) {
@@ -361,14 +361,14 @@ export function useOrderOperations({
         const newHistorial = [...client.historialPagos, newPayment];
 
         setClients(prev => prev.map(c => String(c.id) === String(sale.clienteId) ? { ...c, saldoCred: newSaldo, historialPagos: newHistorial } : c));
-        
+
         const localClients = localStorage.getItem('snack_clients');
         if (localClients) {
           try {
             const parsed = JSON.parse(localClients);
             const updated = (parsed as Client[]).map(c => String(c.id) === String(sale.clienteId) ? { ...c, saldoCred: newSaldo, historialPagos: newHistorial } : c);
             localStorage.setItem('snack_clients', JSON.stringify(updated));
-          } catch(e) {}
+          } catch (e) { }
         }
 
         if (isSupabaseConfigured && supabase) {
@@ -417,7 +417,7 @@ export function useOrderOperations({
       try {
         const parsed = JSON.parse(localBreadLogs);
         localStorage.setItem('snack_bread_logs', JSON.stringify([...newKardexEntries, ...parsed]));
-      } catch(e) {}
+      } catch (e) { }
     }
 
     if (isSupabaseConfigured && supabase) {
