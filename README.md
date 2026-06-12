@@ -1,36 +1,73 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Panadería Prototipos - Sistema de Gestión y POS
 
-## Getting Started
+Este proyecto es un prototipo interactivo de **Sistema de Gestión y Punto de Venta (POS)** diseñado especialmente para panaderías y pastelerías locales. Permite controlar el flujo completo de ventas, reservas de pedidos, arqueos de caja, inventario y relaciones con proveedores/clientes de forma automatizada y dinámica.
 
-First, run the development server:
+---
 
+## 🛠️ Stack Tecnológico
+El proyecto está desarrollado utilizando una arquitectura full-stack moderna y ágil:
+
+* **Frontend**: [Next.js (App Router)](https://nextjs.org/) con [React 19](https://react.dev/) y [Tailwind CSS v4](https://tailwindcss.com/) para una UI/UX moderna y responsiva.
+* **Backend & Autenticación**: [Supabase](https://supabase.com/) (PostgreSQL en la nube) para el almacenamiento de datos, control de usuarios y políticas de seguridad.
+* **Lenguaje**: [TypeScript](https://www.typescriptlang.org/) para asegurar la robustez, tipado estricto de datos y orden en el código.
+* **Servicios de Terceros**:
+  * [@whiskeysockets/baileys](https://github.com/WhiskeySockets/Baileys) para el envío automatizado de notificaciones de pedidos por WhatsApp.
+  * Resend / Nodemailer para notificaciones automáticas por correo electrónico.
+  * Consulta integrada de DNI y control de líneas de crédito de clientes.
+
+---
+
+## 🚀 Cómo Empezar
+
+### Prerrequisitos
+* Tener instalado **Node.js** (versión >= 20.9.0).
+* Disponer de un archivo `.env` configurado con las credenciales de Supabase.
+
+### Instalación de dependencias
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Ejecutar en modo desarrollo
+```bash
+npm run dev
+```
+Abre [http://localhost:3000](http://localhost:3000) en tu navegador para ver la aplicación web en funcionamiento.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🧪 Comandos y Herramientas Añadidas (Rúbrica Final 3)
 
-## Learn More
+### 1. Pruebas Unitarias (TDD)
+Se ha integrado **Vitest** para la ejecución de pruebas unitarias sobre las funciones lógicas de la aplicación (como transacciones, inventario y estados de pedidos):
+* **Ejecutar pruebas en una única ejecución**:
+  ```bash
+  npm run test
+  ```
+* **Ejecutar pruebas en modo interactivo/vigía (watch)**:
+  ```bash
+  npm run test:watch
+  ```
 
-To learn more about Next.js, take a look at the following resources:
+### 2. Generación de Documentación Técnica
+Se configuró **TypeDoc** para generar de manera automatizada documentación HTML técnica y estructurada a partir de los comentarios de TypeScript:
+* **Generar documentación**:
+  ```bash
+  npm run docs
+  ```
+  Esto generará una carpeta llamada `/docs` en la raíz. Abre `docs/index.html` en cualquier navegador web para revisar el glosario técnico.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 3. Diagramas de Arquitectura
+Para revisar cómo se mapea este proyecto a los patrones exigidos por la universidad (**MVC**, **DAO** y **SOLID**), consulta el archivo especializado:
+👉 **[ARCHITECTURE.md](file:///c:/Users/huanc/Downloads/panaderia-prototipos/ARCHITECTURE.md)**
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## 📁 Estructura del Código
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+* `/src/app`: Rutas del frontend (Views) y endpoints API (Controllers).
+  * `/dashboard`: Paneles de administración (POS, Caja, Productos, Clientes, Reportes).
+  * `/api`: Rutas de servidor encargadas del envío de OTP, DNI y WhatsApp.
+* `/src/context`: Capa de estado global (`AppContext.tsx`) y definición estricta de interfaces (`types.ts`).
+* `/src/hooks`: Funciones de lógica de negocio y llamadas a la base de datos (equivalente a la **Capa DAO**).
+* `/src/lib`: Clientes de conexión e integraciones externas (Supabase, Baileys).
