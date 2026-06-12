@@ -1,0 +1,19 @@
+{
+  "entryPoints": [
+    "src/context/types.ts",
+    "src/hooks/useOrderOperations.ts",
+    "src/hooks/useAuthOperations.ts",
+    "src/hooks/useCartOperations.ts",
+    "src/hooks/useCashOperations.ts",
+    "src/hooks/useClientOps.ts",
+    "src/hooks/useInventoryOps.ts"
+  ],
+  "out": "docs",
+  "name": "Panadería Prototipos - Documentación Técnica",
+  "exclude": [
+    "node_modules",
+    "**/*.test.ts"
+  ],
+  "includeVersion": true,
+  "theme": "default"
+}

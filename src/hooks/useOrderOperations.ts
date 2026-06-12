@@ -24,6 +24,13 @@ interface OrderOpsParams {
   saveOffline: (key: string, data: any) => void;
 }
 
+/**
+ * Hook personalizado que encapsula las operaciones relacionadas con la gestión de pedidos,
+ * reservas, compras a proveedores y procesamiento de devoluciones de productos.
+ * 
+ * @param params Parámetros de estado y funciones utilitarias necesarias para operar.
+ * @returns Funciones operativas para guardar pedidos, actualizar estados, registrar compras y devoluciones.
+ */
 export function useOrderOperations({
   pedidos,
   setPedidos,
@@ -47,6 +54,12 @@ export function useOrderOperations({
   saveOffline
 }: OrderOpsParams) {
 
+  /**
+   * Guarda o actualiza una reserva/pedido en la base de datos (Supabase) o en LocalStorage
+   * si se opera de modo local/desconectado.
+   * 
+   * @param pedidoObj El objeto con los detalles del pedido (id, clienteId, productoTexto, fecEntrega, adelanto, notas).
+   */
   const savePedido = async (pedidoObj: any) => {
     let savedObj: Pedido;
 
@@ -148,6 +161,13 @@ export function useOrderOperations({
     }
   };
 
+  /**
+   * Actualiza el estado de una reserva/pedido (Pendiente, Listo, Entregado, Cancelado) y 
+   * sincroniza el cambio con la base de datos o almacenamiento local.
+   * 
+   * @param pedidoId ID del pedido a actualizar.
+   * @param nuevoEstado El nuevo estado que se le asignará al pedido.
+   */
   const updatePedidoStatus = async (pedidoId: number | string, nuevoEstado: 'Pendiente' | 'Listo' | 'Entregado' | 'Cancelado') => {
     setPedidos(prev => {
       const next = prev.map(p => p.id === pedidoId ? { ...p, estado: nuevoEstado, updatedAt: new Date().toISOString() } : p);
@@ -172,6 +192,12 @@ export function useOrderOperations({
     }
   };
 
+  /**
+   * Registra una compra de insumos/productos realizada a un proveedor, calculando subtotales,
+   * IGV (18%) e incrementando el inventario/stock de los productos correspondientes.
+   * 
+   * @param pObj Objeto con el ID del proveedor y la lista de ítems comprados (productId, qty, cost, version).
+   */
   const registerPurchase = async (pObj: { providerId: number | string; items: PurchaseItem[] }) => {
     const sub = pObj.items.reduce((a, b) => a + (b.qty * b.cost), 0);
     const igv = sub * 0.18;
@@ -265,6 +291,14 @@ export function useOrderOperations({
     }
   };
 
+  /**
+   * Procesa la devolución de productos de una venta realizada, devolviendo el stock al inventario,
+   * actualizando el saldo de crédito del cliente si aplica y registrando la transacción.
+   * 
+   * @param saleId ID de la venta original asociada a la devolución.
+   * @param items Lista de productos y cantidades a devolver.
+   * @param motivo Explicación/razón por la cual se devuelve la mercancía.
+   */
   const processReturn = async (saleId: number, items: ReturnedItem[], motivo: string) => {
     const sale = sales.find(s => s.id === saleId);
     if (!sale) {
