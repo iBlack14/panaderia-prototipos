@@ -41,7 +41,7 @@ export default function ClientesPage() {
   // Payment form state
   const [payMonto, setPayMonto] = useState('');
   const [payMetodo, setPayMetodo] = useState('Efectivo');
-  const [payConcepto, setPayConcepto] = useState('Abono de deuda');
+  const [payConcepto, setPayConcepto] = useState('Recarga de saldo');
 
   const isAdmin = user?.rs?.includes('Administrador');
 
@@ -185,9 +185,9 @@ export default function ClientesPage() {
 
   const openPayModal = (c: Client) => {
     setSelectedClient(c);
-    setPayMonto(c.saldoCred.toFixed(2));
+    setPayMonto('');
     setPayMetodo('Efectivo');
-    setPayConcepto('Abono de deuda');
+    setPayConcepto('Recarga de saldo');
     setShowPayModal(true);
   };
 
@@ -353,7 +353,7 @@ export default function ClientesPage() {
                 {clientesConDeuda.map((c, idx) => {
                   const pct = c.limiteCred > 0 ? Math.min(100, (c.saldoCred / c.limiteCred) * 100) : 100;
                   // Último pago registrado
-                  const ultimoPago = c.historialPagos.filter(p => p.tipo === 'abono').slice(-1)[0];
+                  const ultimoPago = c.historialPagos.filter(p => p.tipo === 'abono' && p.monto > 0).slice(-1)[0];
                   return (
                     <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', background: 'var(--bg-card2)', borderRadius: '12px', border: '1px solid rgba(22,163,74,0.15)' }}>
                       {/* Ranking */}
@@ -617,16 +617,21 @@ export default function ClientesPage() {
             <span className="mc-icon">📋</span>
             <div className="mc-title">Historial de Tarjeta Prepago</div>
             <p className="mc-sub"><strong>{historyClient.nombre}</strong> — Tope de Carga: S/. {historyClient.limiteCred || 100} · Saldo Disponible: <span style={{ color: 'var(--green)', fontWeight: 'bold' }}>S/. {historyClient.saldoCred.toFixed(2)}</span></p>
-            {historyClient.historialPagos.length === 0 ? (
+            {historyClient.historialPagos.filter(p => p.monto > 0).length === 0 ? (
               <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-3)' }}>
                 <p>Sin movimientos registrados aún.</p>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-                {[...historyClient.historialPagos].reverse().map(p => (
+                {historyClient.historialPagos
+                  .filter(p => p.monto > 0)
+                  .reverse()
+                  .map(p => (
                   <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--bg-card2)', borderRadius: '10px', border: `1px solid ${p.tipo === 'cargo' ? 'rgba(192,72,58,0.2)' : 'rgba(22,163,74,0.2)'}` }}>
                     <div>
-                      <div style={{ fontWeight: '700', fontSize: '13px', color: 'var(--text)' }}>{p.concepto}</div>
+                      <div style={{ fontWeight: '700', fontSize: '13px', color: 'var(--text)' }}>
+                        {p.concepto.replace(/Abono de deuda/g, 'Recarga de saldo')}
+                      </div>
                       <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px', display: 'flex', gap: '8px' }}>
                         <span>{p.fecha}</span>
                         {p.metodoPago && p.tipo === 'abono' && (

@@ -118,14 +118,16 @@ CREATE TABLE public.productos (
 
 -- 2.8 Versiones / Variantes de Producto
 CREATE TABLE public.producto_versiones (
-    id_version      SERIAL PRIMARY KEY,
-    id_producto     INT REFERENCES public.productos(id_producto) ON DELETE CASCADE,
-    nombre_version  VARCHAR(100) NOT NULL,
-    num_stock       DECIMAL(10,3) DEFAULT 0.000
-                        CONSTRAINT chk_version_stock CHECK (num_stock >= 0),
-    precio_unitario DECIMAL(10,2) NOT NULL DEFAULT 0.00
-                        CONSTRAINT chk_version_price CHECK (precio_unitario >= 0),
-    estado          INT DEFAULT 1,
+    id_version        SERIAL PRIMARY KEY,
+    id_producto       INT REFERENCES public.productos(id_producto) ON DELETE CASCADE,
+    nombre_version    VARCHAR(100) NOT NULL,
+    num_stock         DECIMAL(10,3) DEFAULT 0.000
+                          CONSTRAINT chk_version_stock CHECK (num_stock >= 0),
+    precio_unitario   DECIMAL(10,2) NOT NULL DEFAULT 0.00
+                          CONSTRAINT chk_version_price CHECK (precio_unitario >= 0),
+    parent_version_id INT REFERENCES public.producto_versiones(id_version) ON DELETE SET NULL,
+    fraction_ratio    DECIMAL(10,3) DEFAULT 1.000,
+    estado            INT DEFAULT 1,
     UNIQUE(id_producto, nombre_version)
 );
 

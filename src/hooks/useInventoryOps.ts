@@ -91,7 +91,7 @@ export function useInventoryOps({
         };
 
         if (pObj.id) {
-          await supabase.from('productos').update({
+          const { error: updateError } = await supabase.from('productos').update({
             nombre: pObj.name,
             id_categoria: idCat,
             em: pObj.em || '📦',
@@ -99,10 +99,12 @@ export function useInventoryOps({
             num_stock: pObj.stock || 0,
             unidad_medida: pObj.unidad_medida || 'unidades'
           }).eq('id_producto', pObj.id);
+          if (updateError) throw updateError;
+
           await syncProductVersions(pObj.id, pObj.versions || []);
           toast('📦 Producto actualizado en la nube');
         } else {
-          const { data: newProd } = await supabase.from('productos').insert({
+          const { data: newProd, error: insertError } = await supabase.from('productos').insert({
             nombre: pObj.name,
             id_categoria: idCat,
             em: pObj.em || '📦',
@@ -111,6 +113,7 @@ export function useInventoryOps({
             unidad_medida: pObj.unidad_medida || 'unidades',
             estado: 1
           }).select().single();
+          if (insertError) throw insertError;
 
           if (newProd) {
             await syncProductVersions(newProd.id_producto, pObj.versions || []);
@@ -159,7 +162,8 @@ export function useInventoryOps({
   const deleteProduct = async (id: number) => {
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('productos').update({ estado: 0 }).eq('id_producto', id);
+        const { error } = await supabase.from('productos').update({ estado: 0 }).eq('id_producto', id);
+        if (error) throw error;
         setProducts(products.filter(p => p.id !== id));
         toast('🗑 Producto eliminado de la nube');
       } catch (err: any) {

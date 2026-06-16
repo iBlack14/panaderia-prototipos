@@ -23,6 +23,13 @@ export default function PedidosPage() {
   const [clientSearch, setClientSearch] = useState('');
   const [showClientDropdown, setShowClientDropdown] = useState(false);
 
+  const minDateStr = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tzOffset = today.getTimezoneOffset() * 60000;
+    return new Date(today.getTime() - tzOffset).toISOString().slice(0, 16);
+  }, []);
+
   const filteredClients = useMemo(() => {
     if (!clientSearch.trim()) return clients;
     const query = clientSearch.toLowerCase();
@@ -106,6 +113,13 @@ export default function PedidosPage() {
     }
     if (!fFecEntrega) {
       alert('Por favor selecciona una fecha de entrega.');
+      return;
+    }
+    const selectedDate = new Date(fFecEntrega);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (selectedDate < today) {
+      alert('La fecha de entrega no puede ser anterior al día de hoy.');
       return;
     }
 
@@ -343,14 +357,14 @@ export default function PedidosPage() {
         <div className="modal-overlay open">
           <div className="modal-card" style={{ width: '480px' }}>
             <span className="mc-icon">📅</span>
-            <div className="mc-title">{editingPedido ? 'Editar Reserva' : 'Registrar Nueva Reserva'}</div>
+        <div className="mc-title">{editingPedido ? 'Editar Reserva' : 'Registrar Nueva Reserva'}</div>
             <p className="mc-sub">Controla los detalles del pedido y la fecha pactada de entrega</p>
             
             <form onSubmit={handleFormSubmit}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', textAlign: 'left' }}>
-                
-                {/* Cliente Selector */}
-                <div className="inp-group" style={{ position: 'relative' }}>
+                 
+                 {/* Cliente Selector */}
+                <div className="inp-group">
                   <label>Cliente Pactado *</label>
                   <div className="inp-wrap" style={{ position: 'relative' }}>
                     <span className="inp-icon">👤</span>
@@ -360,9 +374,11 @@ export default function PedidosPage() {
                       value={clientSearch}
                       onFocus={() => setShowClientDropdown(true)}
                       onChange={e => {
-                        setClientSearch(e.target.value);
-                        // Clear the selected ID if search is emptied
-                        if (!e.target.value.trim()) {
+                        const val = e.target.value;
+                        setClientSearch(val);
+                        // Clear the selected ID if typed search changes from the current client name
+                        const currentClient = clients.find(c => String(c.id) === String(fClienteId));
+                        if (!currentClient || currentClient.nombre !== val) {
                           setFClienteId('');
                         }
                         setShowClientDropdown(true);
@@ -398,74 +414,74 @@ export default function PedidosPage() {
                         ✕
                       </button>
                     )}
-                  </div>
-                  
-                  {showClientDropdown && (
-                    <>
-                      {/* Background click catcher overlay */}
-                      <div 
-                        onClick={() => setShowClientDropdown(false)} 
-                        style={{
-                          position: 'fixed',
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          zIndex: 998
-                        }}
-                      />
-                      <div 
-                        style={{
-                          position: 'absolute',
-                          top: '100%',
-                          left: 0,
-                          right: 0,
-                          background: 'var(--bg-card)',
-                          border: '1.5px solid var(--border)',
-                          borderRadius: '10px',
-                          boxShadow: '0 8px 20px rgba(0,0,0,0.15)',
-                          maxHeight: '180px',
-                          overflowY: 'auto',
-                          zIndex: 999,
-                          marginTop: '4px'
-                        }}
-                      >
-                        {filteredClients.length === 0 ? (
-                          <div style={{ padding: '10px 12px', fontSize: '12.5px', color: 'var(--text-3)', textAlign: 'center' }}>
-                            No se encontraron clientes
-                          </div>
-                        ) : (
-                          filteredClients.map(c => (
-                            <div 
-                              key={c.id}
-                              onClick={() => {
-                                setFClienteId(String(c.id));
-                                setClientSearch(c.nombre);
-                                setShowClientDropdown(false);
-                              }}
-                              style={{
-                                padding: '10px 12px',
-                                fontSize: '13px',
-                                color: 'var(--text)',
-                                cursor: 'pointer',
-                                borderBottom: '1px solid var(--border)',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                background: fClienteId === String(c.id) ? 'rgba(37,211,102,0.1)' : 'transparent'
-                              }}
-                              className="client-option"
-                            >
-                              <span>👤 {c.nombre}</span>
-                              {c.dni && <span style={{ color: 'var(--text-3)', fontSize: '11px' }}>DNI: {c.dni}</span>}
+
+                    {showClientDropdown && (
+                      <>
+                        {/* Background click catcher overlay */}
+                        <div 
+                          onClick={() => setShowClientDropdown(false)} 
+                          style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            zIndex: 998
+                          }}
+                        />
+                        <div 
+                          style={{
+                            position: 'absolute',
+                            top: '100%',
+                            left: 0,
+                            right: 0,
+                            background: 'var(--bg-card)',
+                            border: '1px solid var(--border2)',
+                            borderRadius: '12px',
+                            boxShadow: '0 10px 25px -5px rgba(0,0,0,0.12), 0 8px 10px -6px rgba(0,0,0,0.12)',
+                            maxHeight: '180px',
+                            overflowY: 'auto',
+                            zIndex: 999,
+                            marginTop: '6px'
+                          }}
+                        >
+                          {filteredClients.length === 0 ? (
+                            <div style={{ padding: '10px 12px', fontSize: '12.5px', color: 'var(--text-3)', textAlign: 'center' }}>
+                              No se encontraron clientes
                             </div>
-                          ))
-                        )}
-                      </div>
-                    </>
-                  )}
+                          ) : (
+                            filteredClients.map(c => (
+                              <div 
+                                key={c.id}
+                                onClick={() => {
+                                  setFClienteId(String(c.id));
+                                  setClientSearch(c.nombre);
+                                  setShowClientDropdown(false);
+                                }}
+                                style={{
+                                  padding: '10px 12px',
+                                  fontSize: '13px',
+                                  color: 'var(--text)',
+                                  cursor: 'pointer',
+                                  borderBottom: '1px solid var(--border)',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  background: fClienteId === String(c.id) ? 'var(--accent-bg)' : 'transparent'
+                                }}
+                                className="client-option"
+                              >
+                                <span>👤 {c.nombre}</span>
+                                {c.dni && <span style={{ color: 'var(--text-3)', fontSize: '11px' }}>DNI: {c.dni}</span>}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                {/* Producto/Texto Pedido */}
+                 {/* Producto/Texto Pedido */}
                 <div className="inp-group">
                   <label>Productos / Descripción del Pedido *</label>
                   <textarea 
@@ -496,6 +512,7 @@ export default function PedidosPage() {
                     value={fFecEntrega}
                     onChange={e => setFFecEntrega(e.target.value)}
                     required
+                    min={minDateStr}
                     style={{
                       width: '100%',
                       padding: '10px 12px',

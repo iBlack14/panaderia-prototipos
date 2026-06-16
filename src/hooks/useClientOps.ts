@@ -194,6 +194,10 @@ export function useClientOps({
     const targetClient = clients.find(c => String(c.id) === String(clientId));
     if (!targetClient) return;
 
+    if (monto <= 0) {
+      toast("❌ El monto de recarga debe ser mayor a S/. 0.00");
+      return;
+    }
     if (monto > 100) {
       toast("❌ El monto máximo de recarga es S/. 100.00");
       return;
