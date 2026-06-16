@@ -257,7 +257,7 @@ export default function InventarioPage() {
               </thead>
               <tbody>
                 {filteredProducts.map((p) => {
-                  const catColor: Record<string, string> = { 'Panes': 'tg-blue', 'Tortas': 'tg-blue', 'Dulces': 'tg-warn', 'Bebidas': 'tg-ok' };
+                  const catColor: Record<string, string> = { 'Panes': 'tg-blue', 'Tortas': 'tg-blue', 'Dulces': 'tg-warn', 'Bebidas': 'tg-ok', 'Insumos': 'tg-warn' };
                   const totalStock = p.versions.length > 0 
                     ? p.versions.reduce((a, b) => a + b.stock, 0)
                     : p.stock;

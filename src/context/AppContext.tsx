@@ -261,6 +261,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           { id: 2, name: 'Tortas' },
           { id: 3, name: 'Dulces' },
           { id: 4, name: 'Bebidas' },
+          { id: 5, name: 'Insumos' },
         ]);
         setUsersList(localUsers ? JSON.parse(localUsers) : DEFAULT_USERS);
         setProviders(localProviders ? JSON.parse(localProviders) : DEFAULT_PROVIDERS);
@@ -358,6 +359,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clients, setClients,
     providers,
     breadLogs, setBreadLogs,
+    cashSession, setCashSession,
     user,
     toast,
     isSupabaseConfigured,

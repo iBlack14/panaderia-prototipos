@@ -33,6 +33,18 @@ export default function ProveedoresPage() {
     setShowModal(true);
   };
 
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('new') === 'true') {
+        handleOpenNew();
+        // Clear URL search params so the modal does not reopen on manual reload
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      }
+    }
+  }, []);
+
   const handleOpenEdit = (prov: Provider) => {
     setEditingId(prov.id);
     setRuc(prov.ruc);
@@ -50,6 +62,19 @@ export default function ProveedoresPage() {
     const rucRegex = /^\d{11}$/;
     if (!rucRegex.test(ruc)) {
       setValidationError('⚠️ El RUC debe contener exactamente 11 dígitos numéricos.');
+      return;
+    }
+
+    // Name Validation (only letters and valid company characters)
+    const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s'\-\.,&]+$/;
+    if (!nameRegex.test(name.trim())) {
+      setValidationError('⚠️ El nombre de la empresa / razón social solo debe contener letras.');
+      return;
+    }
+
+    // Phone Validation (only digits)
+    if (phone && !/^\d+$/.test(phone)) {
+      setValidationError('⚠️ El número de teléfono solo debe contener números.');
       return;
     }
 
@@ -169,7 +194,7 @@ export default function ProveedoresPage() {
                     type="text" 
                     placeholder="Ej: Harinas del Norte S.A.C." 
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => setName(e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s'\-\.,&]/g, ''))}
                     required 
                   />
                 </div>
@@ -182,7 +207,7 @@ export default function ProveedoresPage() {
                     type="text" 
                     placeholder="Ej: 987654321" 
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 15))}
                   />
                 </div>
               </div>

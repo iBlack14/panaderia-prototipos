@@ -467,7 +467,8 @@ INSERT INTO public.categorias (id_categoria, nombre, estado) VALUES
 (1, 'Panes',   1),
 (2, 'Tortas',  1),
 (3, 'Dulces',  1),
-(4, 'Bebidas', 1)
+(4, 'Bebidas', 1),
+(5, 'Insumos', 1)
 ON CONFLICT (id_categoria) DO UPDATE SET nombre = EXCLUDED.nombre;
 
 -- Métodos de Pago
@@ -488,7 +489,16 @@ INSERT INTO public.productos (id_producto, id_categoria, nombre, em, num_stock, 
 (5, 3, 'Alfajor triple',        '🍪', 40,  2.80, 1),
 (6, 2, 'Queque de zanahoria',   '🍰',  6, 28.00, 1),
 (7, 1, 'Pan integral',          '🌾', 20,  5.50, 1),
-(8, 4, 'Café americano',        '☕', 99,  6.00, 1)
+(8, 4, 'Café americano',        '☕', 99,  6.00, 1),
+(9, 5, 'Harina saco 50kg',      '🌾', 10, 120.00, 1),
+(10, 5, 'Azúcar saco 50kg',     '🍬', 15, 110.00, 1),
+(11, 5, 'Levadura caja 5kg',    '📦', 5,   75.00, 1),
+(12, 5, 'Mantequilla kg',       '🧈', 20,  18.00, 1),
+(13, 5, 'Chocolate cobertura kg','🍫', 8,  35.00, 1),
+(14, 5, 'Pollo kg',             '🍗', 15,   9.50, 1),
+(15, 5, 'Huevos jaba x30',      '🥚', 30,  16.00, 1),
+(16, 5, 'Leche caja 12L',       '🥛', 12,  52.00, 1),
+(17, 5, 'Café en grano kg',     '☕', 10,  45.00, 1)
 ON CONFLICT (id_producto) DO UPDATE SET nombre = EXCLUDED.nombre;
 
 -- Backfill: vincular usuarios auth ya existentes con profiles

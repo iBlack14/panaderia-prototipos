@@ -1,13 +1,30 @@
 "use client";
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 
 export default function ComprasPage() {
+  const router = useRouter();
   const { purchases, providers, products, registerPurchase } = useApp();
   
   const [showModal, setShowModal] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState('');
+
+  // Keyboard shortcut listener to redirect to new provider view when modal is open
+  React.useEffect(() => {
+    if (!showModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        router.push('/dashboard/proveedores?new=true');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showModal, router]);
   
   interface BuyItem {
     id: number;
@@ -161,26 +178,37 @@ export default function ComprasPage() {
             <form onSubmit={handleFormSubmit}>
               <div className="inp-group">
                 <label>Selecciona el Proveedor</label>
-                <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value)} required>
-                  <option value="">-- Seleccionar proveedor --</option>
-                  {activeProviders.map(p => (
-                    <option key={p.id} value={p.id}>{p.name} (RUC: {p.ruc})</option>
-                  ))}
-                </select>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value)} required style={{ flex: 1 }}>
+                    <option value="">-- Seleccionar proveedor --</option>
+                    {activeProviders.map(p => (
+                      <option key={p.id} value={p.id}>{p.name} (RUC: {p.ruc})</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn-new"
+                    onClick={() => router.push('/dashboard/proveedores?new=true')}
+                    style={{ padding: '10px 14px', fontSize: '12.5px', whiteSpace: 'nowrap' }}
+                    title="Agregar nuevo proveedor (Alt + P)"
+                  >
+                    ➕ Nuevo (Alt + P)
+                  </button>
+                </div>
               </div>
 
               {/* AÑADIR ITEM DE COMPRA FORM */}
               <div style={{ border: '1.5px dashed var(--border)', padding: '14px', borderRadius: '12px', background: 'var(--bg-card2)', marginBottom: '14px' }}>
                 <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.5px' }}>
-                  Añadir Producto al Pedido
+                  Añadir Insumo al Pedido
                 </span>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
                   <div className="inp-group" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '9px' }}>Producto</label>
+                    <label style={{ fontSize: '9px' }}>Insumo</label>
                     <select value={prodId} onChange={(e) => setProdId(e.target.value)}>
-                      <option value="">-- Elegir producto --</option>
-                      {products.map(p => (
+                      <option value="">-- Elegir insumo --</option>
+                      {products.filter(p => p.cat === 'Insumos').map(p => (
                         <option key={p.id} value={String(p.id)}>{p.em} {p.name}</option>
                       ))}
                     </select>

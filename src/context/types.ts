@@ -261,6 +261,7 @@ export interface AppContextType {
   deleteRole: (id: string) => Promise<void>;
   savePedido: (pedidoObj: any) => Promise<void>;
   updatePedidoStatus: (pedidoId: number | string, nuevoEstado: 'Pendiente' | 'Listo' | 'Entregado' | 'Cancelado') => Promise<void>;
+  deliverPedido: (pedidoId: number | string, paymentMethodId: number, paymentMethodName: string, totalVal: number, adelantoVal: number, items: any[]) => Promise<void>;
   processReturn: (saleId: number, items: ReturnedItem[], motivo: string) => Promise<void>;
   fractionateProduct: (parentVersionId: number, childVersionId: number, qtyToDeduct: number, qtyToAdd: number) => Promise<void>;
 }

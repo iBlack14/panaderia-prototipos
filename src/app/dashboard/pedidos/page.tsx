@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp, Pedido } from '@/context/AppContext';
 
 export default function PedidosPage() {
-  const { pedidos, clients, savePedido, updatePedidoStatus, user } = useApp();
+  const { pedidos, clients, savePedido, updatePedidoStatus, user, products, paymentMethods, deliverPedido } = useApp();
 
   const [nowTime] = useState(() => Date.now());
   const [activeTab, setActiveTab] = useState<'Todos' | 'Pendiente' | 'Listo' | 'Entregado' | 'Cancelado'>('Todos');
@@ -29,6 +29,98 @@ export default function PedidosPage() {
     const tzOffset = today.getTimezoneOffset() * 60000;
     return new Date(today.getTime() - tzOffset).toISOString().slice(0, 16);
   }, []);
+
+  const [fTotal, setFTotal] = useState('0');
+  const [isTotalManual, setIsTotalManual] = useState(false);
+  const [reservationItems, setReservationItems] = useState<any[]>([]);
+
+  // Product picker temp states
+  const [selectedProdId, setSelectedProdId] = useState('');
+  const [selectedVersionId, setSelectedVersionId] = useState('');
+  const [selectedQty, setSelectedQty] = useState('1');
+
+  // Delivery Modal states
+  const [showDeliveryModal, setShowDeliveryModal] = useState(false);
+  const [deliveringPedido, setDeliveringPedido] = useState<Pedido | null>(null);
+  const [delPaymentMethodId, setDelPaymentMethodId] = useState<number | string>('');
+
+  const selectedProdObj = useMemo(() => {
+    return products.find(p => String(p.id) === String(selectedProdId)) || null;
+  }, [selectedProdId, products]);
+
+  const handleAddProductToReservation = () => {
+    if (!selectedProdId) {
+      alert('Por favor selecciona un producto.');
+      return;
+    }
+    const qty = parseFloat(selectedQty);
+    if (isNaN(qty) || qty <= 0) {
+      alert('Por favor ingresa una cantidad válida.');
+      return;
+    }
+
+    const prod = selectedProdObj;
+    if (!prod) return;
+
+    let price = prod.price;
+    let versionName: string | null = null;
+
+    if (selectedVersionId) {
+      const versionObj = prod.versions.find(v => String(v.id) === String(selectedVersionId));
+      if (versionObj) {
+        price = versionObj.price;
+        versionName = versionObj.name;
+      }
+    }
+
+    const newItem = {
+      productId: prod.id,
+      name: prod.name,
+      price,
+      qty,
+      versionName,
+      unidadMedida: prod.unidad_medida || 'und'
+    };
+
+    const newItems = [...reservationItems, newItem];
+    setReservationItems(newItems);
+
+    // Recalculate total if not overridden manually
+    if (!isTotalManual) {
+      const newTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+      setFTotal(newTotal.toFixed(2));
+    }
+
+    // Reset temp inputs
+    setSelectedProdId('');
+    setSelectedVersionId('');
+    setSelectedQty('1');
+  };
+
+  const handleRemoveProductFromReservation = (index: number) => {
+    const newItems = reservationItems.filter((_, idx) => idx !== index);
+    setReservationItems(newItems);
+
+    if (!isTotalManual) {
+      const newTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+      setFTotal(newTotal.toFixed(2));
+    }
+  };
+
+  const getPedidoDescription = (productoTexto: string) => {
+    try {
+      if (productoTexto.startsWith('{')) {
+        const parsed = JSON.parse(productoTexto);
+        if (parsed.items && parsed.items.length > 0) {
+          return parsed.items.map((i: any) => `• ${i.qty} ${i.unidadMedida || 'und'} x ${i.name}${i.versionName ? ` (${i.versionName})` : ''}`).join('\n');
+        }
+        return parsed.legacyText || 'Reserva';
+      }
+    } catch (e) {
+      console.error('Error parsing product text JSON', e);
+    }
+    return productoTexto;
+  };
 
   const filteredClients = useMemo(() => {
     if (!clientSearch.trim()) return clients;
@@ -82,6 +174,12 @@ export default function PedidosPage() {
     setFFecEntrega(localISODate);
     setFAdelanto('0');
     setFNotas('');
+    setFTotal('0');
+    setIsTotalManual(false);
+    setReservationItems([]);
+    setSelectedProdId('');
+    setSelectedVersionId('');
+    setSelectedQty('1');
     setShowModal(true);
   };
 
@@ -90,7 +188,28 @@ export default function PedidosPage() {
     setFClienteId(String(p.clienteId || ''));
     setClientSearch(p.clienteNombre || '');
     setShowClientDropdown(false);
-    setFProductoTexto(p.productoTexto);
+    
+    // Parse JSON or keep it legacy
+    let parsedItems: any[] = [];
+    let parsedTotal = String(p.adelanto);
+    let legacyText = p.productoTexto;
+
+    if (p.productoTexto.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(p.productoTexto);
+        parsedItems = parsed.items || [];
+        parsedTotal = String(parsed.total || p.adelanto);
+        legacyText = parsed.legacyText || '';
+      } catch (e) {
+        console.error('Error parsing booking products', e);
+      }
+    }
+    
+    setReservationItems(parsedItems);
+    setFTotal(parsedTotal);
+    setIsTotalManual(parsedItems.length === 0);
+    setFProductoTexto(legacyText);
+
     // Convert to local datetime-local compatible format
     const date = new Date(p.fecEntrega);
     const tzOffset = date.getTimezoneOffset() * 60000;
@@ -98,6 +217,9 @@ export default function PedidosPage() {
     setFFecEntrega(localISODate);
     setFAdelanto(String(p.adelanto));
     setFNotas(p.notas || '');
+    setSelectedProdId('');
+    setSelectedVersionId('');
+    setSelectedQty('1');
     setShowModal(true);
   };
 
@@ -107,8 +229,8 @@ export default function PedidosPage() {
       alert('Por favor selecciona un cliente válido de la lista sugerida.');
       return;
     }
-    if (!fProductoTexto.trim()) {
-      alert('Por favor describe los productos del pedido.');
+    if (reservationItems.length === 0 && !fProductoTexto.trim()) {
+      alert('Por favor agrega al menos un producto del inventario o describe el pedido.');
       return;
     }
     if (!fFecEntrega) {
@@ -123,12 +245,36 @@ export default function PedidosPage() {
       return;
     }
 
+    const totalVal = parseFloat(fTotal) || 0;
+    const adelantoVal = parseFloat(fAdelanto) || 0;
+
+    if (adelantoVal > totalVal) {
+      alert('El adelanto no puede ser mayor al monto total de la reserva.');
+      return;
+    }
+
+    let serializedProductoTexto = fProductoTexto;
+    if (reservationItems.length > 0) {
+      const legacyText = reservationItems.map(i => `${i.qty} x ${i.name}${i.versionName ? ` (${i.versionName})` : ''}`).join(', ');
+      serializedProductoTexto = JSON.stringify({
+        items: reservationItems,
+        total: totalVal,
+        legacyText
+      });
+    } else {
+      serializedProductoTexto = JSON.stringify({
+        items: [],
+        total: totalVal,
+        legacyText: fProductoTexto || 'Reserva Especial'
+      });
+    }
+
     const payload = {
       id: editingPedido?.id || undefined,
       clienteId: parseInt(fClienteId),
-      productoTexto: fProductoTexto,
+      productoTexto: serializedProductoTexto,
       fecEntrega: new Date(fFecEntrega).toISOString(),
-      adelanto: parseFloat(fAdelanto) || 0,
+      adelanto: adelantoVal,
       notas: fNotas,
       estado: editingPedido?.estado || 'Pendiente'
     };
@@ -224,6 +370,17 @@ export default function PedidosPage() {
           const dateStr = new Date(p.fecEntrega).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
           const isOverdue = new Date(p.fecEntrega).getTime() < nowTime && (p.estado === 'Pendiente' || p.estado === 'Listo');
           
+          let itemsList: any[] = [];
+          let totalVal = p.adelanto;
+          if (p.productoTexto.startsWith('{')) {
+            try {
+              const parsed = JSON.parse(p.productoTexto);
+              itemsList = parsed.items || [];
+              totalVal = parsed.total || p.adelanto;
+            } catch (e) {}
+          }
+          const saldoVal = Math.max(0, totalVal - p.adelanto);
+
           return (
             <div 
               key={p.id} 
@@ -254,7 +411,7 @@ export default function PedidosPage() {
                     {p.estado}
                   </span>
                 </div>
-
+ 
                 {/* Delivery Date */}
                 <div style={{ 
                   display: 'flex', 
@@ -268,7 +425,7 @@ export default function PedidosPage() {
                   <span>📅</span>
                   <span>Entrega: {dateStr} {isOverdue && '(Retrasado)'}</span>
                 </div>
-
+ 
                 {/* Products text */}
                 <div style={{ 
                   background: 'var(--bg-card2)', 
@@ -281,9 +438,9 @@ export default function PedidosPage() {
                   border: '1px solid var(--border)',
                   marginBottom: '8px'
                 }}>
-                  {p.productoTexto}
+                  {getPedidoDescription(p.productoTexto)}
                 </div>
-
+ 
                 {/* Notes */}
                 {p.notas && (
                   <div style={{ fontSize: '11.5px', color: 'var(--text-3)', fontStyle: 'italic', marginBottom: '8px' }}>
@@ -291,14 +448,31 @@ export default function PedidosPage() {
                   </div>
                 )}
               </div>
-
+ 
               {/* Card Footer Actions */}
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>Adelanto:</span>
-                  <strong style={{ fontSize: '13px', color: 'var(--green)' }}>S/. {p.adelanto.toFixed(2)}</strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>Total Pedido:</span>
+                    <strong style={{ fontSize: '13px', color: 'var(--text)' }}>S/. {totalVal.toFixed(2)}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>Adelanto:</span>
+                    <strong style={{ fontSize: '13px', color: 'var(--green)' }}>S/. {p.adelanto.toFixed(2)}</strong>
+                  </div>
+                  {saldoVal > 0 ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>Saldo Restante:</span>
+                      <strong style={{ fontSize: '13px', color: 'var(--red)' }}>S/. {saldoVal.toFixed(2)}</strong>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>Saldo Restante:</span>
+                      <strong style={{ fontSize: '12px', color: 'var(--green)' }}>✅ Pagado</strong>
+                    </div>
+                  )}
                 </div>
-
+ 
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                   {p.estado === 'Pendiente' && (
                     <button 
@@ -310,7 +484,11 @@ export default function PedidosPage() {
                   )}
                   {p.estado === 'Listo' && (
                     <button 
-                      onClick={() => updatePedidoStatus(p.id, 'Entregado')}
+                      onClick={() => {
+                        setDeliveringPedido(p);
+                        setDelPaymentMethodId('');
+                        setShowDeliveryModal(true);
+                      }}
                       style={{ flex: 1, padding: '6px 8px', fontSize: '11px', fontWeight: '800', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, var(--green), #15803d)', color: '#fff', cursor: 'pointer' }}
                     >
                       ✅ Entregar Pedido
@@ -327,7 +505,7 @@ export default function PedidosPage() {
                       🚫 Cancelar
                     </button>
                   )}
-
+ 
                   {/* Edit button */}
                   {p.estado !== 'Entregado' && p.estado !== 'Cancelado' && (
                     <button 
@@ -483,25 +661,125 @@ export default function PedidosPage() {
 
                  {/* Producto/Texto Pedido */}
                 <div className="inp-group">
-                  <label>Productos / Descripción del Pedido *</label>
-                  <textarea 
-                    rows={3} 
+                 {/* Producto del Inventario (Conexión) */}
+                <div style={{ background: 'var(--bg-card2)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-3)' }}>Añadir Productos del Inventario</label>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    
+                    {/* Select Producto */}
+                    <select
+                      value={selectedProdId}
+                      onChange={e => {
+                        setSelectedProdId(e.target.value);
+                        setSelectedVersionId('');
+                      }}
+                      style={{ flex: 1, minWidth: '150px', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text)', fontSize: '12.5px' }}
+                    >
+                      <option value="">-- Seleccionar --</option>
+                      {products.map(p => {
+                        const stockText = p.versions.length > 0
+                          ? `${p.versions.reduce((a, b) => a + b.stock, 0)} ${p.unidad_medida || 'und'}`
+                          : `${p.stock} ${p.unidad_medida || 'und'}`;
+                        return (
+                          <option key={p.id} value={p.id}>
+                            {p.em || '🥐'} {p.name} ({stockText})
+                          </option>
+                        );
+                      })}
+                    </select>
+
+                    {/* Select Versión (Variante) */}
+                    {selectedProdObj && selectedProdObj.versions && selectedProdObj.versions.length > 0 && (
+                      <select
+                        value={selectedVersionId}
+                        onChange={e => setSelectedVersionId(e.target.value)}
+                        style={{ width: '100px', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text)', fontSize: '12.5px' }}
+                      >
+                        <option value="">-- Ver. --</option>
+                        {selectedProdObj.versions.map(v => (
+                          <option key={v.id} value={v.id}>
+                            {v.name} (Stock: {v.stock})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    {/* Cantidad */}
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="any"
+                      placeholder="Cant."
+                      value={selectedQty}
+                      onChange={e => setSelectedQty(e.target.value)}
+                      style={{ width: '70px', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text)', fontSize: '12.5px', textAlign: 'center' }}
+                    />
+
+                    {/* Botón Agregar */}
+                    <button
+                      type="button"
+                      onClick={handleAddProductToReservation}
+                      style={{ padding: '8px 14px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12.5px' }}
+                    >
+                      Añadir
+                    </button>
+                  </div>
+
+                  {/* Items list */}
+                  {reservationItems.length > 0 && (
+                    <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--bg-card)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                      {reservationItems.map((item, idx) => (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>
+                          <span>
+                            <strong>{item.qty} {item.unidadMedida || 'und'}</strong> x {item.name} {item.versionName ? `(${item.versionName})` : ''}
+                            <span style={{ color: 'var(--text-3)', fontSize: '10.5px', marginLeft: '6px' }}>(S/. {item.price.toFixed(2)})</span>
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <strong style={{ color: 'var(--text-2)' }}>S/. {(item.price * item.qty).toFixed(2)}</strong>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveProductFromReservation(idx)}
+                              style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: '12px' }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Monto Total del Pedido */}
+                <div className="inp-group">
+                  <label>Monto Total del Pedido (S/.) *</label>
+                  <div className="inp-wrap">
+                    <span className="inp-icon">💵</span>
+                    <input 
+                      type="number" 
+                      min="0" 
+                      step="0.5" 
+                      value={fTotal}
+                      onChange={e => {
+                        setFTotal(e.target.value);
+                        setIsTotalManual(true);
+                      }}
+                      placeholder="0.00"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Producto/Texto Pedido libre (Opcional) */}
+                <div className="inp-group">
+                  <label>Descripción Libre / Notas del Pedido</label>
+                  <input 
+                    type="text" 
                     value={fProductoTexto}
                     onChange={e => setFProductoTexto(e.target.value)}
-                    placeholder="Ej: 1 Torta de Chocolate mediana, 24 Croissants, 4 Panes franceses..."
-                    required
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '10px',
-                      border: '1.5px solid var(--border)',
-                      background: 'var(--bg-card2)',
-                      color: 'var(--text)',
-                      fontSize: '13px',
-                      fontFamily: 'Inter, sans-serif',
-                      resize: 'vertical'
-                    }}
+                    placeholder="Ej: Torta personalizada de Frozen, etc. (Opcional si usas inventario)"
                   />
+                </div>
                 </div>
 
                 {/* Fecha y Hora de Entrega */}
@@ -565,6 +843,123 @@ export default function PedidosPage() {
           </div>
         </div>
       )}
+      {/* DELIVERY CHECKOUT MODAL */}
+      {showDeliveryModal && deliveringPedido && (() => {
+        let items: any[] = [];
+        let totalVal = deliveringPedido.adelanto;
+        
+        if (deliveringPedido.productoTexto.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(deliveringPedido.productoTexto);
+            items = parsed.items || [];
+            totalVal = parsed.total || deliveringPedido.adelanto;
+          } catch (e) {}
+        }
+        
+        const saldo = Math.max(0, totalVal - deliveringPedido.adelanto);
+        const activeMethods = paymentMethods.filter(m => m.active);
+
+        return (
+          <div className="modal-overlay open">
+            <div className="modal-card" style={{ width: '420px' }}>
+              <span className="mc-icon">🥐</span>
+              <div className="mc-title">Confirmar Entrega y Pago</div>
+              <p className="mc-sub">Registra el cobro final del saldo restante y descuenta del stock</p>
+              
+              <div style={{ background: 'var(--bg-card2)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px', margin: '16px 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-3)', fontSize: '12.5px' }}>Cliente:</span>
+                  <strong style={{ color: 'var(--text)', fontSize: '13px' }}>{deliveringPedido.clienteNombre}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-3)', fontSize: '12.5px' }}>Monto Total del Pedido:</span>
+                  <strong style={{ color: 'var(--text)', fontSize: '13px' }}>S/. {totalVal.toFixed(2)}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-3)', fontSize: '12.5px' }}>Adelanto Recibido:</span>
+                  <strong style={{ color: 'var(--green)', fontSize: '13px' }}>S/. {deliveringPedido.adelanto.toFixed(2)}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1.5px solid var(--border)', paddingTop: '8px', marginTop: '4px' }}>
+                  <span style={{ color: 'var(--text-2)', fontSize: '13px', fontWeight: 'bold' }}>Saldo Restante a Cobrar:</span>
+                  <strong style={{ color: 'var(--red)', fontSize: '14.5px' }}>S/. {saldo.toFixed(2)}</strong>
+                </div>
+              </div>
+
+              {saldo > 0 ? (
+                <div className="inp-group" style={{ textAlign: 'left', marginBottom: '18px' }}>
+                  <label style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '6px', display: 'block' }}>
+                    Método de Pago para el Saldo Restante *
+                  </label>
+                  <select
+                    value={delPaymentMethodId}
+                    onChange={e => setDelPaymentMethodId(e.target.value)}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: '1.5px solid var(--border)',
+                      background: 'var(--bg-card2)',
+                      color: 'var(--text)',
+                      fontSize: '13px',
+                      fontFamily: 'Inter, sans-serif'
+                    }}
+                  >
+                    <option value="">-- Seleccionar Método de Pago --</option>
+                    {activeMethods.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <p style={{ color: 'var(--green)', fontSize: '12px', fontWeight: 'bold', margin: '10px 0' }}>
+                  El pedido ya fue pagado en su totalidad con el adelanto.
+                </p>
+              )}
+
+              <div className="mc-btns" style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="mc-sec"
+                  onClick={() => setShowDeliveryModal(false)}
+                  style={{ flex: 1 }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="mc-pri"
+                  style={{ flex: 1 }}
+                  onClick={async () => {
+                    if (saldo > 0 && !delPaymentMethodId) {
+                      alert('Por favor selecciona el método de pago para el saldo restante.');
+                      return;
+                    }
+                    
+                    const methodId = saldo > 0 ? parseInt(String(delPaymentMethodId)) : (paymentMethods[0]?.id || 1);
+                    const selectedMethod = paymentMethods.find(m => m.id === methodId);
+                    const methodName = selectedMethod ? selectedMethod.name : 'Efectivo';
+
+                    await deliverPedido(
+                      deliveringPedido.id,
+                      methodId,
+                      methodName,
+                      totalVal,
+                      deliveringPedido.adelanto,
+                      items
+                    );
+                    setShowDeliveryModal(false);
+                  }}
+                >
+                  Confirmar Entrega
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

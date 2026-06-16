@@ -111,9 +111,9 @@ export default function PointOfSalePage() {
   const [waPhoneInput, setWaPhoneInput] = useState('');
   const [isWaSending, setIsWaSending] = useState(false);
 
-  // Filtered active products
+  // Filtered active products (excluding Insumos since they are not sold directly)
   const filteredProducts = products.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase())
+    p.cat !== 'Insumos' && p.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleProductClick = (prod: Product) => {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pedido, ReturnRecord, Purchase, Sale, Product, Client, Provider, BreadLog, User, ReturnedItem, PurchaseItem, CreditPayment } from '@/context/types';
+import { Pedido, ReturnRecord, Purchase, Sale, Product, Client, Provider, BreadLog, User, ReturnedItem, PurchaseItem, CreditPayment, CashSession } from '@/context/types';
 
 interface OrderOpsParams {
   pedidos: Pedido[];
@@ -17,6 +17,8 @@ interface OrderOpsParams {
   providers: Provider[];
   breadLogs: BreadLog[];
   setBreadLogs: React.Dispatch<React.SetStateAction<BreadLog[]>>;
+  cashSession: CashSession | null;
+  setCashSession: React.Dispatch<React.SetStateAction<CashSession | null>>;
   user: User | null;
   toast: (msg: string) => void;
   isSupabaseConfigured: boolean;
@@ -47,6 +49,8 @@ export function useOrderOperations({
   providers,
   breadLogs,
   setBreadLogs,
+  cashSession,
+  setCashSession,
   user,
   toast,
   isSupabaseConfigured,
@@ -477,9 +481,181 @@ export function useOrderOperations({
     }
   };
 
+  const deliverPedido = async (
+    pedidoId: number | string,
+    paymentMethodId: number,
+    paymentMethodName: string,
+    totalVal: number,
+    adelantoVal: number,
+    items: any[]
+  ) => {
+    if (!cashSession) {
+      toast('⚠️ Debe iniciar caja para poder realizar cobros y entregar el pedido.');
+      return;
+    }
+
+    const saldo = Math.max(0, totalVal - adelantoVal);
+
+    // 1. Deduct stock (both in local state and offline)
+    const updatedProds = products.map(p => {
+      const itemsToDeduct = items.filter(c => c.productId === p.id);
+      if (itemsToDeduct.length === 0) return p;
+
+      let newStock = p.stock;
+      let newVersions = [...p.versions];
+
+      itemsToDeduct.forEach(item => {
+        if (item.versionName) {
+          newVersions = newVersions.map(v => 
+            v.name === item.versionName ? { ...v, stock: v.stock - item.qty } : v
+          );
+        } else {
+          newStock -= item.qty;
+        }
+      });
+
+      return { ...p, stock: newStock, versions: newVersions };
+    });
+
+    setProducts(updatedProds);
+    saveOffline('snack_products', updatedProds);
+
+    // 2. Update cash session with the collected remaining balance (saldo)
+    if (saldo > 0) {
+      const isEfectivo = paymentMethodName.toLowerCase().includes('efectivo');
+      const updatedSession = {
+        ...cashSession,
+        tot_ventas_efectivo: cashSession.tot_ventas_efectivo + (isEfectivo ? saldo : 0),
+        tot_ventas_otros: cashSession.tot_ventas_otros + (!isEfectivo ? saldo : 0),
+      };
+      setCashSession(updatedSession);
+      saveOffline('snack_session', updatedSession);
+    }
+
+    // 3. Create Sale record
+    const cartItems = items.map(i => ({
+      id: i.productId,
+      name: i.name + (i.versionName ? ` (${i.versionName})` : ''),
+      price: i.price,
+      qty: i.qty,
+      version: i.versionName || null
+    }));
+
+    const targetPedido = pedidos.find(p => p.id === pedidoId);
+    const saleObj: Sale = {
+      id: Date.now(),
+      n: sales.length + 501,
+      items: cartItems,
+      total: totalVal, // the full total of the booking
+      method: `Reserva - Saldo via ${paymentMethodName}`,
+      methodId: paymentMethodId,
+      d: new Date().toLocaleDateString(),
+      t: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      cajero: user ? user.n : 'Sistema',
+      clienteId: targetPedido?.clienteId || undefined,
+      clienteNombre: targetPedido?.clienteNombre || undefined
+    };
+
+    const newSales = [...sales, saleObj];
+    setSales(newSales);
+    saveOffline('snack_sales', newSales);
+
+    // 4. Update order status to 'Entregado'
+    setPedidos(prev => {
+      const next = prev.map(p => p.id === pedidoId ? { ...p, estado: 'Entregado' as const, updatedAt: new Date().toISOString() } : p);
+      localStorage.setItem('snack_pedidos', JSON.stringify(next));
+      return next;
+    });
+
+    // 5. Synchronize with Supabase
+    if (isSupabaseConfigured && supabase && !String(pedidoId).startsWith('local_')) {
+      try {
+        // Update the order status in Supabase
+        await supabase.from('pedidos_reserva').update({
+          estado: 'Entregado',
+          updated_at: new Date().toISOString()
+        }).eq('id_pedido', pedidoId);
+
+        // Insert sale in Supabase
+        const sub = totalVal / 1.18;
+        const igv = totalVal - sub;
+        const { data: vData } = await supabase.from('ventas').insert({
+          id_cliente: targetPedido?.clienteId || null,
+          id_usuario: user?.id,
+          id_cierre_caja: cashSession.id,
+          id_metodo_pago: paymentMethodId,
+          sub_total: sub,
+          igv,
+          tot_pago: totalVal
+        }).select().single();
+
+        if (vData) {
+          const detailRows = cartItems.map(item => {
+            const prodRef = products.find(p => p.id === item.id);
+            const vRef = (item.version && prodRef) ? prodRef.versions.find(v => v.name === item.version) : null;
+            return {
+              id_venta: vData.id_venta,
+              id_producto: item.id,
+              id_version: vRef ? vRef.id : null,
+              num_cantidad: item.qty,
+              precio_unitario: item.price
+            };
+          });
+          await supabase.from('detalle_venta').insert(detailRows);
+        }
+
+        // Add Kardex entries
+        const saleRef = `VTA-${saleObj.id}`;
+        const newKardexEntries = cartItems.map(item => ({
+          id: Date.now() + Math.random(),
+          d: `${saleObj.d} ${saleObj.t}`,
+          prodName: item.name,
+          type: 'venta' as const,
+          qty: item.qty,
+          reason: `Entrega Reserva #${pedidoId}`,
+          cajero: user?.n || 'Sistema',
+          ref_id: saleRef
+        }));
+        
+        setBreadLogs(prev => [...newKardexEntries, ...prev]);
+        const localBreadLogs = localStorage.getItem('snack_bread_logs');
+        if (localBreadLogs) {
+          try {
+            const parsed = JSON.parse(localBreadLogs);
+            localStorage.setItem('snack_bread_logs', JSON.stringify([...newKardexEntries, ...parsed]));
+          } catch (e) {}
+        }
+
+        toast('✅ Reserva entregada y venta registrada correctamente en la nube');
+      } catch (err: any) {
+        console.error('Error delivering order in Supabase', err);
+        toast('⚠️ Reserva entregada localmente (error en nube: ' + err.message + ')');
+      }
+    } else {
+      // Local/offline Kardex logs
+      const saleRef = `VTA-${saleObj.id}`;
+      const newKardexEntries = cartItems.map(item => ({
+        id: Date.now() + Math.random(),
+        d: `${saleObj.d} ${saleObj.t}`,
+        prodName: item.name,
+        type: 'venta' as const,
+        qty: item.qty,
+        reason: `Entrega Reserva #${pedidoId}`,
+        cajero: user?.n || 'Sistema',
+        ref_id: saleRef
+      }));
+      setBreadLogs(prev => [...newKardexEntries, ...prev]);
+      const localLogs = localStorage.getItem('snack_bread_logs');
+      localStorage.setItem('snack_bread_logs', JSON.stringify([...newKardexEntries, ...(localLogs ? JSON.parse(localLogs) : [])]));
+      
+      toast('✅ Reserva entregada y venta registrada localmente');
+    }
+  };
+
   return {
     savePedido,
     updatePedidoStatus,
+    deliverPedido,
     registerPurchase,
     processReturn
   };
