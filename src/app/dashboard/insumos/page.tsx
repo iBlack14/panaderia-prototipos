@@ -203,13 +203,34 @@ export default function InsumosPage() {
 
       {/* Modal Crear/Editar Insumo */}
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
-            <div className="modal-hdr">
-              <h3 style={{ margin: 0, fontFamily: "'DM Serif Display', serif" }}>
-                {editingId ? 'Editar Insumo' : 'Registrar Nuevo Insumo'}
-              </h3>
-              <button className="modal-close" onClick={() => setShowModal(false)}>X</button>
+        <div className="modal-overlay open" onClick={() => setShowModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ width: '520px', maxHeight: '90vh' }}>
+            {/* Header inside modal */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div className="mc-title" style={{ margin: 0, textAlign: 'left' }}>
+                {editingId ? '✏️ Editar Insumo' : '🌾 Registrar Nuevo Insumo'}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '20px',
+                  color: 'var(--text-3)',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                }}
+                onMouseOver={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text)'; }}
+                onMouseOut={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-3)'; }}
+              >
+                ✕
+              </button>
             </div>
 
             <form onSubmit={handleSubmit}>
@@ -270,13 +291,28 @@ export default function InsumosPage() {
                 </div>
               </div>
 
-              <div style={{ marginTop: '8px', padding: '10px', background: 'var(--bg)', borderRadius: '10px', fontSize: '12px', color: 'var(--text-3)' }}>
-                <strong>Valor estimado en inventario:</strong> S/. {((parseFloat(stock) || 0) * (parseFloat(costo) || 0)).toFixed(2)}
+              <div style={{
+                marginTop: '16px',
+                padding: '12px 14px',
+                background: 'var(--accent-bg)',
+                borderRadius: '12px',
+                border: '1px solid rgba(176, 125, 46, 0.15)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-2)' }}>Valor estimado en inventario:</span>
+                <span style={{ fontSize: '14px', fontWeight: '800', color: 'var(--accent)' }}>
+                  S/. {((parseFloat(stock) || 0) * (parseFloat(costo) || 0)).toFixed(2)}
+                </span>
               </div>
 
-              <button type="submit" className="btn-new" style={{ width: '100%', marginTop: '14px', padding: '12px' }}>
-                {editingId ? 'Actualizar Insumo' : 'Registrar Insumo'}
-              </button>
+              <div className="mc-btns" style={{ marginTop: '24px' }}>
+                <button type="button" className="mc-sec" onClick={() => setShowModal(false)}>Cancelar</button>
+                <button type="submit" className="mc-pri">
+                  {editingId ? 'Actualizar Insumo' : 'Registrar Insumo'}
+                </button>
+              </div>
             </form>
           </div>
         </div>

@@ -45,10 +45,18 @@ export default function RecetasPage() {
   const handleAddIngredient = () => {
     const iId = parseInt(ingInsumoId);
     const cant = parseFloat(ingCantidad);
-    if (isNaN(iId) || isNaN(cant) || cant <= 0) return;
+    if (isNaN(iId)) {
+      alert('Por favor, selecciona un insumo.');
+      return;
+    }
+    if (isNaN(cant) || cant <= 0) {
+      alert('Por favor, ingresa una cantidad válida mayor a 0.');
+      return;
+    }
 
     // Prevent duplicate insumo
     if (ingredientes.some(ing => ing.insumoId === iId)) {
+      alert('Este insumo ya fue agregado a la receta. Si deseas cambiar la cantidad, elimínalo primero.');
       return;
     }
 
@@ -67,19 +75,38 @@ export default function RecetasPage() {
     setIngredientes(ingredientes.filter(i => i.insumoId !== insumoId));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const pId = parseInt(productoId);
-    if (isNaN(pId) || ingredientes.length === 0) return;
+    
+    if (isNaN(pId)) {
+      alert('Por favor, selecciona un producto para la receta.');
+      return;
+    }
+    
+    if (ingredientes.length === 0) {
+      alert('Por favor, agrega al menos un ingrediente (insumo) a la receta.');
+      return;
+    }
 
-    saveReceta({
+    const res = await saveReceta({
       id: editingId,
       productoId: pId,
       rendimientoBase: parseFloat(rendimiento) || 1,
       instrucciones: instrucciones.trim(),
       ingredientes,
     });
-    setShowModal(false);
+    
+    if (res && res.success) {
+      setShowModal(false);
+    } else {
+      const errMsg = res?.message || "Error desconocido";
+      if (errMsg.includes("violates unique constraint")) {
+        alert("Error de sincronización en la base de datos o receta duplicada. Verifica el SQL o si ya existe una receta para este producto.\nDetalle: " + errMsg);
+      } else {
+        alert("Ocurrió un error al guardar la receta: " + errMsg);
+      }
+    }
   };
 
   // Calculate production cost for display
@@ -121,7 +148,7 @@ export default function RecetasPage() {
           {recetas.map((r) => {
             const costoProd = calcCost(r.ingredientes);
             const prod = products.find(p => p.id === r.productoId);
-            const margen = prod ? ((prod.price - costoProd) / prod.price * 100) : 0;
+            const margen = prod && prod.price > 0 ? ((prod.price - costoProd) / prod.price * 100) : 0;
 
             return (
               <div key={r.id} className="panel" style={{ padding: '18px' }}>
@@ -197,165 +224,274 @@ export default function RecetasPage() {
       )}
 
       {/* Modal Crear/Editar Receta */}
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
-            <div className="modal-hdr">
-              <h3 style={{ margin: 0, fontFamily: "'DM Serif Display', serif" }}>
-                {editingId ? 'Editar Receta' : 'Nueva Receta'}
-              </h3>
-              <button className="modal-close" onClick={() => setShowModal(false)}>X</button>
-            </div>
+      {showModal && (() => {
+        const selectedProduct = products.find(p => String(p.id) === productoId);
+        const costoTotalReceta = calcCost(ingredientes);
+        const cantRendimiento = parseFloat(rendimiento) || 1;
+        const costoPorUnidad = costoTotalReceta / cantRendimiento;
+        const precioVenta = selectedProduct?.price || 0;
+        const utilidadPorUnidad = precioVenta - costoPorUnidad;
+        const margenPorcentaje = precioVenta > 0 ? (utilidadPorUnidad / precioVenta) * 100 : 0;
 
-            <form onSubmit={handleSubmit}>
-              {/* Product Selection */}
-              <div className="inp-group">
-                <label>Producto (lo que se fabrica)</label>
-                <select value={productoId} onChange={(e) => setProductoId(e.target.value)} required>
-                  <option value="">-- Elegir producto --</option>
-                  {productosDisponibles.map(p => (
-                    <option key={p.id} value={String(p.id)}>{p.name} — {p.cat} (S/. {p.price.toFixed(2)})</option>
-                  ))}
-                  {/* If editing, also show the current product */}
-                  {editingId && productoId && !productosDisponibles.some(p => String(p.id) === productoId) && (
-                    <option value={productoId}>
-                      {products.find(p => String(p.id) === productoId)?.name || `Producto #${productoId}`}
-                    </option>
-                  )}
-                </select>
+        return (
+          <div className="modal-overlay open" onClick={() => setShowModal(false)}>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ width: '580px', maxHeight: '90vh' }}>
+              {/* Header inside modal */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <div className="mc-title" style={{ margin: 0, textAlign: 'left' }}>
+                  {editingId ? '✏️ Editar Receta' : '🍞 Nueva Receta'}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    fontSize: '20px',
+                    color: 'var(--text-3)',
+                    cursor: 'pointer',
+                    padding: '4px 8px',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text)'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-3)'; }}
+                >
+                  ✕
+                </button>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <form onSubmit={handleSubmit}>
+                {/* Product Selection */}
                 <div className="inp-group">
-                  <label>Rendimiento (unidades que produce)</label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0.001"
-                    value={rendimiento}
-                    onChange={(e) => setRendimiento(e.target.value)}
-                    placeholder="1"
-                  />
-                </div>
-                <div className="inp-group">
-                  <label>Instrucciones (opcional)</label>
-                  <input
-                    type="text"
-                    value={instrucciones}
-                    onChange={(e) => setInstrucciones(e.target.value)}
-                    placeholder="Ej: Hornear 180C por 45 min"
-                  />
-                </div>
-              </div>
-
-              {/* Ingredients Section */}
-              <div style={{ border: '1.5px dashed var(--border)', padding: '14px', borderRadius: '12px', background: 'var(--bg-card2)', margin: '14px 0' }}>
-                <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.5px', marginBottom: '10px' }}>
-                  Agregar Ingrediente (Insumo)
+                  <label>Producto (lo que se fabrica)</label>
+                  <select value={productoId} onChange={(e) => setProductoId(e.target.value)} required>
+                    <option value="">-- Elegir producto --</option>
+                    {productosDisponibles?.map(p => (
+                      <option key={p?.id} value={String(p?.id)}>{p?.name} — {p?.cat} (S/. {p?.price?.toFixed(2) || '0.00'})</option>
+                    ))}
+                    {/* If editing, also show the current product */}
+                    {editingId && productoId && !productosDisponibles?.some(p => String(p?.id) === productoId) && (
+                      <option value={productoId}>
+                        {products?.find(p => String(p?.id) === productoId)?.name || `Producto #${productoId}`}
+                      </option>
+                    )}
+                  </select>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: '10px', alignItems: 'end' }}>
-                  <div className="inp-group" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '9px' }}>Insumo</label>
-                    <select value={ingInsumoId} onChange={(e) => setIngInsumoId(e.target.value)}>
-                      <option value="">-- Elegir insumo --</option>
-                      {insumos.filter(i => i.active && !ingredientes.some(ing => ing.insumoId === i.id)).map(i => (
-                        <option key={i.id} value={String(i.id)}>
-                          {i.nombre} ({i.stock.toFixed(1)} {i.unidadMedida} disponibles)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="inp-group" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '9px' }}>
-                      Cantidad ({insumos.find(i => String(i.id) === ingInsumoId)?.unidadMedida || 'unidad'})
-                    </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="inp-group">
+                    <label>Rendimiento (unidades que produce)</label>
                     <input
                       type="number"
                       step="0.001"
                       min="0.001"
-                      value={ingCantidad}
-                      onChange={(e) => setIngCantidad(e.target.value)}
-                      placeholder="0.000"
+                      value={rendimiento}
+                      onChange={(e) => setRendimiento(e.target.value)}
+                      placeholder="1"
                     />
                   </div>
-
-                  <button
-                    type="button"
-                    className="btn-new"
-                    onClick={handleAddIngredient}
-                    style={{ padding: '10px 16px', fontSize: '13px', whiteSpace: 'nowrap' }}
-                  >
-                    + Agregar
-                  </button>
-                </div>
-              </div>
-
-              {/* Ingredients List */}
-              {ingredientes.length > 0 && (
-                <div style={{ marginBottom: '14px' }}>
-                  <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-2)', marginBottom: '6px' }}>
-                    Ingredientes de la Receta ({ingredientes.length})
+                  <div className="inp-group">
+                    <label>Instrucciones de Preparación (opcional)</label>
+                    <input
+                      type="text"
+                      value={instrucciones}
+                      onChange={(e) => setInstrucciones(e.target.value)}
+                      placeholder="Ej: Hornear 180C por 45 min"
+                    />
                   </div>
-                  {ingredientes.map((ing, idx) => {
-                    const insumo = insumos.find(i => i.id === ing.insumoId);
-                    const costoLinea = ing.cantidadRequerida * (insumo?.costoUnitario || 0);
-                    return (
-                      <div
-                        key={idx}
-                        style={{
-                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                          padding: '8px 12px', background: 'var(--bg-card2)', borderRadius: '8px', marginBottom: '4px'
-                        }}
-                      >
-                        <div style={{ fontWeight: '600', fontSize: '12.5px', color: 'var(--text)' }}>
-                          {ing.insumoNombre}
+                </div>
+
+                {/* Ingredients Section */}
+                <div style={{ border: '1.5px dashed var(--border)', padding: '14px', borderRadius: '12px', background: 'var(--bg-card2)', margin: '14px 0' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.5px', marginBottom: '10px' }}>
+                    Agregar Ingrediente (Insumo)
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: '10px', alignItems: 'end' }}>
+                    <div className="inp-group" style={{ margin: 0 }}>
+                      <label style={{ fontSize: '9px' }}>Insumo</label>
+                      <select value={ingInsumoId} onChange={(e) => setIngInsumoId(e.target.value)}>
+                        <option value="">-- Elegir insumo --</option>
+                        {insumos?.filter(i => i?.active && !ingredientes?.some(ing => ing?.insumoId === i?.id))?.map(i => (
+                          <option key={i?.id} value={String(i?.id)}>
+                            {i?.nombre} (S/. {i?.costoUnitario?.toFixed(2)} / {i?.unidadMedida}) — Stock: {i?.stock?.toFixed(1)} {i?.unidadMedida}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="inp-group" style={{ margin: 0 }}>
+                      <label style={{ fontSize: '9px' }}>Cantidad</label>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <input
+                          type="number"
+                          step="0.001"
+                          min="0.001"
+                          value={ingCantidad}
+                          onChange={(e) => setIngCantidad(e.target.value)}
+                          placeholder="0.000"
+                          style={{ paddingRight: '45px' }}
+                        />
+                        {ingInsumoId && (
+                          <span style={{
+                            position: 'absolute',
+                            right: '12px',
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            color: 'var(--text-3)',
+                            pointerEvents: 'none'
+                          }}>
+                            {insumos.find(i => String(i.id) === ingInsumoId)?.unidadMedida || 'und'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn-new"
+                      onClick={handleAddIngredient}
+                      style={{ padding: '10px 16px', fontSize: '13px', whiteSpace: 'nowrap' }}
+                    >
+                      + Agregar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Ingredients List */}
+                {ingredientes.length > 0 && (
+                  <div style={{ marginBottom: '14px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-2)', marginBottom: '6px' }}>
+                      Ingredientes de la Receta ({ingredientes.length})
+                    </div>
+                    {ingredientes.map((ing, idx) => {
+                      const insumo = insumos.find(i => i.id === ing.insumoId);
+                      const costoLinea = ing.cantidadRequerida * (insumo?.costoUnitario || 0);
+                      return (
+                        <div
+                          key={idx}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '10px 14px',
+                            background: 'var(--bg-card2)',
+                            borderRadius: '10px',
+                            border: '1px solid var(--border)',
+                            marginBottom: '6px',
+                            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.02)'
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: '700', fontSize: '13px', color: 'var(--text)' }}>
+                              {ing.insumoNombre}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>
+                              {ing.cantidadRequerida} {ing.unidadMedida} · S/. {insumo?.costoUnitario?.toFixed(2) || '0.00'} / {ing.unidadMedida}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+                            <span style={{ fontWeight: '800', color: 'var(--accent)', fontSize: '13px' }}>
+                              S/. {costoLinea.toFixed(2)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveIngredient(ing.insumoId)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: 'var(--red)',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                padding: '4px 8px',
+                                borderRadius: '6px',
+                                transition: 'background 0.2s'
+                              }}
+                              onMouseOver={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'}
+                              onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+                              title="Quitar ingrediente"
+                            >
+                              🗑
+                            </button>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                          <span style={{ fontSize: '12px', color: 'var(--text-2)' }}>
-                            {ing.cantidadRequerida} {ing.unidadMedida || 'kg'}
-                          </span>
-                          <span style={{ fontWeight: '700', color: 'var(--accent)', fontSize: '12px' }}>
-                            S/. {costoLinea.toFixed(2)}
-                          </span>
-                          <button
-                            type="button"
-                            className="act-btn del"
-                            onClick={() => handleRemoveIngredient(ing.insumoId)}
-                            style={{ padding: '4px 8px', fontSize: '11px' }}
-                          >
-                            X
-                          </button>
+                      );
+                    })}
+
+                    {/* Dynamic Cost and Margin Summary Box */}
+                    {selectedProduct ? (
+                      <div style={{
+                        marginTop: '16px',
+                        padding: '14px 16px',
+                        background: 'linear-gradient(135deg, rgba(254, 246, 232, 0.9) 0%, rgba(255, 253, 248, 0.9) 100%)',
+                        borderRadius: '16px',
+                        border: '1px solid rgba(176, 125, 46, 0.25)',
+                        boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.6)'
+                      }}>
+                        <div style={{ fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.5px', marginBottom: '10px' }}>
+                          Análisis de Costos y Margen
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                          <div style={{ background: 'var(--bg-card2)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--text-3)', textTransform: 'uppercase' }}>Costo Receta</div>
+                            <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text)' }}>S/. {costoTotalReceta.toFixed(2)}</div>
+                            <div style={{ fontSize: '9.5px', color: 'var(--text-2)', marginTop: '2px' }}>
+                              S/. {costoPorUnidad.toFixed(2)} / ud
+                            </div>
+                          </div>
+                          <div style={{ background: 'var(--bg-card2)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--text-3)', textTransform: 'uppercase' }}>Precio Venta</div>
+                            <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text)' }}>S/. {precioVenta.toFixed(2)}</div>
+                            <div style={{ fontSize: '9.5px', color: 'var(--text-2)', marginTop: '2px' }}>S/. {precioVenta.toFixed(2)} / ud</div>
+                          </div>
+                          <div style={{
+                            background: margenPorcentaje >= 30 ? 'rgba(16, 185, 129, 0.08)' : margenPorcentaje >= 10 ? 'rgba(245, 158, 11, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+                            padding: '10px',
+                            borderRadius: '10px',
+                            border: `1px solid ${margenPorcentaje >= 30 ? 'rgba(16, 185, 129, 0.2)' : margenPorcentaje >= 10 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
+                          }}>
+                            <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--text-3)', textTransform: 'uppercase' }}>Margen Est.</div>
+                            <div style={{
+                              fontSize: '14px',
+                              fontWeight: '800',
+                              color: margenPorcentaje >= 30 ? 'var(--green)' : margenPorcentaje >= 10 ? 'var(--amber)' : 'var(--red)'
+                            }}>
+                              {margenPorcentaje.toFixed(1)}%
+                            </div>
+                            <div style={{ fontSize: '9.5px', color: 'var(--text-2)', marginTop: '2px' }}>
+                              Ganancia: S/. {utilidadPorUnidad.toFixed(2)}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    );
-                  })}
-
-                  {/* Cost Summary */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: 'var(--accent-bg)', borderRadius: '8px', marginTop: '6px' }}>
-                    <span style={{ fontWeight: '700', color: 'var(--accent)', fontSize: '13px' }}>
-                      Costo total de produccion:
-                    </span>
-                    <span style={{ fontWeight: '800', color: 'var(--accent)', fontSize: '14px' }}>
-                      S/. {calcCost(ingredientes).toFixed(2)}
-                    </span>
+                    ) : (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: 'var(--accent-bg)', borderRadius: '8px', marginTop: '6px' }}>
+                        <span style={{ fontWeight: '700', color: 'var(--accent)', fontSize: '13px' }}>
+                          Costo total de produccion:
+                        </span>
+                        <span style={{ fontWeight: '800', color: 'var(--accent)', fontSize: '14px' }}>
+                          S/. {costoTotalReceta.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                )}
 
-              <button
-                type="submit"
-                className="btn-new"
-                style={{ width: '100%', padding: '12px' }}
-                disabled={!productoId || ingredientes.length === 0}
-              >
-                {editingId ? 'Actualizar Receta' : 'Guardar Receta'}
-              </button>
-            </form>
+                <div className="mc-btns" style={{ marginTop: '24px' }}>
+                  <button type="button" className="mc-sec" onClick={() => setShowModal(false)}>Cancelar</button>
+                  <button type="submit" className="mc-pri">
+                    {editingId ? 'Actualizar Receta' : 'Guardar Receta'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

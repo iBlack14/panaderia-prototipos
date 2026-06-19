@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Recovery states
   const [showRecovery, setShowRecovery] = useState(false);
@@ -108,6 +109,7 @@ export default function LoginPage() {
     e.preventDefault();
     setLoginError('');
     if (!username || !password) return;
+    setIsLoggingIn(true);
     const res = await login(username, password);
     if (res && res.success && res.user) {
       const u = res.user;
@@ -117,9 +119,11 @@ export default function LoginPage() {
         setLoggedInUser(u);
         setSelectedRole(u.rs[0]);
         setRoleStep(true);
+        setIsLoggingIn(false);
       }
     } else {
       setLoginError(res?.message || 'Credenciales inválidas o usuario inactivo');
+      setIsLoggingIn(false);
     }
   };
 
@@ -254,7 +258,9 @@ export default function LoginPage() {
                   </button>
                 </div>
 
-                <button type="submit" className="btn-enter">Ingresar al sistema →</button>
+                <button type="submit" className="btn-enter" disabled={isLoggingIn}>
+                  {isLoggingIn ? '⏳ Ingresando...' : 'Ingresar al sistema →'}
+                </button>
               </form>
             </div>
           )}

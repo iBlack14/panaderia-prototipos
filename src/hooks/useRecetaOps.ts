@@ -93,9 +93,11 @@ export function useRecetaOps({
           setRecetas(prev => [...prev, recetaLocal]);
           toast('Receta creada correctamente');
         }
+        return { success: true };
       } catch (err: any) {
         console.error('Error saving receta:', err);
         toast('Error al guardar receta: ' + (err.message || ''));
+        return { success: false, message: err.message };
       }
     } else {
       // Offline mode
@@ -133,6 +135,7 @@ export function useRecetaOps({
         saveOffline('snack_recetas', updated);
         toast('Receta creada (offline)');
       }
+      return { success: true };
     }
   };
 

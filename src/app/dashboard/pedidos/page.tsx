@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp, Pedido } from '@/context/AppContext';
 
 export default function PedidosPage() {
-  const { pedidos, clients, savePedido, updatePedidoStatus, user, products, paymentMethods, deliverPedido } = useApp();
+  const { pedidos, clients, savePedido, updatePedidoStatus, user, products, paymentMethods, deliverPedido, insumos } = useApp();
 
   const [nowTime] = useState(() => Date.now());
   const [activeTab, setActiveTab] = useState<'Todos' | 'Pendiente' | 'Listo' | 'Entregado' | 'Cancelado'>('Todos');
@@ -34,9 +34,13 @@ export default function PedidosPage() {
   const [isTotalManual, setIsTotalManual] = useState(false);
   const [reservationItems, setReservationItems] = useState<any[]>([]);
 
-  // Product picker temp states
+  // Product/Insumo/Custom picker states
+  const [itemType, setItemType] = useState<'producto' | 'insumo' | 'personalizado'>('producto');
   const [selectedProdId, setSelectedProdId] = useState('');
   const [selectedVersionId, setSelectedVersionId] = useState('');
+  const [selectedInsumoId, setSelectedInsumoId] = useState('');
+  const [customItemName, setCustomItemName] = useState('');
+  const [itemPrice, setItemPrice] = useState('');
   const [selectedQty, setSelectedQty] = useState('1');
 
   // Delivery Modal states
@@ -48,52 +52,122 @@ export default function PedidosPage() {
     return products.find(p => String(p.id) === String(selectedProdId)) || null;
   }, [selectedProdId, products]);
 
-  const handleAddProductToReservation = () => {
-    if (!selectedProdId) {
-      alert('Por favor selecciona un producto.');
-      return;
-    }
-    const qty = parseFloat(selectedQty);
-    if (isNaN(qty) || qty <= 0) {
-      alert('Por favor ingresa una cantidad válida.');
-      return;
-    }
-
-    const prod = selectedProdObj;
-    if (!prod) return;
-
-    let price = prod.price;
-    let versionName: string | null = null;
-
-    if (selectedVersionId) {
-      const versionObj = prod.versions.find(v => String(v.id) === String(selectedVersionId));
-      if (versionObj) {
-        price = versionObj.price;
-        versionName = versionObj.name;
+  const handleProductChange = (prodId: string) => {
+    setSelectedProdId(prodId);
+    setSelectedVersionId('');
+    const prod = products.find(p => String(p.id) === prodId);
+    if (prod) {
+      if (prod.versions && prod.versions.length > 0) {
+        setItemPrice('');
+      } else {
+        setItemPrice(String(prod.price));
       }
+    } else {
+      setItemPrice('');
+    }
+  };
+
+  const handleVersionChange = (versionId: string) => {
+    setSelectedVersionId(versionId);
+    if (selectedProdObj) {
+      const versionObj = selectedProdObj.versions.find(v => String(v.id) === versionId);
+      if (versionObj) {
+        setItemPrice(String(versionObj.price));
+      }
+    }
+  };
+
+  const handleInsumoChange = (insumoId: string) => {
+    setSelectedInsumoId(insumoId);
+    const ins = insumos.find(i => String(i.id) === insumoId);
+    if (ins) {
+      setItemPrice(String(ins.costoUnitario));
+    } else {
+      setItemPrice('');
+    }
+  };
+
+  const handleAddItemToReservation = () => {
+    let name = '';
+    let price = parseFloat(itemPrice) || 0;
+    let qty = parseFloat(selectedQty);
+    let versionName: string | null = null;
+    let unidadMedida = 'und';
+    let productId: number | null = null;
+    let insumoId: number | null = null;
+
+    if (qty <= 0 || isNaN(qty)) {
+      alert('Por favor ingresa una cantidad válida mayor a 0.');
+      return;
+    }
+
+    if (itemType === 'producto') {
+      if (!selectedProdId) {
+        alert('Por favor selecciona un producto.');
+        return;
+      }
+      const prod = products.find(p => String(p.id) === selectedProdId);
+      if (!prod) return;
+      productId = prod.id;
+      name = prod.name;
+      unidadMedida = prod.unidad_medida || 'und';
+
+      if (selectedVersionId) {
+        const versionObj = prod.versions.find(v => String(v.id) === selectedVersionId);
+        if (versionObj) {
+          versionName = versionObj.name;
+          price = isNaN(price) || price === 0 ? versionObj.price : price;
+        }
+      } else {
+        price = isNaN(price) || price === 0 ? prod.price : price;
+      }
+    } else if (itemType === 'insumo') {
+      if (!selectedInsumoId) {
+        alert('Por favor selecciona un insumo.');
+        return;
+      }
+      const ins = insumos.find(i => String(i.id) === selectedInsumoId);
+      if (!ins) return;
+      insumoId = ins.id;
+      name = ins.nombre;
+      unidadMedida = ins.unidadMedida || 'kg';
+      price = isNaN(price) || price === 0 ? ins.costoUnitario : price;
+    } else {
+      // Personalizado
+      if (!customItemName.trim()) {
+        alert('Por favor ingresa un nombre para el ítem personalizado.');
+        return;
+      }
+      name = customItemName.trim();
+      unidadMedida = 'und';
+      price = isNaN(price) ? 0 : price;
     }
 
     const newItem = {
-      productId: prod.id,
-      name: prod.name,
+      type: itemType,
+      productId,
+      insumoId,
+      name,
       price,
       qty,
       versionName,
-      unidadMedida: prod.unidad_medida || 'und'
+      unidadMedida
     };
 
     const newItems = [...reservationItems, newItem];
     setReservationItems(newItems);
 
-    // Recalculate total if not overridden manually
     if (!isTotalManual) {
       const newTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
       setFTotal(newTotal.toFixed(2));
     }
 
-    // Reset temp inputs
+    // Reset picker states
     setSelectedProdId('');
     setSelectedVersionId('');
+    setSelectedInsumoId('');
+    setCustomItemName('');
+    setItemPrice('');
     setSelectedQty('1');
   };
 
@@ -177,8 +251,12 @@ export default function PedidosPage() {
     setFTotal('0');
     setIsTotalManual(false);
     setReservationItems([]);
+    setItemType('producto');
     setSelectedProdId('');
     setSelectedVersionId('');
+    setSelectedInsumoId('');
+    setCustomItemName('');
+    setItemPrice('');
     setSelectedQty('1');
     setShowModal(true);
   };
@@ -217,8 +295,12 @@ export default function PedidosPage() {
     setFFecEntrega(localISODate);
     setFAdelanto(String(p.adelanto));
     setFNotas(p.notas || '');
+    setItemType('producto');
     setSelectedProdId('');
     setSelectedVersionId('');
+    setSelectedInsumoId('');
+    setCustomItemName('');
+    setItemPrice('');
     setSelectedQty('1');
     setShowModal(true);
   };
@@ -229,35 +311,66 @@ export default function PedidosPage() {
     let currentItems = [...reservationItems];
     let currentTotal = parseFloat(fTotal) || 0;
 
-    // Si el usuario seleccionó un producto pero olvidó presionar "Añadir", lo agregamos automáticamente
-    if (selectedProdId) {
+    // Si el usuario seleccionó/escribió algo pero olvidó presionar "Añadir", lo agregamos automáticamente
+    if (
+      (itemType === 'producto' && selectedProdId) ||
+      (itemType === 'insumo' && selectedInsumoId) ||
+      (itemType === 'personalizado' && customItemName.trim())
+    ) {
       const qty = parseFloat(selectedQty);
-      const prod = selectedProdObj;
-      if (prod && !isNaN(qty) && qty > 0) {
-        let price = prod.price;
+      if (!isNaN(qty) && qty > 0) {
+        let name = '';
+        let price = parseFloat(itemPrice) || 0;
         let versionName: string | null = null;
+        let unidadMedida = 'und';
+        let productId: number | null = null;
+        let insumoId: number | null = null;
 
-        if (selectedVersionId) {
-          const versionObj = prod.versions.find(v => String(v.id) === String(selectedVersionId));
-          if (versionObj) {
-            price = versionObj.price;
-            versionName = versionObj.name;
+        if (itemType === 'producto') {
+          const prod = products.find(p => String(p.id) === selectedProdId);
+          if (prod) {
+            productId = prod.id;
+            name = prod.name;
+            unidadMedida = prod.unidad_medida || 'und';
+            if (selectedVersionId) {
+              const versionObj = prod.versions.find(v => String(v.id) === selectedVersionId);
+              if (versionObj) {
+                versionName = versionObj.name;
+                price = isNaN(price) || price === 0 ? versionObj.price : price;
+              }
+            } else {
+              price = isNaN(price) || price === 0 ? prod.price : price;
+            }
           }
+        } else if (itemType === 'insumo') {
+          const ins = insumos.find(i => String(i.id) === selectedInsumoId);
+          if (ins) {
+            insumoId = ins.id;
+            name = ins.nombre;
+            unidadMedida = ins.unidadMedida || 'kg';
+            price = isNaN(price) || price === 0 ? ins.costoUnitario : price;
+          }
+        } else {
+          name = customItemName.trim();
+          unidadMedida = 'und';
+          price = isNaN(price) ? 0 : price;
         }
 
-        const newItem = {
-          productId: prod.id,
-          name: prod.name,
-          price,
-          qty,
-          versionName,
-          unidadMedida: prod.unidad_medida || 'und'
-        };
-
-        currentItems.push(newItem);
-        
-        if (!isTotalManual) {
-          currentTotal = currentItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+        if (name) {
+          const newItem = {
+            type: itemType,
+            productId,
+            insumoId,
+            name,
+            price,
+            qty,
+            versionName,
+            unidadMedida
+          };
+          currentItems.push(newItem);
+          if (!isTotalManual) {
+            currentTotal = currentItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+          }
         }
       }
     }
@@ -267,7 +380,7 @@ export default function PedidosPage() {
       return;
     }
     if (currentItems.length === 0 && !fProductoTexto.trim()) {
-      alert('Por favor agrega al menos un producto del inventario o describe el pedido.');
+      alert('Por favor agrega al menos un producto del inventario, insumo o describe el pedido.');
       return;
     }
     if (!fFecEntrega) {
@@ -292,7 +405,7 @@ export default function PedidosPage() {
 
     let serializedProductoTexto = fProductoTexto;
     if (currentItems.length > 0) {
-      const legacyText = currentItems.map(i => `${i.qty} x ${i.name}${i.versionName ? ` (${i.versionName})` : ''}`).join(', ');
+      const legacyText = currentItems.map(i => `${i.qty} ${i.unidadMedida || 'und'} x ${i.name}${i.versionName ? ` (${i.versionName})` : ''}`).join(', ');
       serializedProductoTexto = JSON.stringify({
         items: currentItems,
         total: totalVal,
@@ -312,7 +425,7 @@ export default function PedidosPage() {
       productoTexto: serializedProductoTexto,
       fecEntrega: new Date(fFecEntrega).toISOString(),
       adelanto: adelantoVal,
-      notes: fNotas, // Make sure both keys are defined to align with database mapping
+      notes: fNotas,
       notas: fNotas,
       estado: editingPedido?.estado || 'Pendiente'
     };
@@ -570,16 +683,41 @@ export default function PedidosPage() {
 
       {/* CREATE / EDIT PEDIDO MODAL */}
       {showModal && (
-        <div className="modal-overlay open">
-          <div className="modal-card" style={{ width: '480px' }}>
-            <span className="mc-icon">📅</span>
-        <div className="mc-title">{editingPedido ? 'Editar Reserva' : 'Registrar Nueva Reserva'}</div>
-            <p className="mc-sub">Controla los detalles del pedido y la fecha pactada de entrega</p>
+        <div className="modal-overlay open" onClick={() => setShowModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ width: '580px', maxHeight: '90vh' }}>
             
+            {/* Header inside modal */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div className="mc-title" style={{ margin: 0, textAlign: 'left' }}>
+                {editingPedido ? '✏️ Editar Reserva' : '📅 Registrar Nueva Reserva'}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '20px',
+                  color: 'var(--text-3)',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                }}
+                onMouseOver={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text)'; }}
+                onMouseOut={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-3)'; }}
+              >
+                ✕
+              </button>
+            </div>
+
             <form onSubmit={handleFormSubmit}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', textAlign: 'left' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', textAlign: 'left' }}>
                  
-                 {/* Cliente Selector */}
+                {/* Cliente Selector */}
                 <div className="inp-group">
                   <label>Cliente Pactado *</label>
                   <div className="inp-wrap" style={{ position: 'relative' }}>
@@ -592,7 +730,6 @@ export default function PedidosPage() {
                       onChange={e => {
                         const val = e.target.value;
                         setClientSearch(val);
-                        // Clear the selected ID if typed search changes from the current client name
                         const currentClient = clients.find(c => String(c.id) === String(fClienteId));
                         if (!currentClient || currentClient.nombre !== val) {
                           setFClienteId('');
@@ -633,7 +770,6 @@ export default function PedidosPage() {
 
                     {showClientDropdown && (
                       <>
-                        {/* Background click catcher overlay */}
                         <div 
                           onClick={() => setShowClientDropdown(false)} 
                           style={{
@@ -697,112 +833,184 @@ export default function PedidosPage() {
                   </div>
                 </div>
 
-                 {/* Producto/Texto Pedido */}
-                <div className="inp-group">
-                 {/* Producto del Inventario (Conexión) */}
-                <div style={{ background: 'var(--bg-card2)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-3)' }}>Añadir Productos del Inventario</label>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    {/* Select Producto */}
-                    <select
-                      value={selectedProdId}
-                      onChange={e => {
-                        setSelectedProdId(e.target.value);
-                        setSelectedVersionId('');
-                      }}
-                      style={{ flex: 1, minWidth: '150px', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text)', fontSize: '12.5px' }}
-                    >
-                      <option value="">-- Seleccionar --</option>
-                      {products.map(p => {
-                        const stockText = p.versions.length > 0
-                          ? `${p.versions.reduce((a, b) => a + b.stock, 0)} ${p.unidad_medida || 'und'}`
-                          : `${p.stock} ${p.unidad_medida || 'und'}`;
-                        return (
-                          <option key={p.id} value={p.id}>
-                            {{
-                              'Panes': '🍞',
-                              'Tortas': '🎂',
-                              'Dulces': '🍬',
-                              'Bebidas': '🥤',
-                              'Insumos': '🌾'
-                            }[p.cat] || '📦'} {p.name} - S/. {p.price.toFixed(2)} ({stockText})
-                          </option>
-                        );
-                      })}
-                    </select>
-
-                    {/* Select Versión (Variante) */}
-                    {selectedProdObj && selectedProdObj.versions && selectedProdObj.versions.length > 0 && (
-                      <select
-                        value={selectedVersionId}
-                        onChange={e => setSelectedVersionId(e.target.value)}
-                        style={{ width: '100px', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text)', fontSize: '12.5px' }}
-                      >
-                        <option value="">-- Ver. --</option>
-                        {selectedProdObj.versions.map(v => (
-                          <option key={v.id} value={v.id}>
-                            {v.name} - S/. {v.price.toFixed(2)} (Stock: {v.stock})
-                          </option>
-                        ))}
-                      </select>
-                    )}
-
-                    {/* Cantidad */}
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="any"
-                      placeholder="Cant."
-                      value={selectedQty}
-                      onChange={e => setSelectedQty(e.target.value)}
-                      style={{ width: '70px', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text)', fontSize: '12.5px', textAlign: 'center' }}
-                    />
-
-                    {/* Botón Agregar */}
-                    <button
-                      type="button"
-                      onClick={handleAddProductToReservation}
-                      style={{ padding: '8px 14px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12.5px' }}
-                    >
-                      Añadir
-                    </button>
+                {/* Unified Items Picker Section */}
+                <div style={{ border: '1.5px dashed var(--border)', padding: '14px', borderRadius: '12px', background: 'var(--bg-card2)' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.5px', marginBottom: '10px' }}>
+                    Añadir Ítems a la Reserva
                   </div>
 
-                  {/* Cálculo previo informativo */}
-                  {selectedProdObj && (
-                    <div style={{ fontSize: '11.5px', color: 'var(--text-3)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255, 255, 255, 0.4)', padding: '6px 10px', borderRadius: '8px', border: '1px dashed var(--border)', marginTop: '4px' }}>
-                      <span>💡</span>
-                      <span>
-                        Se agregará: <strong>{selectedQty} {selectedProdObj.unidad_medida || 'und'}</strong> de <strong>{selectedProdObj.name}</strong> 
-                        {selectedVersionId && ` (${selectedProdObj.versions.find(v => String(v.id) === String(selectedVersionId))?.name})`}
-                        {' por '}
-                        <strong style={{ color: 'var(--accent)' }}>
-                          S/. {(
-                            parseFloat(selectedQty) * 
-                            (selectedVersionId 
-                              ? (selectedProdObj.versions.find(v => String(v.id) === String(selectedVersionId))?.price || 0) 
-                              : selectedProdObj.price)
-                          ).toFixed(2)}
-                        </strong>
-                      </span>
-                    </div>
-                  )}
+                  {/* Tab Selector */}
+                  <div style={{ display: 'flex', gap: '6px', background: 'var(--bg)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border)', marginBottom: '12px' }}>
+                    {(['producto', 'insumo', 'personalizado'] as const).map(type => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => {
+                          setItemType(type);
+                          setSelectedProdId('');
+                          setSelectedVersionId('');
+                          setSelectedInsumoId('');
+                          setCustomItemName('');
+                          setItemPrice('');
+                          setSelectedQty('1');
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: '6px 10px',
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          borderRadius: '7px',
+                          border: 'none',
+                          background: itemType === type ? 'var(--accent)' : 'transparent',
+                          color: itemType === type ? '#fff' : 'var(--text-3)',
+                          cursor: 'pointer',
+                          transition: 'all 0.18s',
+                          textTransform: 'uppercase'
+                        }}
+                      >
+                        {type === 'producto' ? '🍞 Producto' : type === 'insumo' ? '🌾 Insumo' : '✍️ Personalizado'}
+                      </button>
+                    ))}
+                  </div>
 
-                  {/* Items list */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {/* Item Selection Selector */}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <div style={{ flex: 1 }}>
+                        {itemType === 'producto' && (
+                          <select
+                            value={selectedProdId}
+                            onChange={e => handleProductChange(e.target.value)}
+                            style={{ width: '100%', fontSize: '13px' }}
+                          >
+                            <option value="">-- Seleccionar producto del catálogo --</option>
+                            {products.filter(p => p.cat !== 'Insumos').map(p => (
+                              <option key={p.id} value={p.id}>
+                                {p.name} (S/. {p.price.toFixed(2)})
+                              </option>
+                            ))}
+                          </select>
+                        )}
+
+                        {itemType === 'insumo' && (
+                          <select
+                            value={selectedInsumoId}
+                            onChange={e => handleInsumoChange(e.target.value)}
+                            style={{ width: '100%', fontSize: '13px' }}
+                          >
+                            <option value="">-- Seleccionar insumo / ingrediente --</option>
+                            {insumos.map(i => (
+                              <option key={i.id} value={i.id}>
+                                {i.nombre} (Costo ref: S/. {i.costoUnitario.toFixed(2)} / {i.unidadMedida})
+                              </option>
+                            ))}
+                          </select>
+                        )}
+
+                        {itemType === 'personalizado' && (
+                          <input
+                            type="text"
+                            placeholder="Nombre del ítem (ej: Torta especial Frozen 3 pisos)"
+                            value={customItemName}
+                            onChange={e => setCustomItemName(e.target.value)}
+                            style={{ width: '100%', fontSize: '13px' }}
+                          />
+                        )}
+                      </div>
+
+                      {/* Select Versión (only for product if it has versions) */}
+                      {itemType === 'producto' && selectedProdObj && selectedProdObj.versions && selectedProdObj.versions.length > 0 && (
+                        <div style={{ width: '140px' }}>
+                          <select
+                            value={selectedVersionId}
+                            onChange={e => handleVersionChange(e.target.value)}
+                            style={{ width: '100%', fontSize: '13px' }}
+                          >
+                            <option value="">-- Versión --</option>
+                            {selectedProdObj.versions.map(v => (
+                              <option key={v.id} value={v.id}>
+                                {v.name} (S/. {v.price.toFixed(2)})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Row 2: Price, Qty and Add Button */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr auto', gap: '10px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Precio S/.</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00"
+                          value={itemPrice}
+                          onChange={e => setItemPrice(e.target.value)}
+                          style={{ padding: '8px 10px', fontSize: '13px', width: '100%' }}
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Cant.</span>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="any"
+                            placeholder="1"
+                            value={selectedQty}
+                            onChange={e => setSelectedQty(e.target.value)}
+                            style={{ padding: '8px 10px', paddingRight: '40px', width: '100%', fontSize: '13px' }}
+                          />
+                          <span style={{ position: 'absolute', right: '10px', fontSize: '10px', fontWeight: 'bold', color: 'var(--text-3)', pointerEvents: 'none' }}>
+                            {itemType === 'producto' && selectedProdObj ? (selectedProdObj.unidad_medida || 'und') :
+                             itemType === 'insumo' && selectedInsumoId ? (insumos.find(i => String(i.id) === selectedInsumoId)?.unidadMedida || 'kg') :
+                             'und'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleAddItemToReservation}
+                        className="btn-new"
+                        style={{ padding: '8px 16px', height: '36px', fontSize: '12px' }}
+                      >
+                        ＋ Añadir ítem
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Items List */}
                   {reservationItems.length > 0 && (
-                    <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--bg-card)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                    <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--bg-card)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)' }}>
                       {reservationItems.map((item, idx) => (
-                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12.5px', borderBottom: '1px solid var(--border)', paddingBottom: '6px', marginBottom: '2px' }}>
                           <span>
                             <strong>{item.qty} {item.unidadMedida || 'und'}</strong> x {item.name} {item.versionName ? `(${item.versionName})` : ''}
-                            <span style={{ color: 'var(--text-3)', fontSize: '10.5px', marginLeft: '6px' }}>(S/. {item.price.toFixed(2)})</span>
+                            <span style={{ color: 'var(--text-3)', fontSize: '11px', marginLeft: '6px' }}>(S/. {item.price.toFixed(2)})</span>
+                            {item.type === 'insumo' && <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px', background: 'var(--accent-bg)', padding: '1px 5px', borderRadius: '8px', fontWeight: 'bold' }}>Insumo</span>}
+                            {item.type === 'personalizado' && <span style={{ fontSize: '10px', color: '#0d9488', marginLeft: '6px', background: 'rgba(20,184,166,0.1)', padding: '1px 5px', borderRadius: '8px', fontWeight: 'bold' }}>Personalizado</span>}
                           </span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <strong style={{ color: 'var(--text-2)' }}>S/. {(item.price * item.qty).toFixed(2)}</strong>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <strong style={{ color: 'var(--text-2)', fontSize: '12.5px' }}>S/. {(item.price * item.qty).toFixed(2)}</strong>
                             <button
                               type="button"
                               onClick={() => handleRemoveProductFromReservation(idx)}
-                              style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: '12px' }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: 'var(--red)',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                transition: 'background 0.2s'
+                              }}
+                              onMouseOver={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'}
+                              onMouseOut={(e) => e.currentTarget.style.background = 'none'}
                             >
                               ✕
                             </button>
@@ -877,7 +1085,6 @@ export default function PedidosPage() {
                     onChange={e => setFProductoTexto(e.target.value)}
                     placeholder="Ej: Torta personalizada de Frozen, etc. (Opcional si usas inventario)"
                   />
-                </div>
                 </div>
 
                 {/* Fecha y Hora de Entrega */}

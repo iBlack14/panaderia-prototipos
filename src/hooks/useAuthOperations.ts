@@ -35,16 +35,18 @@ export function useAuthOperations({
     if (isSupabaseConfigured && supabase) {
       try {
         let emailToUse = uIn;
+        let profileData = null;
 
         if (!uIn.includes('@')) {
           const { data: profile } = await supabase
             .from('profiles')
-            .select('correo')
+            .select('*, roles(nombre)')
             .eq('username', uIn)
             .maybeSingle();
 
-          if (profile && profile.correo) {
-            emailToUse = profile.correo;
+          if (profile) {
+            profileData = profile;
+            emailToUse = profile.correo || `${uIn}@snackroque.com`;
           } else {
             emailToUse = `${uIn}@snackroque.com`;
           }
@@ -56,12 +58,16 @@ export function useAuthOperations({
         });
         if (error) throw error;
         
-        const { data: prof, error: profErr } = await supabase
-          .from('profiles')
-          .select('*, roles(nombre)')
-          .eq('id', data.user.id)
-          .single();
-        if (profErr) throw profErr;
+        let prof = profileData;
+        if (!prof) {
+          const { data: profResp, error: profErr } = await supabase
+            .from('profiles')
+            .select('*, roles(nombre)')
+            .eq('id', data.user.id)
+            .single();
+          if (profErr) throw profErr;
+          prof = profResp;
+        }
         
         if (prof) {
           const userObj: User = {
