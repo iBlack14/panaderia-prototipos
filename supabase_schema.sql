@@ -12,6 +12,8 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ============================================================
 -- 1. LIMPIEZA COMPLETA (DROP en orden inverso de dependencias)
 -- ============================================================
+DROP TABLE IF EXISTS public.detalle_receta       CASCADE;
+DROP TABLE IF EXISTS public.recetas              CASCADE;
 DROP TABLE IF EXISTS public.produccion_descarte  CASCADE;
 DROP TABLE IF EXISTS public.whatsapp_baileys_auth CASCADE;
 DROP TABLE IF EXISTS public.detalle_compra        CASCADE;
@@ -75,15 +77,13 @@ CREATE TABLE public.metodos_pago (
     estado         INT DEFAULT 1
 );
 
--- 2.5 Clientes (con línea de crédito / fiados)
+-- 2.5 Clientes (Prepago)
 CREATE TABLE public.clientes (
     id_cliente      SERIAL PRIMARY KEY,
     nombre          VARCHAR(150) NOT NULL,
     dni             VARCHAR(20),
     telefono        VARCHAR(50),
     email           VARCHAR(150),
-    limite_credito  DECIMAL(10,2) NOT NULL DEFAULT 0.00
-                        CONSTRAINT chk_limite_credito CHECK (limite_credito >= 0),
     saldo_credito   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     historial_pagos JSONB DEFAULT '[]'::jsonb,
     fec_registro    TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -107,7 +107,6 @@ CREATE TABLE public.productos (
     id_producto     SERIAL PRIMARY KEY,
     id_categoria    INT REFERENCES public.categorias(id_categoria),
     nombre          VARCHAR(150) NOT NULL UNIQUE,
-    em              VARCHAR(10)  DEFAULT '📦',
     num_stock       DECIMAL(10,3) DEFAULT 0.000
                         CONSTRAINT chk_product_stock CHECK (num_stock >= 0),
     precio_unitario DECIMAL(10,2) NOT NULL DEFAULT 0.00
@@ -140,6 +139,7 @@ CREATE TABLE public.cierres_caja (
     tot_saldo_inicial   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     tot_ventas_efectivo DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     tot_ventas_otros    DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    tot_retiros         DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     tot_saldo_final     DECIMAL(10,2) DEFAULT 0.00,
     diferencia          DECIMAL(10,2) DEFAULT 0.00,
     estado              VARCHAR(20)   DEFAULT 'abierto'  -- 'abierto', 'cerrado'
@@ -204,6 +204,22 @@ CREATE TABLE public.produccion_descarte (
     fec_registro     TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 2.15 Recetas y Fórmulas
+CREATE TABLE public.recetas (
+    id_receta         SERIAL PRIMARY KEY,
+    id_producto       INT UNIQUE NOT NULL REFERENCES public.productos(id_producto) ON DELETE CASCADE,
+    rendimiento_base  DECIMAL(10,3) NOT NULL DEFAULT 1.000,
+    instrucciones     TEXT
+);
+
+-- 2.16 Detalle de Insumos de la Receta
+CREATE TABLE public.detalle_receta (
+    id_detalle        SERIAL PRIMARY KEY,
+    id_receta         INT REFERENCES public.recetas(id_receta) ON DELETE CASCADE,
+    id_producto_insumo INT REFERENCES public.productos(id_producto) ON DELETE RESTRICT,
+    cantidad_requerida DECIMAL(10,3) NOT NULL CONSTRAINT chk_req_qty CHECK (cantidad_requerida > 0)
+);
+
 -- 2.15 Sesión real de WhatsApp Baileys
 -- Guarda credenciales Signal/Baileys en BD para evitar archivos locales .json.
 -- Acceso esperado: solo servidor con SUPABASE_SERVICE_ROLE_KEY.
@@ -262,11 +278,17 @@ CREATE TRIGGER tr_compra_aumentar_stock
 AFTER INSERT ON public.detalle_compra
 FOR EACH ROW EXECUTE FUNCTION fn_aumentar_stock_compra();
 
--- C. Actualizar stock en producción / descarte
+-- C. Actualizar stock en producción / descarte (con soporte para recetas de insumos)
 CREATE OR REPLACE FUNCTION fn_actualizar_stock_panes()
 RETURNS TRIGGER AS $$
+DECLARE
+    receta_row RECORD;
+    det_row RECORD;
+    factor DECIMAL(10,6);
+    rend_base DECIMAL(10,3);
 BEGIN
     IF NEW.tipo_registro = 'produccion' THEN
+        -- 1. Incrementar el stock del producto o variante producida
         IF NEW.id_version IS NOT NULL THEN
             UPDATE public.producto_versiones
                SET num_stock = num_stock + NEW.num_cantidad
@@ -276,6 +298,30 @@ BEGIN
                SET num_stock = num_stock + NEW.num_cantidad
              WHERE id_producto = NEW.id_producto;
         END IF;
+
+        -- 2. Descontar insumos automáticamente si existe una receta para el producto
+        SELECT id_receta, rendimiento_base INTO receta_row 
+          FROM public.recetas 
+         WHERE id_producto = NEW.id_producto;
+
+        IF FOUND THEN
+            rend_base := COALESCE(receta_row.rendimiento_base, 1.000);
+            IF rend_base > 0 THEN
+                factor := NEW.num_cantidad / rend_base;
+                
+                FOR det_row IN 
+                    SELECT id_producto_insumo, cantidad_requerida 
+                      FROM public.detalle_receta 
+                     WHERE id_receta = receta_row.id_receta
+                LOOP
+                    -- Descontar stock del insumo en la tabla productos
+                    UPDATE public.productos
+                       SET num_stock = num_stock - (det_row.cantidad_requerida * factor)
+                     WHERE id_producto = det_row.id_producto_insumo;
+                END LOOP;
+            END IF;
+        END IF;
+
     ELSIF NEW.tipo_registro = 'descarte' THEN
         IF NEW.id_version IS NOT NULL THEN
             UPDATE public.producto_versiones
@@ -481,24 +527,24 @@ ON CONFLICT (id_metodo_pago) DO UPDATE SET tipo_pago = EXCLUDED.tipo_pago;
 
 
 -- Productos de ejemplo
-INSERT INTO public.productos (id_producto, id_categoria, nombre, em, num_stock, precio_unitario, estado) VALUES
-(1, 1, 'Croissant mantequilla', '🥐', 48,  4.50, 1),
-(2, 1, 'Pan de yema especial',  '🍞', 74,  1.80, 1),
-(3, 2, 'Torta de chocolate',    '🎂',  8, 45.00, 1),
-(4, 1, 'Empanada de pollo',     '🫓', 32,  3.50, 1),
-(5, 3, 'Alfajor triple',        '🍪', 40,  2.80, 1),
-(6, 2, 'Queque de zanahoria',   '🍰',  6, 28.00, 1),
-(7, 1, 'Pan integral',          '🌾', 20,  5.50, 1),
-(8, 4, 'Café americano',        '☕', 99,  6.00, 1),
-(9, 5, 'Harina saco 50kg',      '🌾', 10, 120.00, 1),
-(10, 5, 'Azúcar saco 50kg',     '🍬', 15, 110.00, 1),
-(11, 5, 'Levadura caja 5kg',    '📦', 5,   75.00, 1),
-(12, 5, 'Mantequilla kg',       '🧈', 20,  18.00, 1),
-(13, 5, 'Chocolate cobertura kg','🍫', 8,  35.00, 1),
-(14, 5, 'Pollo kg',             '🍗', 15,   9.50, 1),
-(15, 5, 'Huevos jaba x30',      '🥚', 30,  16.00, 1),
-(16, 5, 'Leche caja 12L',       '🥛', 12,  52.00, 1),
-(17, 5, 'Café en grano kg',     '☕', 10,  45.00, 1)
+INSERT INTO public.productos (id_producto, id_categoria, nombre, num_stock, precio_unitario, estado) VALUES
+(1, 1, 'Croissant mantequilla', 48,  4.50, 1),
+(2, 1, 'Pan de yema especial',  74,  1.80, 1),
+(3, 2, 'Torta de chocolate',     8, 45.00, 1),
+(4, 1, 'Empanada de pollo',     32,  3.50, 1),
+(5, 3, 'Alfajor triple',        40,  2.80, 1),
+(6, 2, 'Queque de zanahoria',    6, 28.00, 1),
+(7, 1, 'Pan integral',          20,  5.50, 1),
+(8, 4, 'Café americano',        99,  6.00, 1),
+(9, 5, 'Harina saco 50kg',      10, 120.00, 1),
+(10, 5, 'Azúcar saco 50kg',     15, 110.00, 1),
+(11, 5, 'Levadura caja 5kg',     5,   75.00, 1),
+(12, 5, 'Mantequilla kg',       20,  18.00, 1),
+(13, 5, 'Chocolate cobertura kg', 8,  35.00, 1),
+(14, 5, 'Pollo kg',             15,   9.50, 1),
+(15, 5, 'Huevos jaba x30',      30,  16.00, 1),
+(16, 5, 'Leche caja 12L',       12,  52.00, 1),
+(17, 5, 'Café en grano kg',     10,  45.00, 1)
 ON CONFLICT (id_producto) DO UPDATE SET nombre = EXCLUDED.nombre;
 
 -- Backfill: vincular usuarios auth ya existentes con profiles
@@ -574,6 +620,20 @@ DROP POLICY IF EXISTS "detalle_devolucion_select" ON public.detalle_devolucion;
 DROP POLICY IF EXISTS "detalle_devolucion_insert" ON public.detalle_devolucion;
 CREATE POLICY "detalle_devolucion_select" ON public.detalle_devolucion FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 4, 5)));
 CREATE POLICY "detalle_devolucion_insert" ON public.detalle_devolucion FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 2, 5)));
+
+-- recetas
+ALTER TABLE public.recetas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "recetas_select" ON public.recetas;
+DROP POLICY IF EXISTS "recetas_write" ON public.recetas;
+CREATE POLICY "recetas_select" ON public.recetas FOR SELECT TO authenticated USING (true);
+CREATE POLICY "recetas_write" ON public.recetas FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 5)));
+
+-- detalle_receta
+ALTER TABLE public.detalle_receta ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "detalle_receta_select" ON public.detalle_receta;
+DROP POLICY IF EXISTS "detalle_receta_write" ON public.detalle_receta;
+CREATE POLICY "detalle_receta_select" ON public.detalle_receta FOR SELECT TO authenticated USING (true);
+CREATE POLICY "detalle_receta_write" ON public.detalle_receta FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 5)));
 
 -- Recargar caché del esquema PostgREST
 NOTIFY pgrst, 'reload schema';

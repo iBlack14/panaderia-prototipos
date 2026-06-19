@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useApp, Product, ProductVersion } from '@/context/AppContext';
 
-export default function InventarioPage() {
+export default function ProductosPage() {
   const { 
     products, 
     categories,
@@ -25,7 +25,6 @@ export default function InventarioPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [cat, setCat] = useState('');
-  const [em, setEm] = useState('🥐');
   const [price, setPrice] = useState('');
   const [stock, setStock] = useState('0');
   const [unidadMedida, setUnidadMedida] = useState('unidades');
@@ -88,7 +87,6 @@ export default function InventarioPage() {
     setEditingId(null);
     setName('');
     setCat(categories[0]?.name || 'Panes');
-    setEm('🥐');
     setPrice('');
     setStock('0');
     setVariantsList([]);
@@ -102,7 +100,6 @@ export default function InventarioPage() {
     setEditingId(p.id);
     setName(p.name);
     setCat(p.cat);
-    setEm(p.em || '🥐');
     setPrice(String(p.price));
     setStock(String(p.stock));
     setVariantsList(p.versions || []);
@@ -120,7 +117,6 @@ export default function InventarioPage() {
       id: editingId,
       name,
       cat,
-      em: em || '📦',
       price: parseFloat(price) || 0,
       stock: parseFloat(stock) || 0,
       versions: variantsList,
@@ -207,7 +203,7 @@ export default function InventarioPage() {
           onClick={() => setActiveTab('list')}
           style={{ padding: '8px 16px', border: 'none', borderRadius: '20px', background: activeTab === 'list' ? 'var(--accent-bg)' : 'transparent', color: activeTab === 'list' ? 'var(--accent)' : 'var(--text-3)', fontWeight: '700', fontSize: '12.5px', cursor: 'pointer' }}
         >
-          📦 Catálogo e Inventario
+          📦 Catálogo de Productos
         </button>
         <button 
           onClick={() => setActiveTab('mermas')}
@@ -232,7 +228,7 @@ export default function InventarioPage() {
               <div className="srch-box">
                 <span>🔍</span>
                 <input 
-                  placeholder="Filtrar inventario por nombre..." 
+                  placeholder="Filtrar catálogo por nombre..." 
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -249,7 +245,7 @@ export default function InventarioPage() {
                   <th style={{ textAlign: 'left' }}>Producto</th>
                   <th style={{ textAlign: 'left' }}>Categoría</th>
                   <th style={{ textAlign: 'left' }}>Precio Base</th>
-                  <th style={{ textAlign: 'left' }}>Stock Total</th>
+                  <th style={{ textAlign: 'left' }}>Stock Disponible</th>
                   <th style={{ textAlign: 'left' }}>Variantes</th>
                   <th style={{ textAlign: 'left' }}>Estado</th>
                   <th style={{ textAlign: 'left' }}>Acciones</th>
@@ -269,7 +265,15 @@ export default function InventarioPage() {
                     <tr key={p.id}>
                       <td>
                         <div className="row-chip">
-                          <div className="chip-icon">{p.em}</div>
+                          <div className="chip-icon">
+                            {{
+                              'Panes': '🍞',
+                              'Tortas': '🎂',
+                              'Dulces': '🍬',
+                              'Bebidas': '🥤',
+                              'Insumos': '🌾'
+                            }[p.cat] || '📦'}
+                          </div>
                           <div>
                             <div style={{ fontWeight: '700', color: 'var(--text)', fontSize: '13.5px' }}>{p.name}</div>
                             <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>ID #{p.id}</div>
@@ -388,8 +392,8 @@ export default function InventarioPage() {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div>
-              <h3 style={{ margin: 0, fontFamily: 'DM Serif Display', fontSize: '20px', color: 'var(--text)' }}>Kardex de Inventario</h3>
-              <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-3)', marginTop: '2px' }}>Trazabilidad completa: ventas, compras, producción y descartes unificados.</p>
+              <h3 style={{ margin: 0, fontFamily: 'DM Serif Display', fontSize: '20px', color: 'var(--text)' }}>Kardex de Productos</h3>
+              <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-3)', marginTop: '2px' }}>Trazabilidad completa: ventas, compras, producción, recetas y descartes.</p>
             </div>
             <div style={{ display: 'flex', gap: '6px', fontSize: '11px', flexWrap: 'wrap' }}>
               <span className="tag tg-ok">➕ Producción</span>
@@ -483,7 +487,7 @@ export default function InventarioPage() {
                 </div>
               </div>
 
-              <div className="inp-group">
+              <div className="inp-group" style={{ gridColumn: 'span 2' }}>
                 <label>Categoría</label>
                 <select value={cat} onChange={(e) => setCat(e.target.value)}>
                   {categories.length > 0 ? (
@@ -499,13 +503,6 @@ export default function InventarioPage() {
                     </>
                   )}
                 </select>
-              </div>
-
-              <div className="inp-group">
-                <label>Ícono (emoji)</label>
-                <div className="inp-wrap">
-                  <input type="text" value={em} onChange={(e) => setEm(e.target.value)} maxLength={2} placeholder="🥐" />
-                </div>
               </div>
 
               <div className="inp-group" style={{ gridColumn: 'span 2' }}>
@@ -639,7 +636,7 @@ export default function InventarioPage() {
                 <select value={logProductId} onChange={(e) => handleProductChangeForLogs(e.target.value)} required>
                   <option value="">-- Seleccionar producto --</option>
                   {breadProducts.map(p => (
-                    <option key={p.id} value={p.id}>{p.em} {p.name}</option>
+                    <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
               </div>

@@ -45,7 +45,7 @@ export function useCartOperations({
   saveOffline
 }: CartOpsParams) {
 
-  const addToCart = (productName: string, price: number, em: any, id: number, versionObj: ProductVersion | null = null, customQty?: number) => {
+  const addToCart = (productName: string, price: number, id: number, versionObj: ProductVersion | null = null, customQty?: number) => {
     if (!cashSession) {
       toast('⚠️ Debe iniciar caja para realizar ventas.');
       return;
@@ -183,6 +183,14 @@ export function useCartOperations({
     const pm = paymentMethods.find(m => m.id === paymentMethodId) || { name: 'Efectivo' };
     const methodStr = pm.name;
 
+    const isPrepago = paymentMethodId === 999;
+    const clienteObj = clienteId ? clients.find(c => String(c.id) === String(clienteId)) : null;
+
+    if (isPrepago && clienteObj && tot > clienteObj.saldoCred) {
+      toast(`⚠️ Saldo prepago insuficiente. Disponible: S/. ${clienteObj.saldoCred.toFixed(2)}`);
+      return;
+    }
+
     const updatedProds = products.map(p => {
       const itemsToDeduct = cart.filter(c => c.id === p.id);
       if (itemsToDeduct.length === 0) return p;
@@ -203,45 +211,22 @@ export function useCartOperations({
       return { ...p, stock: newStock, versions: newVersions };
     });
 
-    setProducts(updatedProds);
-    saveOffline('snack_products', updatedProds);
-
     const isEfectivo = methodStr.toLowerCase().includes('efectivo');
     const updatedSession = {
       ...activeSession,
       tot_ventas_efectivo: activeSession.tot_ventas_efectivo + (isEfectivo ? tot : 0),
       tot_ventas_otros: activeSession.tot_ventas_otros + (!isEfectivo ? tot : 0),
     };
-    setCashSession(updatedSession);
-    saveOffline('snack_session', updatedSession);
 
-    const isPrepago = paymentMethodId === 999;
-    const clienteObj = clienteId ? clients.find(c => String(c.id) === String(clienteId)) : null;
-
+    let updClients = clients;
+    let nuevoPago: CreditPayment | null = null;
+    let newSaldo = 0;
+    let newHistorial: CreditPayment[] = [];
     if (isPrepago && clienteObj) {
-      if (tot > clienteObj.saldoCred) {
-        toast(`⚠️ Saldo prepago insuficiente. Disponible: S/. ${clienteObj.saldoCred.toFixed(2)}`);
-        return;
-      }
-      const nuevoPago: CreditPayment = { id: Date.now(), fecha: new Date().toLocaleDateString(), concepto: `Consumo Prepago — ${cart.map(i => i.name).join(', ')}`, monto: tot, tipo: 'cargo' };
-      
-      const newSaldo = clienteObj.saldoCred - tot;
-      const newHistorial = [...clienteObj.historialPagos, nuevoPago];
-
-      if (isSupabaseConfigured && supabase) {
-        try {
-          await supabase.from('clientes').update({
-            saldo_credito: newSaldo,
-            historial_pagos: newHistorial
-          }).eq('id_cliente', clienteId);
-        } catch (err) {
-          console.error('Error al actualizar saldo prepago de cliente en Supabase', err);
-        }
-      }
-
-      const updClients = clients.map(c => String(c.id) === String(clienteId) ? { ...c, saldoCred: newSaldo, historialPagos: newHistorial } : c);
-      setClients(updClients);
-      saveOffline('snack_clients', updClients);
+      nuevoPago = { id: Date.now(), fecha: new Date().toLocaleDateString(), concepto: `Consumo Prepago — ${cart.map(i => i.name).join(', ')}`, monto: tot, tipo: 'cargo' };
+      newSaldo = clienteObj.saldoCred - tot;
+      newHistorial = [...clienteObj.historialPagos, nuevoPago];
+      updClients = clients.map(c => String(c.id) === String(clienteId) ? { ...c, saldoCred: newSaldo, historialPagos: newHistorial } : c);
     }
 
     const saleObj: Sale = {
@@ -259,39 +244,6 @@ export function useCartOperations({
     };
 
     const newSales = [...sales, saleObj];
-    setSales(newSales);
-    saveOffline('snack_sales', newSales);
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data: vData } = await supabase.from('ventas').insert({
-          id_cliente: clienteId || null,
-          id_usuario: user?.id,
-          id_cierre_caja: activeSession.id,
-          id_metodo_pago: paymentMethodId,
-          sub_total: sub,
-          igv,
-          tot_pago: tot
-        }).select().single();
-
-        if (vData) {
-          const detailRows = cart.map(item => {
-            const prodRef = products.find(p => p.id === item.id);
-            const vRef = (item.version && prodRef) ? prodRef.versions.find(v => v.name === item.version) : null;
-            return {
-              id_venta: vData.id_venta,
-              id_producto: item.id,
-              id_version: vRef ? vRef.id : null,
-              num_cantidad: item.qty,
-              precio_unitario: item.price
-            };
-          });
-          await supabase.from('detalle_venta').insert(detailRows);
-        }
-      } catch (err) {
-        console.error('Error al sincronizar venta con Supabase', err);
-      }
-    }
 
     const saleRef = `VTA-${saleObj.id}`;
     const newKardexEntries: BreadLog[] = cart.map(item => ({
@@ -305,12 +257,105 @@ export function useCartOperations({
       ref_id: saleRef
     }));
     const updLogs = [...newKardexEntries, ...breadLogs];
-    setBreadLogs(updLogs);
-    saveOffline('snack_bread_logs', updLogs);
 
-    setCart([]);
-    toast('✅ Venta registrada correctamente');
-    return saleObj;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        // 1. Si es prepago, actualiza saldo de cliente en Supabase
+        if (isPrepago && clienteObj) {
+          const { error: cliError } = await supabase.from('clientes').update({
+            saldo_credito: newSaldo,
+            historial_pagos: newHistorial
+          }).eq('id_cliente', clienteId);
+          if (cliError) throw cliError;
+        }
+
+        // 2. Inserta cabecera de la venta en Supabase
+        const { data: vData, error: vError } = await supabase.from('ventas').insert({
+          id_cliente: clienteId || null,
+          id_usuario: user?.id,
+          id_cierre_caja: activeSession.id,
+          id_metodo_pago: paymentMethodId,
+          sub_total: sub,
+          igv,
+          tot_pago: tot
+        }).select().single();
+
+        if (vError) throw vError;
+
+        // 3. Inserta detalles de la venta
+        if (vData) {
+          const detailRows = cart.map(item => {
+            const prodRef = products.find(p => p.id === item.id);
+            const vRef = (item.version && prodRef) ? prodRef.versions.find(v => v.name === item.version) : null;
+            return {
+              id_venta: vData.id_venta,
+              id_producto: item.id,
+              id_version: vRef ? vRef.id : null,
+              num_cantidad: item.qty,
+              precio_unitario: item.price
+            };
+          });
+          const { error: detError } = await supabase.from('detalle_venta').insert(detailRows);
+          if (detError) throw detError;
+        }
+
+        // 4. Actualizar saldos de cierres_caja en Supabase
+        const { error: cashError } = await supabase.from('cierres_caja').update({
+          tot_ventas_efectivo: updatedSession.tot_ventas_efectivo,
+          tot_ventas_otros: updatedSession.tot_ventas_otros
+        }).eq('id_cierre_caja', activeSession.id);
+        if (cashError) throw cashError;
+
+        // Solo si todo en la nube es exitoso, actualizamos los estados locales en caliente
+        setProducts(updatedProds);
+        saveOffline('snack_products', updatedProds);
+
+        setCashSession(updatedSession);
+        saveOffline('snack_session', updatedSession);
+
+        if (isPrepago && clienteObj) {
+          setClients(updClients);
+          saveOffline('snack_clients', updClients);
+        }
+
+        setSales(newSales);
+        saveOffline('snack_sales', newSales);
+
+        setBreadLogs(updLogs);
+        saveOffline('snack_bread_logs', updLogs);
+
+        setCart([]);
+        toast('✅ Venta registrada correctamente');
+        return saleObj;
+
+      } catch (err: any) {
+        console.error('Error al sincronizar venta con Supabase', err);
+        toast(`❌ Error en la nube: ${err.message || err}`);
+        return undefined;
+      }
+    } else {
+      // Modo offline: se actualizan estados locales de inmediato
+      setProducts(updatedProds);
+      saveOffline('snack_products', updatedProds);
+
+      setCashSession(updatedSession);
+      saveOffline('snack_session', updatedSession);
+
+      if (isPrepago && clienteObj) {
+        setClients(updClients);
+        saveOffline('snack_clients', updClients);
+      }
+
+      setSales(newSales);
+      saveOffline('snack_sales', newSales);
+
+      setBreadLogs(updLogs);
+      saveOffline('snack_bread_logs', updLogs);
+
+      setCart([]);
+      toast('✅ Venta registrada correctamente');
+      return saleObj;
+    }
   };
 
   const savePaymentMethod = async (mObj: any) => {

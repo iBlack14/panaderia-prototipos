@@ -682,7 +682,13 @@ export default function PedidosPage() {
                           : `${p.stock} ${p.unidad_medida || 'und'}`;
                         return (
                           <option key={p.id} value={p.id}>
-                            {p.em || '🥐'} {p.name} ({stockText})
+                            {{
+                              'Panes': '🍞',
+                              'Tortas': '🎂',
+                              'Dulces': '🍬',
+                              'Bebidas': '🥤',
+                              'Insumos': '🌾'
+                            }[p.cat] || '📦'} {p.name} ({stockText})
                           </option>
                         );
                       })}

@@ -107,6 +107,7 @@ export function useCashOperations({
           fec_cierre: new Date(),
           tot_ventas_efectivo: cashSession.tot_ventas_efectivo,
           tot_ventas_otros: cashSession.tot_ventas_otros,
+          tot_retiros: totalRetiros,
           tot_saldo_final: parsedCounted,
           diferencia: diff,
           estado: 'cerrado'
@@ -147,7 +148,8 @@ export function useCashOperations({
       try {
         await supabase.from('cierres_caja').update({
           tot_ventas_efectivo: updatedSession.tot_ventas_efectivo,
-          tot_ventas_otros: updatedSession.tot_ventas_otros
+          tot_ventas_otros: updatedSession.tot_ventas_otros,
+          tot_retiros: updatedSession.tot_retiros
         }).eq('id_cierre_caja', cashSession.id);
       } catch (err) {
         console.error('Error al registrar retiro en Supabase', err);

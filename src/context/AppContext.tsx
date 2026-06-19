@@ -101,9 +101,9 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
 const DEFAULT_PROVIDERS: Provider[] = [];
 
 const DEFAULT_CLIENTS: Client[] = [
-  { id: 1, nombre: 'Rosa Quispe Mamani', dni: '43218765', telefono: '987654321', email: '', limiteCred: 80, saldoCred: 0, historialPagos: [], active: true },
-  { id: 2, nombre: 'Juan Torres Huanca', dni: '56781234', telefono: '912345678', email: '', limiteCred: 120, saldoCred: 35, historialPagos: [{ id: 1, fecha: '24/05/2026', concepto: 'Compra a crédito — 4 panes y 1 torta', monto: 35, tipo: 'cargo' }], active: true },
-  { id: 3, nombre: 'Carmen Flores Díaz', dni: '29876543', telefono: '945612378', email: '', limiteCred: 200, saldoCred: 0, historialPagos: [], active: true }
+  { id: 1, nombre: 'Rosa Quispe Mamani', dni: '43218765', telefono: '987654321', email: '', saldoCred: 0, historialPagos: [], active: true },
+  { id: 2, nombre: 'Juan Torres Huanca', dni: '56781234', telefono: '912345678', email: '', saldoCred: 35, historialPagos: [{ id: 1, fecha: '24/05/2026', concepto: 'Compra a crédito — 4 panes y 1 torta', monto: 35, tipo: 'cargo' }], active: true },
+  { id: 3, nombre: 'Carmen Flores Díaz', dni: '29876543', telefono: '945612378', email: '', saldoCred: 0, historialPagos: [], active: true }
 ];
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -191,17 +191,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabase.from('proveedores').select('*'),
             supabase.from('cierres_caja').select('*').eq('estado', 'abierto').limit(1),
             supabase.from('cierres_caja').select('*').eq('estado', 'cerrado').order('fec_cierre', { ascending: false }),
-            supabase.from('ventas').select('*, detalle_venta(*, productos(nombre, em), producto_versiones(nombre_version)), metodos_pago(tipo_pago), profiles(nombre, apellido_paterno)').order('fec_venta', { ascending: false }).limit(500),
+            supabase.from('ventas').select('*, detalle_venta(*, productos(nombre), producto_versiones(nombre_version)), metodos_pago(tipo_pago), profiles(nombre, apellido_paterno)').order('fec_venta', { ascending: false }).limit(500),
             supabase.from('compras').select('*, detalle_compra(*, productos(nombre)), proveedores(nombre_empresa)').eq('estado', 1).order('fec_compra', { ascending: false }).limit(200),
             supabase.from('pedidos_reserva').select('*, clientes(nombre)').order('fec_entrega', { ascending: true }),
             supabase.from('devoluciones').select('*, detalle_devolucion(*, productos(nombre)), clientes(nombre), profiles(nombre, apellido_paterno)').order('fec_devolucion', { ascending: false }),
           ]);
-          if (prods) setProducts((prods as any[]).map(p => ({ id: p.id_producto, name: p.nombre, cat: p.categorias?.nombre || 'Sin categoria', price: parseFloat(p.precio_unitario), stock: parseFloat(p.num_stock || 0), em: p.em, unidad_medida: p.unidad_medida || 'unidades', versions: p.producto_versiones ? (p.producto_versiones as any[]).map(v => ({ id: v.id_version, name: v.nombre_version, price: parseFloat(v.precio_unitario), stock: parseFloat(v.num_stock || 0) })) : [] })));
+          if (prods) setProducts((prods as any[]).map(p => ({ id: p.id_producto, name: p.nombre, cat: p.categorias?.nombre || 'Sin categoria', price: parseFloat(p.precio_unitario), stock: parseFloat(p.num_stock || 0), unidad_medida: p.unidad_medida || 'unidades', versions: p.producto_versiones ? (p.producto_versiones as any[]).map(v => ({ id: v.id_version, name: v.nombre_version, price: parseFloat(v.precio_unitario), stock: parseFloat(v.num_stock || 0) })) : [] })));
           if (cats) setCategories((cats as any[]).map(c => ({ id: c.id_categoria, name: c.nombre })));
           if (rls) setRolesList((rls as any[]).map(r => ({ id: r.nombre, name: r.nombre, desc: r.descripcion || '', permissions: Array.isArray(r.permisos) ? r.permisos : (typeof r.permisos === 'string' ? JSON.parse(r.permisos) : []) })));
           if (paym) setPaymentMethods((paym as any[]).map(pm => ({ id: pm.id_metodo_pago, name: pm.tipo_pago, desc: 'Metodo en la nube', active: pm.estado === 1 })));
           if (profs) setUsersList((profs as any[]).map(p => ({ id: p.id, u: p.username, p: '••••', n: p.nombre + ' ' + (p.apellido_paterno || ''), rs: [p.roles?.nombre || 'Cajero'], st: p.estado, email: p.correo, phone: p.num_telefono || '' })));
-          if (clis) setClients((clis as any[]).map(c => ({ id: c.id_cliente, nombre: c.nombre, dni: c.dni || '', telefono: c.telefono || '', email: c.email || '', limiteCred: parseFloat(c.limite_credito || 0), saldoCred: parseFloat(c.saldo_credito || 0), historialPagos: c.historial_pagos ? (typeof c.historial_pagos === 'string' ? JSON.parse(c.historial_pagos) : c.historial_pagos) : [], active: c.estado === 1 })));
+          if (clis) setClients((clis as any[]).map(c => ({ id: c.id_cliente, nombre: c.nombre, dni: c.dni || '', telefono: c.telefono || '', email: c.email || '', saldoCred: parseFloat(c.saldo_credito || 0), historialPagos: c.historial_pagos ? (typeof c.historial_pagos === 'string' ? JSON.parse(c.historial_pagos) : c.historial_pagos) : [], active: c.estado === 1 })));
           if (provs) setProviders((provs as any[]).map(pr => ({ id: pr.id_proveedor, ruc: pr.ruc, name: pr.nombre_empresa, phone: pr.num_telefono, address: pr.direccion, active: pr.estado === 1 })));
           if (sesAbierta && sesAbierta.length > 0) setCashSession({ id: sesAbierta[0].id_cierre_caja, fec_apertura: new Date(sesAbierta[0].fec_apertura), tot_saldo_inicial: parseFloat(sesAbierta[0].tot_saldo_inicial), tot_ventas_efectivo: parseFloat(sesAbierta[0].tot_ventas_efectivo), tot_ventas_otros: parseFloat(sesAbierta[0].tot_ventas_otros), tot_retiros: parseFloat(sesAbierta[0].tot_retiros || 0), estado: 'abierto' });
           if (cashHist) setCashHistory((cashHist as any[]).map(h => ({ id: h.id_cierre_caja, fec_apertura: new Date(h.fec_apertura).toLocaleDateString(), fec_cierre: new Date(h.fec_cierre).toLocaleDateString(), monto_inicial: parseFloat(h.tot_saldo_inicial), monto_final: parseFloat(h.tot_saldo_final), ventas_efectivo: parseFloat(h.tot_ventas_efectivo), ventas_otros: parseFloat(h.tot_ventas_otros), estado: 'cerrado' })));

@@ -94,7 +94,6 @@ export function useInventoryOps({
           const { error: updateError } = await supabase.from('productos').update({
             nombre: pObj.name,
             id_categoria: idCat,
-            em: pObj.em || '📦',
             precio_unitario: pObj.price,
             num_stock: pObj.stock || 0,
             unidad_medida: pObj.unidad_medida || 'unidades'
@@ -107,7 +106,6 @@ export function useInventoryOps({
           const { data: newProd, error: insertError } = await supabase.from('productos').insert({
             nombre: pObj.name,
             id_categoria: idCat,
-            em: pObj.em || '📦',
             precio_unitario: pObj.price,
             num_stock: pObj.stock || 0,
             unidad_medida: pObj.unidad_medida || 'unidades',
@@ -129,7 +127,6 @@ export function useInventoryOps({
             cat: p.categorias?.nombre || 'Sin categoría',
             price: parseFloat(p.precio_unitario),
             stock: parseFloat(p.num_stock || 0),
-            em: p.em,
             unidad_medida: p.unidad_medida || 'unidades',
             versions: p.producto_versiones ? (p.producto_versiones as any[]).map(v => ({
               id: v.id_version,
@@ -356,20 +353,7 @@ export function useInventoryOps({
 
     if (isSupabaseConfigured && supabase) {
       try {
-        const [
-          { data: vParent },
-          { data: vChild }
-        ] = await Promise.all([
-          supabase.from('producto_versiones').select('num_stock').eq('id_version', parentVersionId).single(),
-          supabase.from('producto_versiones').select('num_stock').eq('id_version', childVersionId).single()
-        ]);
-
-        const nextParentStock = Math.max(0, parseFloat(vParent?.num_stock || 0) - qtyToDeduct);
-        const nextChildStock = parseFloat(vChild?.num_stock || 0) + qtyToAdd;
-
         await Promise.all([
-          supabase.from('producto_versiones').update({ num_stock: nextParentStock }).eq('id_version', parentVersionId),
-          supabase.from('producto_versiones').update({ num_stock: nextChildStock }).eq('id_version', childVersionId),
           supabase.from('produccion_descarte').insert({
             id_producto: products.find(p => p.versions.some(v => v.id === parentVersionId))?.id || null,
             id_version: parentVersionId,

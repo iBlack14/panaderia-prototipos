@@ -127,7 +127,7 @@ export default function PointOfSalePage() {
         setIsEditingCartItem(false);
         setShowWeightModal(true);
       } else {
-        addToCart(prod.name, prod.price, prod.em, prod.id);
+        addToCart(prod.name, prod.price, prod.id);
       }
     }
   };
@@ -151,7 +151,7 @@ export default function PointOfSalePage() {
         setShowWeightModal(true);
         setShowVariantModal(false);
       } else {
-        addToCart(selectedProduct.name, v.price, selectedProduct.em, selectedProduct.id, v);
+        addToCart(selectedProduct.name, v.price, selectedProduct.id, v);
         setShowVariantModal(false);
       }
     }
@@ -174,7 +174,7 @@ export default function PointOfSalePage() {
         setIsEditingCartItem(false);
         setShowWeightModal(true);
       } else {
-        addToCart(prod.name, childV.price, prod.em, prod.id, updatedChildV);
+        addToCart(prod.name, childV.price, prod.id, updatedChildV);
       }
       toast(`🍰 Se fraccionó 1 ${parentV.name} para obtener ${ratio} ${childV.name}`);
     } catch (err: any) {
@@ -207,7 +207,7 @@ export default function PointOfSalePage() {
         toast('🛒 Cantidad actualizada');
       }
     } else {
-      addToCart(prod.name, version ? version.price : prod.price, prod.em, prod.id, version, qty);
+      addToCart(prod.name, version ? version.price : prod.price, prod.id, version, qty);
     }
     setShowWeightModal(false);
     setSelectedProductForWeight(null);
@@ -669,7 +669,15 @@ export default function PointOfSalePage() {
                     style={{ opacity: isAgotado ? 0.45 : 1, pointerEvents: isAgotado ? 'none' : 'auto' }}
                     onClick={() => handleProductClick(p)}
                   >
-                    <span className="ci-em">{p.em}</span>
+                    <span className="ci-em">
+                      {{
+                        'Panes': '🍞',
+                        'Tortas': '🎂',
+                        'Dulces': '🍬',
+                        'Bebidas': '🥤',
+                        'Insumos': '🌾'
+                      }[p.cat] || '📦'}
+                    </span>
                     <div className="ci-nm">{p.name}</div>
                     <div className="ci-pr">
                       {p.versions.length > 0 
@@ -1169,7 +1177,15 @@ export default function PointOfSalePage() {
       {showVariantModal && selectedProduct && (
         <div className="modal-overlay open">
           <div className="modal-card" style={{ width: '420px' }}>
-            <span className="ci-em" style={{ fontSize: '38px', textAlign: 'center' }}>{selectedProduct.em}</span>
+            <span className="ci-em" style={{ fontSize: '38px', textAlign: 'center' }}>
+              {{
+                'Panes': '🍞',
+                'Tortas': '🎂',
+                'Dulces': '🍬',
+                'Bebidas': '🥤',
+                'Insumos': '🌾'
+              }[selectedProduct.cat] || '📦'}
+            </span>
             <div className="mc-title">{selectedProduct.name}</div>
             <p className="mc-sub">Selecciona la variante/versión a facturar</p>
 
@@ -1230,7 +1246,13 @@ export default function PointOfSalePage() {
         <div className="modal-overlay open">
           <div className="modal-card" style={{ width: '400px' }}>
             <span className="ci-em" style={{ fontSize: '38px', textAlign: 'center' }}>
-              {selectedProductForWeight.prod.em}
+              {{
+                'Panes': '🍞',
+                'Tortas': '🎂',
+                'Dulces': '🍬',
+                'Bebidas': '🥤',
+                'Insumos': '🌾'
+              }[selectedProductForWeight.prod.cat] || '📦'}
             </span>
             <div className="mc-title">
               {isEditingCartItem ? 'Editar Cantidad' : 'Ingresar Cantidad / Peso'}

@@ -28,7 +28,7 @@ export default function DashboardHome() {
     }).map(p => ({
       id: p.id,
       name: p.name,
-      em: p.em || '📦',
+      cat: p.cat,
       stock: p.versions.length > 0
         ? p.versions.reduce((a, v) => a + v.stock, 0)
         : p.stock,
@@ -36,11 +36,12 @@ export default function DashboardHome() {
 
     const recentSalesList = [...todaySales].reverse().slice(0, 5);
 
-    const productMap: Record<string, { name: string; em: string; qty: number }> = {};
+    const productMap: Record<string, { name: string; cat: string; qty: number }> = {};
     todaySales.forEach(s => {
       s.items.forEach(item => {
         if (!productMap[item.name]) {
-          productMap[item.name] = { name: item.name, em: '🥖', qty: 0 };
+          const originalProd = products.find(p => p.id === item.id);
+          productMap[item.name] = { name: item.name, cat: originalProd?.cat || 'Otros', qty: 0 };
         }
         productMap[item.name].qty += item.qty;
       });
@@ -134,7 +135,7 @@ export default function DashboardHome() {
                 padding: '4px 12px', borderRadius: '20px', cursor: 'pointer'
               }}
             >
-              Gestionar inventario →
+              Gestionar productos →
             </button>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -144,7 +145,15 @@ export default function DashboardHome() {
                 background: 'var(--bg-card)', border: '1px solid rgba(220,53,69,0.18)',
                 borderRadius: '8px', padding: '5px 10px',
               }}>
-                <span style={{ fontSize: '14px' }}>{p.em}</span>
+                <span style={{ fontSize: '14px' }}>
+                  {{
+                    'Panes': '🍞',
+                    'Tortas': '🎂',
+                    'Dulces': '🍬',
+                    'Bebidas': '🥤',
+                    'Insumos': '🌾'
+                  }[p.cat] || '📦'}
+                </span>
                 <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text)' }}>{p.name}</span>
                 <span style={{
                   fontSize: '10.5px', fontWeight: 800,
@@ -229,7 +238,15 @@ export default function DashboardHome() {
                   const pct = Math.round((p.qty / stats.maxQty) * 100);
                   return (
                     <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '20px' }}>{p.em}</span>
+                      <span style={{ fontSize: '20px' }}>
+                        {{
+                          'Panes': '🍞',
+                          'Tortas': '🎂',
+                          'Dulces': '🍬',
+                          'Bebidas': '🥤',
+                          'Insumos': '🌾'
+                        }[p.cat] || '📦'}
+                      </span>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
                           {p.name}

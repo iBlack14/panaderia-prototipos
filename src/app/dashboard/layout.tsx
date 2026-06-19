@@ -100,7 +100,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     { label: 'Operaciones', type: 'section', show: hasPerm('pos_ventas') || hasPerm('caja_operaciones') || hasPerm('caja_auditoria') || hasPerm('inventario_ver') },
     { label: 'Punto de Venta', path: '/dashboard/ventas', icon: '🛒', type: 'item', show: hasPerm('pos_ventas') },
     { label: 'Control de Caja', path: '/dashboard/caja', icon: '💰', type: 'item', show: hasPerm('caja_operaciones') || hasPerm('caja_auditoria') },
-    { label: 'Inventario', path: '/dashboard/productos', icon: '📦', type: 'item', show: hasPerm('inventario_ver') },
+    { label: 'Productos', path: '/dashboard/productos', icon: '📦', type: 'item', show: hasPerm('inventario_ver') },
     { label: 'Pedidos / Reservas', path: '/dashboard/pedidos', icon: '📅', type: 'item', show: hasPerm('pos_ventas') || isAdmin || isSupervisor },
     
     { label: 'Logística', type: 'section', show: isAdmin || isSupervisor },
@@ -126,7 +126,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     '/dashboard/clientes': { title: 'Gestión de Clientes', sub: 'Listado y registro de clientes frecuentes' },
     '/dashboard/ventas': { title: 'Punto de Venta (POS)', sub: 'Registrar nueva venta al detalle' },
     '/dashboard/caja': { title: 'Control de Caja', sub: 'Apertura, cierre y movimientos de efectivo' },
-    '/dashboard/productos': { title: 'Inventario de Productos', sub: 'Control de stock y variantes' },
+    '/dashboard/productos': { title: 'Productos', sub: 'Control de stock y variantes' },
     '/dashboard/pedidos': { title: 'Pedidos y Reservas', sub: 'Control de apartados y fechas de entrega' },
     '/dashboard/proveedores': { title: 'Directorio de Proveedores', sub: 'Gestión de socios estratégicos' },
     '/dashboard/compras': { title: 'Gestión de Compras', sub: 'Registro de abastecimiento de insumos' },
@@ -187,7 +187,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span className="sb-icon">{item.icon}</span> {item.label}
                   </div>
-                  {item.label === 'Inventario' && lowStockCount > 0 && (
+                  {item.label === 'Productos' && lowStockCount > 0 && (
                     <span style={{
                       background: 'var(--red, #dc3545)',
                       color: 'white',
@@ -272,7 +272,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         {hasPerm('inventario_ver') && (
           <div className={`mb-item ${pathname === '/dashboard/productos' ? 'active' : ''}`} onClick={() => router.push('/dashboard/productos')} style={{ position: 'relative' }}>
             <span className="mb-icon">📦</span>
-            <span className="mb-label">Inventario</span>
+            <span className="mb-label">Productos</span>
             {lowStockCount > 0 && (
               <span style={{
                 position: 'absolute',

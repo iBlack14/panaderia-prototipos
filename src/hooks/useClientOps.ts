@@ -59,7 +59,6 @@ export function useClientOps({
       
       if (existing) {
         cObj.id = existing.id;
-        cObj.limiteCred = cObj.limiteCred !== undefined ? cObj.limiteCred : existing.limiteCred;
         cObj.telefono = cObj.telefono || existing.telefono;
         cObj.email = cObj.email || existing.email;
         toast('👤 Cliente existente encontrado, usando sus datos.');
@@ -85,7 +84,6 @@ export function useClientOps({
             dni: cObj.dni || '',
             telefono: cObj.telefono || '',
             email: cObj.email || '',
-            limiteCred: typeof cObj.limiteCred === 'number' ? cObj.limiteCred : parseFloat(cObj.limiteCred || '0'),
             saldoCred: existingClient?.saldoCred || 0,
             historialPagos: existingClient?.historialPagos || [],
             active: existingClient?.active ?? true
@@ -111,7 +109,6 @@ export function useClientOps({
               dni: data.dni || '',
               telefono: data.telefono || '',
               email: data.email || '',
-              limiteCred: parseFloat(data.limite_credito || 0),
               saldoCred: parseFloat(data.saldo_credito || 0),
               historialPagos: [],
               active: true
@@ -137,7 +134,6 @@ export function useClientOps({
           dni: cObj.dni || '',
           telefono: cObj.telefono || '',
           email: cObj.email || '',
-          limiteCred: cObj.limiteCred || 0,
           saldoCred: 0,
           historialPagos: [],
           active: true
@@ -174,7 +170,6 @@ export function useClientOps({
             dni: cl.dni || '',
             telefono: cl.telefono || '',
             email: cl.email || '',
-            limiteCred: parseFloat(cl.limite_credito || 0),
             saldoCred: parseFloat(cl.saldo_credito || 0),
             historialPagos: cl.historial_pagos ? (typeof cl.historial_pagos === 'string' ? JSON.parse(cl.historial_pagos) : cl.historial_pagos) : [],
             active: cl.estado === 1
@@ -218,7 +213,6 @@ export function useClientOps({
     };
 
     const newSaldo = targetClient.saldoCred + monto; // Sumar al saldo prepago
-    const newLimit = targetClient.limiteCred <= 0 ? 100 : targetClient.limiteCred;
     const newHistorial = [...targetClient.historialPagos, recarga];
 
     if (isSupabaseConfigured && supabase) {
@@ -235,7 +229,7 @@ export function useClientOps({
 
     const updated = clients.map(c => {
       if (String(c.id) === String(clientId)) {
-        return { ...c, saldoCred: newSaldo, limiteCred: newLimit, historialPagos: newHistorial };
+        return { ...c, saldoCred: newSaldo, historialPagos: newHistorial };
       }
       return c;
     });

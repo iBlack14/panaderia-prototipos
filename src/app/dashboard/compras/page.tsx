@@ -209,7 +209,7 @@ export default function ComprasPage() {
                     <select value={prodId} onChange={(e) => setProdId(e.target.value)}>
                       <option value="">-- Elegir insumo --</option>
                       {products.filter(p => p.cat === 'Insumos').map(p => (
-                        <option key={p.id} value={String(p.id)}>{p.em} {p.name}</option>
+                        <option key={p.id} value={String(p.id)}>{p.name}</option>
                       ))}
                     </select>
                   </div>

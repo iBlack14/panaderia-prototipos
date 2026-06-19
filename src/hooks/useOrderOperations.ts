@@ -354,7 +354,7 @@ export function useOrderOperations({
       const client = clients.find(c => String(c.id) === String(sale.clienteId));
       if (client) {
         const creditBack = totalReturned;
-        const newSaldo = Math.max(0, client.saldoCred - creditBack);
+        const newSaldo = client.saldoCred + creditBack;
         const newPayment: CreditPayment = {
           id: Date.now(),
           fecha: new Date().toLocaleDateString(),

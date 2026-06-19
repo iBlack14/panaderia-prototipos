@@ -67,7 +67,7 @@ describe('useOrderOperations Unit Tests (TDD)', () => {
         cat: 'Panes',
         price: 0.5,
         stock: 100,
-        em: 'unidades',
+        unidad_medida: 'unidades',
         versions: [],
       },
     ];
@@ -110,6 +110,8 @@ describe('useOrderOperations Unit Tests (TDD)', () => {
       providers: [],
       breadLogs: mockBreadLogs,
       setBreadLogs,
+      cashSession: null,
+      setCashSession: vi.fn(),
       user: null,
       toast,
       isSupabaseConfigured: false,
@@ -167,6 +169,8 @@ describe('useOrderOperations Unit Tests (TDD)', () => {
       providers: mockProviders,
       breadLogs: mockBreadLogs,
       setBreadLogs,
+      cashSession: null,
+      setCashSession: vi.fn(),
       user: { id: 'admin1', u: 'admin', n: 'Administrador', rs: ['Administrador'], email: '', phone: '', st: 'act' },
       toast,
       isSupabaseConfigured: false,
@@ -193,5 +197,141 @@ describe('useOrderOperations Unit Tests (TDD)', () => {
     expect(saveOffline).toHaveBeenCalledWith('snack_bread_logs', expect.any(Array));
 
     expect(toast).toHaveBeenCalledWith('📥 Compra registrada e inventario actualizado');
+  });
+
+  it('should process a return, update product stock, and refund the amount to the client prepaid balance', async () => {
+    // Arrange
+    const saleId = 1001;
+    mockSales = [
+      {
+        id: saleId,
+        n: 501,
+        items: [
+          {
+            id: 1, // Pan Frances
+            name: 'Pan Frances',
+            price: 0.5,
+            qty: 10,
+            version: null,
+          },
+        ],
+        total: 5.0,
+        method: 'Saldo Cliente',
+        d: '2026-06-18',
+        t: '12:00',
+        cajero: 'Cajero',
+        clienteId: 201,
+        clienteNombre: 'Maria Gomez',
+        estado: 1,
+      },
+    ];
+    setSales = vi.fn((cb) => {
+      if (typeof cb === 'function') {
+        mockSales = cb(mockSales);
+      } else {
+        mockSales = cb;
+      }
+    });
+
+    mockClients = [
+      {
+        id: 201,
+        nombre: 'Maria Gomez',
+        dni: '98765432',
+        telefono: '987654321',
+        email: 'maria@gomez.com',
+        saldoCred: 10.0,
+        historialPagos: [],
+        active: true,
+      },
+    ];
+    setClients = vi.fn((cb) => {
+      if (typeof cb === 'function') {
+        mockClients = cb(mockClients);
+      } else {
+        mockClients = cb;
+      }
+    });
+
+    setDevoluciones = vi.fn((cb) => {
+      if (typeof cb === 'function') {
+        mockDevoluciones = cb(mockDevoluciones);
+      } else {
+        mockDevoluciones = cb;
+      }
+    });
+
+    setBreadLogs = vi.fn((cb) => {
+      if (typeof cb === 'function') {
+        mockBreadLogs = cb(mockBreadLogs);
+      } else {
+        mockBreadLogs = cb;
+      }
+    });
+
+    const returnedItems = [
+      {
+        productId: 1,
+        version: null,
+        qty: 4, // Returning 4 items
+        price: 0.5,
+      },
+    ];
+
+    const hook = useOrderOperations({
+      pedidos: mockPedidos,
+      setPedidos,
+      devoluciones: mockDevoluciones,
+      setDevoluciones,
+      purchases: mockPurchases,
+      setPurchases,
+      sales: mockSales,
+      setSales,
+      products: mockProducts,
+      setProducts,
+      clients: mockClients,
+      setClients,
+      providers: [],
+      breadLogs: mockBreadLogs,
+      setBreadLogs,
+      cashSession: null,
+      setCashSession: vi.fn(),
+      user: { id: 'admin1', u: 'admin', n: 'Administrador', rs: ['Administrador'], email: '', phone: '', st: 'act' },
+      toast,
+      isSupabaseConfigured: false,
+      supabase: null,
+      saveOffline,
+    });
+
+    // Act
+    await hook.processReturn(saleId, returnedItems, 'Pan quemado');
+
+    // Assert
+    // 1. Stock of product 1 should increase by 4 (initial stock was 100)
+    expect(setProducts).toHaveBeenCalled();
+    expect(mockProducts[0].stock).toBe(104);
+
+    // 2. Client prepaid balance should increase by 2.0 (4 * 0.5)
+    expect(setClients).toHaveBeenCalled();
+    expect(mockClients[0].saldoCred).toBe(12.0); // 10.0 + 2.0
+    expect(mockClients[0].historialPagos.length).toBe(1);
+    expect(mockClients[0].historialPagos[0].tipo).toBe('abono');
+    expect(mockClients[0].historialPagos[0].monto).toBe(2.0);
+    expect(mockClients[0].historialPagos[0].concepto).toContain('Devolución venta #B-501');
+
+    // 3. Devoluciones list should have 1 record
+    expect(setDevoluciones).toHaveBeenCalled();
+    expect(mockDevoluciones.length).toBe(1);
+    expect(mockDevoluciones[0].totalReturned).toBe(2.0);
+    expect(mockDevoluciones[0].motivo).toBe('Pan quemado');
+
+    // 4. Kardex (bread logs) should be updated
+    expect(setBreadLogs).toHaveBeenCalled();
+    expect(mockBreadLogs.length).toBe(1);
+    expect(mockBreadLogs[0].qty).toBe(4);
+    expect(mockBreadLogs[0].reason).toContain('Devolución Venta #501');
+
+    // 5. Toast notification
+    expect(toast).toHaveBeenCalledWith('↩ Devolución registrada correctamente localmente');
   });
 });

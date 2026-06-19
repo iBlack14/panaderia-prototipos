@@ -53,12 +53,12 @@ export default function ClientesPage() {
     );
   }, [clients, search]);
 
-  const clientesConDeuda = useMemo(() =>
+  const clientesConSaldo = useMemo(() =>
     clients.filter(c => c.saldoCred > 0 && c.active).sort((a, b) => b.saldoCred - a.saldoCred),
     [clients]
   );
 
-  const totalDeudaPendiente = useMemo(() =>
+  const totalSaldoPrepago = useMemo(() =>
     clients.reduce((a, c) => a + c.saldoCred, 0), [clients]
   );
 
@@ -153,7 +153,6 @@ export default function ClientesPage() {
 
   const handleClientSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const limit = editingClient ? editingClient.limiteCred : 0;
     const fullName = `${fNombres} ${fApePaterno} ${fApeMaterno}`.trim().replace(/\s+/g, ' ');
     
     // Validar nombre (solo letras/espacios)
@@ -179,7 +178,7 @@ export default function ClientesPage() {
       }
     }
 
-    saveClient({ id: editingClient?.id, nombre: fullName, dni: fDni, telefono: cleanPhone, email: fEmail, limiteCred: limit });
+    saveClient({ id: editingClient?.id, nombre: fullName, dni: fDni, telefono: cleanPhone, email: fEmail });
     setShowClientModal(false);
   };
 
@@ -218,7 +217,7 @@ export default function ClientesPage() {
   return (
     <div className="screen active">
       {/* KPI BANNER */}
-      <div className="stats-4" style={{ marginBottom: '22px' }}>
+      <div className="stats-4" style={{ marginBottom: '22px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr' }}>
         <div className="stat-tile" style={{ padding: '16px 20px' }}>
           <div className="st-lbl">Total Clientes</div>
           <div className="st-val">{clients.filter(c => c.active).length}</div>
@@ -226,18 +225,13 @@ export default function ClientesPage() {
         </div>
         <div className="stat-tile" style={{ padding: '16px 20px' }}>
           <div className="st-lbl" style={{ color: 'var(--green)' }}>Saldo Prepago Total</div>
-          <div className="st-val" style={{ color: 'var(--green)' }}>S/. {totalDeudaPendiente.toFixed(2)}</div>
-          <div className="st-sub">{clientesConDeuda.length} clientes con saldo prepago</div>
+          <div className="st-val" style={{ color: 'var(--green)' }}>S/. {totalSaldoPrepago.toFixed(2)}</div>
+          <div className="st-sub">{clientesConSaldo.length} clientes con saldo prepago</div>
         </div>
         <div className="stat-tile" style={{ padding: '16px 20px' }}>
           <div className="st-lbl">Sin Saldo</div>
           <div className="st-val">{clients.filter(c => c.saldoCred === 0 && c.active).length}</div>
           <div className="st-sub">sin saldo disponible</div>
-        </div>
-        <div className="stat-tile" style={{ padding: '16px 20px' }}>
-          <div className="st-lbl">Límite Total Saldo</div>
-          <div className="st-val">S/. {clients.reduce((a, c) => a + c.limiteCred, 0).toFixed(0)}</div>
-          <div className="st-sub">en cupos prepago asignados</div>
         </div>
       </div>
 
@@ -264,10 +258,6 @@ export default function ClientesPage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
             {filteredClients.map(c => {
-              const pct = Math.min(100, (c.saldoCred / (c.limiteCred || 100)) * 100);
-              const isLow = pct < 20;
-              const isMed = pct >= 20 && pct < 50;
-              const barColor = isLow ? 'var(--red)' : isMed ? '#f59e0b' : 'var(--green)';
               return (
                 <div key={c.id} className="panel" style={{ padding: '18px 20px', border: `1.5px solid ${c.saldoCred > 0 ? 'rgba(22,163,74,0.3)' : 'var(--border)'}`, borderRadius: '16px', background: 'var(--bg-card)', opacity: c.active ? 1 : 0.6 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
@@ -289,20 +279,19 @@ export default function ClientesPage() {
                     </div>
                   </div>
 
-                  {c.saldoCred > 0 && (
-                    <div style={{ marginBottom: '10px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '5px' }}>
-                        <span style={{ color: 'var(--text-3)', fontWeight: '600' }}>Saldo Prepago</span>
-                        <span style={{ fontWeight: '800', color: barColor }}>
-                          S/. {c.saldoCred.toFixed(2)} / {(c.limiteCred || 100).toFixed(2)}
-                        </span>
-                      </div>
-                      <div style={{ height: '6px', background: 'var(--bg-card2)', borderRadius: '999px', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: '999px', transition: 'width 0.4s ease' }} />
-                      </div>
-                      <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '3px' }}>
-                        Tope de Carga: S/. {(c.limiteCred || 100).toFixed(2)}
-                      </div>
+                  {c.saldoCred > 0 ? (
+                    <div style={{ marginBottom: '12px', background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.15)', padding: '10px 14px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--text-2)', fontWeight: '600' }}>Saldo Prepago</span>
+                      <strong style={{ fontSize: '16px', color: 'var(--green)', fontWeight: '800' }}>
+                        S/. {c.saldoCred.toFixed(2)}
+                      </strong>
+                    </div>
+                  ) : (
+                    <div style={{ marginBottom: '12px', background: 'var(--bg-card2)', border: '1px solid var(--border)', padding: '10px 14px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--text-3)', fontWeight: '600' }}>Saldo Prepago</span>
+                      <span style={{ fontSize: '14px', color: 'var(--text-3)', fontWeight: '700' }}>
+                        S/. 0.00
+                      </span>
                     </div>
                   )}
 
@@ -343,15 +332,14 @@ export default function ClientesPage() {
               ))}
             </div>
 
-            {clientesConDeuda.length === 0 ? (
+            {clientesConSaldo.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)' }}>
                 <div style={{ fontSize: '40px', marginBottom: '8px' }}>👤</div>
                 <p>No hay clientes con saldo prepago disponible. ¡Realiza la primera recarga!</p>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {clientesConDeuda.map((c, idx) => {
-                  const pct = c.limiteCred > 0 ? Math.min(100, (c.saldoCred / c.limiteCred) * 100) : 100;
+                {clientesConSaldo.map((c, idx) => {
                   // Último pago registrado
                   const ultimoPago = c.historialPagos.filter(p => p.tipo === 'abono' && p.monto > 0).slice(-1)[0];
                   return (
@@ -367,24 +355,20 @@ export default function ClientesPage() {
                       {/* Info */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: '800', fontSize: '13px', color: 'var(--text)' }}>{c.nombre}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                          <div style={{ flex: 1, height: '4px', background: 'var(--bg-card)', borderRadius: '999px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${pct}%`, background: 'var(--green)', borderRadius: '999px' }} />
-                          </div>
-                          <span style={{ fontSize: '10px', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>
-                            {pct.toFixed(0)}% del tope
-                          </span>
-                        </div>
-                        {ultimoPago && (
-                          <div style={{ fontSize: '10px', color: 'var(--text-3)', marginTop: '2px' }}>
+                        {ultimoPago ? (
+                          <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '4px' }}>
                             Última recarga: {ultimoPago.fecha} vía {ultimoPago.metodoPago || 'Efectivo'}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '4px' }}>
+                            Sin recargas registradas
                           </div>
                         )}
                       </div>
                       {/* Monto */}
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <div style={{ fontWeight: '800', color: 'var(--green)', fontSize: '16px' }}>S/. {c.saldoCred.toFixed(2)}</div>
-                        <div style={{ fontSize: '10px', color: 'var(--text-3)' }}>de S/. {c.limiteCred.toFixed(0)} tope</div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-3)' }}>saldo prepago</div>
                       </div>
                       {/* Acciones */}
                       <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
@@ -400,7 +384,7 @@ export default function ClientesPage() {
                   );
                 })}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 4px', fontWeight: '800', fontSize: '14px', color: 'var(--text)', borderTop: '1px solid var(--border)', marginTop: '4px' }}>
-                  Total Prepago Acumulado: <span style={{ color: 'var(--green)', marginLeft: '8px' }}>S/. {totalDeudaPendiente.toFixed(2)}</span>
+                  Total Prepago Acumulado: <span style={{ color: 'var(--green)', marginLeft: '8px' }}>S/. {totalSaldoPrepago.toFixed(2)}</span>
                 </div>
               </div>
             )}
@@ -521,15 +505,9 @@ export default function ClientesPage() {
             <p className="mc-sub">Cliente: <strong>{selectedClient.nombre}</strong></p>
 
             {/* Info saldo */}
-            <div style={{ background: 'var(--bg-card2)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(22,163,74,0.25)', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: '600' }}>SALDO PREPAGO DISPONIBLE</div>
-                <div style={{ fontSize: '22px', fontWeight: '800', color: 'var(--green)' }}>S/. {selectedClient.saldoCred.toFixed(2)}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>Tope de carga</div>
-                <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-2)' }}>S/. {(selectedClient.limiteCred || 100).toFixed(2)}</div>
-              </div>
+            <div style={{ background: 'var(--bg-card2)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(22,163,74,0.25)', marginBottom: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: '600', textTransform: 'uppercase' }}>Saldo Prepago Disponible</div>
+              <div style={{ fontSize: '28px', fontWeight: '800', color: 'var(--green)' }}>S/. {selectedClient.saldoCred.toFixed(2)}</div>
             </div>
 
             <form onSubmit={handlePaySubmit}>
@@ -616,7 +594,7 @@ export default function ClientesPage() {
           <div className="modal-card" style={{ width: '520px', maxHeight: '80vh', overflowY: 'auto' }}>
             <span className="mc-icon">📋</span>
             <div className="mc-title">Historial de Tarjeta Prepago</div>
-            <p className="mc-sub"><strong>{historyClient.nombre}</strong> — Tope de Carga: S/. {historyClient.limiteCred || 100} · Saldo Disponible: <span style={{ color: 'var(--green)', fontWeight: 'bold' }}>S/. {historyClient.saldoCred.toFixed(2)}</span></p>
+            <p className="mc-sub"><strong>{historyClient.nombre}</strong> · Saldo Prepago Disponible: <span style={{ color: 'var(--green)', fontWeight: 'bold' }}>S/. {historyClient.saldoCred.toFixed(2)}</span></p>
             {historyClient.historialPagos.filter(p => p.monto > 0).length === 0 ? (
               <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-3)' }}>
                 <p>Sin movimientos registrados aún.</p>

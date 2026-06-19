@@ -15,7 +15,6 @@ export interface Product {
   cat: string;
   price: number;
   stock: number;
-  em?: string;
   versions: ProductVersion[];
   unidad_medida?: string;
 }
@@ -114,7 +113,6 @@ export interface Client {
   dni?: string;
   telefono?: string;
   email?: string;
-  limiteCred: number;
   saldoCred: number;
   historialPagos: CreditPayment[];
   active: boolean;
@@ -234,7 +232,7 @@ export interface AppContextType {
   logout: () => void;
   sendRecoveryEmail: (emailIn: string) => Promise<{ success: boolean; online?: boolean; userId?: number | string; username?: string; message?: string }>;
   resetPasswordOffline: (userId: number | string, newPass: string) => Promise<void>;
-  addToCart: (productName: string, price: number, em: any, id: number, versionObj?: ProductVersion | null, customQty?: number) => void;
+  addToCart: (productName: string, price: number, id: number, versionObj?: ProductVersion | null, customQty?: number) => void;
   updateCartQty: (id: number, delta: number, version?: string | null) => void;
   clearCart: () => void;
   checkoutCart: (paymentMethodId: number, clienteId?: number | string) => Promise<Sale | undefined>;
