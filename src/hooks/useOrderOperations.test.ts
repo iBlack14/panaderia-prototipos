@@ -146,6 +146,7 @@ describe('useOrderOperations Unit Tests (TDD)', () => {
     ];
     const purchaseItems: PurchaseItem[] = [
       {
+        type: 'producto',
         productId: 1, // Pan Frances
         qty: 50,
         cost: 0.3,

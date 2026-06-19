@@ -297,6 +297,6 @@ export interface AppContextType {
   saveInsumo: (iObj: any) => Promise<void>;
   toggleInsumo: (id: number) => Promise<void>;
   // Recetas
-  saveReceta: (rObj: any) => Promise<void>;
+  saveReceta: (rObj: any) => Promise<{ success: boolean; message?: string }>;
   deleteReceta: (id: number) => Promise<void>;
 }
