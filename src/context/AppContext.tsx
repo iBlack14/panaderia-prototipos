@@ -18,6 +18,8 @@ import {
   Pedido, 
   ReturnRecord, 
   Purchase,
+  Insumo,
+  Receta,
   AppContextType 
 } from './types';
 
@@ -42,6 +44,9 @@ export type {
   PurchaseItem,
   Purchase,
   DenominacionArqueo,
+  Insumo,
+  Receta,
+  RecetaIngrediente,
   AppContextType 
 } from './types';
 
@@ -52,6 +57,8 @@ import { useCartOperations } from '@/hooks/useCartOperations';
 import { useCashOperations } from '@/hooks/useCashOperations';
 import { useClientOps } from '@/hooks/useClientOps';
 import { useOrderOperations } from '@/hooks/useOrderOperations';
+import { useInsumoOps } from '@/hooks/useInsumoOps';
+import { useRecetaOps } from '@/hooks/useRecetaOps';
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -130,6 +137,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [rolesList, setRolesList] = useState<CustomRole[]>([]);
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [devoluciones, setDevoluciones] = useState<ReturnRecord[]>([]);
+  const [insumos, setInsumos] = useState<Insumo[]>([]);
+  const [recetas, setRecetas] = useState<Receta[]>([]);
 
   const [toastMsg, setToastMsg] = useState<string>('');
 
@@ -180,7 +189,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const [
             { data: prods }, { data: cats }, { data: rls }, { data: paym }, { data: profs },
             { data: clis }, { data: provs }, { data: sesAbierta }, { data: cashHist }, { data: ventas }, { data: compras },
-            { data: peds }, { data: devs }
+            { data: peds }, { data: devs }, { data: insumosData }, { data: recetasData }
           ] = await Promise.all([
             supabase.from('productos').select('*, producto_versiones(*), categorias(nombre)').eq('estado', 1),
             supabase.from('categorias').select('*').order('id_categoria', { ascending: true }),
@@ -195,6 +204,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabase.from('compras').select('*, detalle_compra(*, productos(nombre)), proveedores(nombre_empresa)').eq('estado', 1).order('fec_compra', { ascending: false }).limit(200),
             supabase.from('pedidos_reserva').select('*, clientes(nombre)').order('fec_entrega', { ascending: true }),
             supabase.from('devoluciones').select('*, detalle_devolucion(*, productos(nombre)), clientes(nombre), profiles(nombre, apellido_paterno)').order('fec_devolucion', { ascending: false }),
+            supabase.from('insumos').select('*').order('id_insumo', { ascending: true }),
+            supabase.from('recetas').select('*, detalle_receta(*, insumos(nombre, unidad_medida)), productos(nombre)').order('id_receta', { ascending: true }),
           ]);
           if (prods) setProducts((prods as any[]).map(p => ({ id: p.id_producto, name: p.nombre, cat: p.categorias?.nombre || 'Sin categoria', price: parseFloat(p.precio_unitario), stock: parseFloat(p.num_stock || 0), unidad_medida: p.unidad_medida || 'unidades', versions: p.producto_versiones ? (p.producto_versiones as any[]).map(v => ({ id: v.id_version, name: v.nombre_version, price: parseFloat(v.precio_unitario), stock: parseFloat(v.num_stock || 0) })) : [] })));
           if (cats) setCategories((cats as any[]).map(c => ({ id: c.id_categoria, name: c.nombre })));
@@ -223,6 +234,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
               qty: parseFloat(det.num_cantidad || 0),
               price: parseFloat(det.precio_unitario)
             }))
+          })));
+          if (insumosData) setInsumos((insumosData as any[]).map(i => ({
+            id: i.id_insumo,
+            nombre: i.nombre,
+            stock: parseFloat(i.num_stock) || 0,
+            costoUnitario: parseFloat(i.costo_unitario) || 0,
+            unidadMedida: i.unidad_medida || 'kg',
+            stockMinimo: parseFloat(i.stock_minimo) || 0,
+            active: i.estado === 1,
+          })));
+          if (recetasData) setRecetas((recetasData as any[]).map(r => ({
+            id: r.id_receta,
+            productoId: r.id_producto,
+            productoNombre: r.productos?.nombre || `Producto #${r.id_producto}`,
+            rendimientoBase: parseFloat(r.rendimiento_base) || 1,
+            instrucciones: r.instrucciones || '',
+            ingredientes: (r.detalle_receta || []).map((d: any) => ({
+              id: d.id_detalle,
+              insumoId: d.id_insumo,
+              insumoNombre: d.insumos?.nombre || `Insumo #${d.id_insumo}`,
+              cantidadRequerida: parseFloat(d.cantidad_requerida) || 0,
+              unidadMedida: d.insumos?.unidad_medida || 'kg',
+            })),
           })));
         } catch (err) {
           console.error('Error cargando datos de Supabase', err);
@@ -276,6 +310,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setRolesList(localRoles ? JSON.parse(localRoles) : DEFAULT_ROLES);
         setPedidos(localPedidos ? JSON.parse(localPedidos) : []);
         setDevoluciones(localDevoluciones ? JSON.parse(localDevoluciones) : []);
+
+        const localInsumos = localStorage.getItem('snack_insumos');
+        const localRecetas = localStorage.getItem('snack_recetas');
+        setInsumos(localInsumos ? JSON.parse(localInsumos) : []);
+        setRecetas(localRecetas ? JSON.parse(localRecetas) : []);
       }
       if (isFirstLoad) setLoading(false);
     }
@@ -367,6 +406,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveOffline
   });
 
+  const insumoOps = useInsumoOps({
+    insumos, setInsumos,
+    user,
+    toast,
+    isSupabaseConfigured,
+    supabase,
+    saveOffline
+  });
+
+  const recetaOps = useRecetaOps({
+    recetas, setRecetas,
+    products,
+    insumos,
+    user,
+    toast,
+    isSupabaseConfigured,
+    supabase,
+    saveOffline
+  });
+
   return (
     <AppContext.Provider value={{
       user,
@@ -389,13 +448,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toastMsg,
       pedidos,
       devoluciones,
+      insumos,
+      recetas,
       toast,
       ...authOps,
       ...inventoryOps,
       ...cartOps,
       ...cashOps,
       ...clientOps,
-      ...orderOps
+      ...orderOps,
+      ...insumoOps,
+      ...recetaOps
     }}>
       {children}
       {toastMsg && <div className="snack" style={{ display: 'block' }}>{toastMsg}</div>}

@@ -21,6 +21,7 @@ export default function DashboardHome() {
     // Stock bajo threshold configurable (< 10 unidades)
     const LOW_STOCK_THRESHOLD = 10;
     const lowStockProducts = products.filter(p => {
+      if (p.cat === 'Insumos') return false; // Exclude insumos from product alerts
       const effectiveStock = p.versions.length > 0
         ? p.versions.reduce((a, v) => a + v.stock, 0)
         : p.stock;
@@ -150,8 +151,7 @@ export default function DashboardHome() {
                     'Panes': '🍞',
                     'Tortas': '🎂',
                     'Dulces': '🍬',
-                    'Bebidas': '🥤',
-                    'Insumos': '🌾'
+                    'Bebidas': '🥤'
                   }[p.cat] || '📦'}
                 </span>
                 <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text)' }}>{p.name}</span>

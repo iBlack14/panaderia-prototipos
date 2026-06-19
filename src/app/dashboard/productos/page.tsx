@@ -17,6 +17,7 @@ export default function ProductosPage() {
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
   const [showProductModal, setShowProductModal] = useState(false);
   const [showBreadModal, setShowBreadModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'list' | 'mermas' | 'kardex'>('list');
@@ -54,9 +55,13 @@ export default function ProductosPage() {
   const [logConvDest, setLogConvDest] = useState('');     // Para conversión: producto destino
   const [logCostoEst, setLogCostoEst] = useState('');    // Costo estimado del insumo
 
-  const filteredProducts = products.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = selectedCategory === '' || p.cat === selectedCategory;
+    // Exclude insumos from the products catalog view as they have their own page
+    const isNotInsumo = p.cat !== 'Insumos';
+    return matchesSearch && matchesCategory && isNotInsumo;
+  });
 
   const breadProducts = products.filter(p => p.cat === 'Panes');
 
@@ -224,7 +229,7 @@ export default function ProductosPage() {
         <div>
           {/* TOOLBAR */}
           <div className="tb-bar">
-            <div className="tb-left">
+            <div className="tb-left" style={{ flexWrap: 'wrap', gap: '10px' }}>
               <div className="srch-box">
                 <span>🔍</span>
                 <input 
@@ -232,6 +237,21 @@ export default function ProductosPage() {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
+              </div>
+              <div className="srch-box" style={{ maxWidth: '220px' }}>
+                <span>📂</span>
+                <select 
+                  value={selectedCategory} 
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  style={{ background: 'none', border: 'none', outline: 'none', fontFamily: "'Inter', sans-serif", fontSize: '13.5px', color: 'var(--text)', width: '100%', cursor: 'pointer' }}
+                >
+                  <option value="" style={{ background: 'var(--bg-card)', color: 'var(--text)' }}>Todas las categorías</option>
+                  {categories.filter(c => c.name !== 'Insumos').map(c => (
+                    <option key={c.id} value={c.name} style={{ background: 'var(--bg-card)', color: 'var(--text)' }}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <button className="btn-new" onClick={handleOpenNew}>+ Nuevo producto</button>
@@ -265,18 +285,12 @@ export default function ProductosPage() {
                     <tr key={p.id}>
                       <td>
                         <div className="row-chip">
-                          <div className="chip-icon">
-                            {{
-                              'Panes': '🍞',
-                              'Tortas': '🎂',
-                              'Dulces': '🍬',
-                              'Bebidas': '🥤',
-                              'Insumos': '🌾'
-                            }[p.cat] || '📦'}
-                          </div>
+                          <div className="chip-icon">📦</div>
                           <div>
                             <div style={{ fontWeight: '700', color: 'var(--text)', fontSize: '13.5px' }}>{p.name}</div>
-                            <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>ID #{p.id}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>
+                              ID #{p.id} • {p.cat}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -490,8 +504,8 @@ export default function ProductosPage() {
               <div className="inp-group" style={{ gridColumn: 'span 2' }}>
                 <label>Categoría</label>
                 <select value={cat} onChange={(e) => setCat(e.target.value)}>
-                  {categories.length > 0 ? (
-                    categories.map(c => (
+                  {categories.filter(c => c.name !== 'Insumos').length > 0 ? (
+                    categories.filter(c => c.name !== 'Insumos').map(c => (
                       <option key={c.id} value={c.name}>{c.name}</option>
                     ))
                   ) : (

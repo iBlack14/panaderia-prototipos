@@ -674,8 +674,7 @@ export default function PointOfSalePage() {
                         'Panes': '🍞',
                         'Tortas': '🎂',
                         'Dulces': '🍬',
-                        'Bebidas': '🥤',
-                        'Insumos': '🌾'
+                        'Bebidas': '🥤'
                       }[p.cat] || '📦'}
                     </span>
                     <div className="ci-nm">{p.name}</div>

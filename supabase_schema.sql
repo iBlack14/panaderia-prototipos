@@ -14,6 +14,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ============================================================
 DROP TABLE IF EXISTS public.detalle_receta       CASCADE;
 DROP TABLE IF EXISTS public.recetas              CASCADE;
+DROP TABLE IF EXISTS public.insumos              CASCADE;
 DROP TABLE IF EXISTS public.produccion_descarte  CASCADE;
 DROP TABLE IF EXISTS public.whatsapp_baileys_auth CASCADE;
 DROP TABLE IF EXISTS public.detalle_compra        CASCADE;
@@ -33,6 +34,7 @@ DROP TABLE IF EXISTS public.roles                 CASCADE;
 DROP FUNCTION IF EXISTS public.handle_new_user()        CASCADE;
 DROP FUNCTION IF EXISTS fn_descontar_stock_venta()      CASCADE;
 DROP FUNCTION IF EXISTS fn_aumentar_stock_compra()      CASCADE;
+DROP FUNCTION IF EXISTS fn_aumentar_stock_compra_insumo() CASCADE;
 DROP FUNCTION IF EXISTS fn_actualizar_stock_panes()     CASCADE;
 
 -- ============================================================
@@ -130,7 +132,19 @@ CREATE TABLE public.producto_versiones (
     UNIQUE(id_producto, nombre_version)
 );
 
--- 2.9 Cierres / Sesiones de Caja
+-- 2.9 Insumos (Materias Primas)
+CREATE TABLE public.insumos (
+    id_insumo       SERIAL PRIMARY KEY,
+    nombre          VARCHAR(150) NOT NULL UNIQUE,
+    num_stock       DECIMAL(10,3) DEFAULT 0.000
+                        CONSTRAINT chk_insumo_stock CHECK (num_stock >= 0),
+    costo_unitario  DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    unidad_medida   VARCHAR(20)  DEFAULT 'kg',
+    stock_minimo    DECIMAL(10,3) DEFAULT 0.000,
+    estado          INT DEFAULT 1
+);
+
+-- 2.10 Cierres / Sesiones de Caja
 CREATE TABLE public.cierres_caja (
     id_cierre_caja      SERIAL PRIMARY KEY,
     id_usuario          UUID REFERENCES public.profiles(id),
@@ -145,7 +159,7 @@ CREATE TABLE public.cierres_caja (
     estado              VARCHAR(20)   DEFAULT 'abierto'  -- 'abierto', 'cerrado'
 );
 
--- 2.10 Ventas
+-- 2.11 Ventas
 CREATE TABLE public.ventas (
     id_venta       SERIAL PRIMARY KEY,
     id_cliente     INT  REFERENCES public.clientes(id_cliente),
@@ -159,7 +173,7 @@ CREATE TABLE public.ventas (
     estado         INT DEFAULT 1  -- 1: Pagado, 0: Anulado
 );
 
--- 2.11 Detalle de Venta
+-- 2.12 Detalle de Venta
 CREATE TABLE public.detalle_venta (
     id_detalle_venta SERIAL PRIMARY KEY,
     id_venta         INT REFERENCES public.ventas(id_venta)              ON DELETE CASCADE,
@@ -169,7 +183,7 @@ CREATE TABLE public.detalle_venta (
     precio_unitario  DECIMAL(10,2) NOT NULL
 );
 
--- 2.12 Compras (Logística)
+-- 2.13 Compras (Logística)
 CREATE TABLE public.compras (
     id_compra    SERIAL PRIMARY KEY,
     id_usuario   UUID REFERENCES public.profiles(id),
@@ -181,17 +195,18 @@ CREATE TABLE public.compras (
     estado       INT DEFAULT 1
 );
 
--- 2.13 Detalle de Compra
+-- 2.14 Detalle de Compra (soporta productos e insumos)
 CREATE TABLE public.detalle_compra (
     id_detalle_compra SERIAL PRIMARY KEY,
     id_compra         INT REFERENCES public.compras(id_compra)              ON DELETE CASCADE,
     id_producto       INT REFERENCES public.productos(id_producto),
+    id_insumo         INT REFERENCES public.insumos(id_insumo),
     id_version        INT REFERENCES public.producto_versiones(id_version),
     num_cantidad      DECIMAL(10,3) NOT NULL CONSTRAINT chk_purchase_qty CHECK (num_cantidad > 0),
     precio_compra     DECIMAL(10,2) NOT NULL
 );
 
--- 2.14 Control de Panes (Producción y Descartes)
+-- 2.15 Control de Panes (Producción y Descartes)
 CREATE TABLE public.produccion_descarte (
     id_registro      SERIAL PRIMARY KEY,
     id_producto      INT REFERENCES public.productos(id_producto)          ON DELETE CASCADE,
@@ -204,7 +219,7 @@ CREATE TABLE public.produccion_descarte (
     fec_registro     TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 2.15 Recetas y Fórmulas
+-- 2.16 Recetas y Fórmulas
 CREATE TABLE public.recetas (
     id_receta         SERIAL PRIMARY KEY,
     id_producto       INT UNIQUE NOT NULL REFERENCES public.productos(id_producto) ON DELETE CASCADE,
@@ -212,11 +227,11 @@ CREATE TABLE public.recetas (
     instrucciones     TEXT
 );
 
--- 2.16 Detalle de Insumos de la Receta
+-- 2.17 Detalle de Ingredientes de la Receta (referencia a insumos)
 CREATE TABLE public.detalle_receta (
     id_detalle        SERIAL PRIMARY KEY,
     id_receta         INT REFERENCES public.recetas(id_receta) ON DELETE CASCADE,
-    id_producto_insumo INT REFERENCES public.productos(id_producto) ON DELETE RESTRICT,
+    id_insumo         INT REFERENCES public.insumos(id_insumo) ON DELETE RESTRICT,
     cantidad_requerida DECIMAL(10,3) NOT NULL CONSTRAINT chk_req_qty CHECK (cantidad_requerida > 0)
 );
 
@@ -256,11 +271,16 @@ CREATE TRIGGER tr_venta_descontar_stock
 AFTER INSERT ON public.detalle_venta
 FOR EACH ROW EXECUTE FUNCTION fn_descontar_stock_venta();
 
--- B. Aumentar stock al comprar
+-- B. Aumentar stock al comprar (productos o insumos)
 CREATE OR REPLACE FUNCTION fn_aumentar_stock_compra()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF NEW.id_version IS NOT NULL THEN
+    IF NEW.id_insumo IS NOT NULL THEN
+        -- Compra de insumo: actualizar tabla insumos
+        UPDATE public.insumos
+           SET num_stock = num_stock + NEW.num_cantidad
+         WHERE id_insumo = NEW.id_insumo;
+    ELSIF NEW.id_version IS NOT NULL THEN
         UPDATE public.producto_versiones
            SET num_stock = num_stock + NEW.num_cantidad
          WHERE id_version = NEW.id_version;
@@ -310,14 +330,14 @@ BEGIN
                 factor := NEW.num_cantidad / rend_base;
                 
                 FOR det_row IN 
-                    SELECT id_producto_insumo, cantidad_requerida 
+                    SELECT id_insumo, cantidad_requerida 
                       FROM public.detalle_receta 
                      WHERE id_receta = receta_row.id_receta
                 LOOP
-                    -- Descontar stock del insumo en la tabla productos
-                    UPDATE public.productos
+                    -- Descontar stock del insumo en la tabla insumos
+                    UPDATE public.insumos
                        SET num_stock = num_stock - (det_row.cantidad_requerida * factor)
-                     WHERE id_producto = det_row.id_producto_insumo;
+                     WHERE id_insumo = det_row.id_insumo;
                 END LOOP;
             END IF;
         END IF;
@@ -485,6 +505,13 @@ DROP POLICY IF EXISTS "produccion_descarte_mod" ON public.produccion_descarte;
 CREATE POLICY "produccion_descarte_select" ON public.produccion_descarte FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 3, 5)));
 CREATE POLICY "produccion_descarte_mod" ON public.produccion_descarte FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 3, 5)));
 
+-- insumos
+ALTER TABLE public.insumos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "insumos_select" ON public.insumos;
+DROP POLICY IF EXISTS "insumos_mod" ON public.insumos;
+CREATE POLICY "insumos_select" ON public.insumos FOR SELECT USING (true);
+CREATE POLICY "insumos_mod" ON public.insumos FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 3, 5)));
+
 -- whatsapp_baileys_auth
 -- Sin políticas para usuarios cliente; la API de Next accede con service role.
 ALTER TABLE public.whatsapp_baileys_auth ENABLE ROW LEVEL SECURITY;
@@ -526,7 +553,7 @@ INSERT INTO public.metodos_pago (id_metodo_pago, tipo_pago, estado) VALUES
 ON CONFLICT (id_metodo_pago) DO UPDATE SET tipo_pago = EXCLUDED.tipo_pago;
 
 
--- Productos de ejemplo
+-- Productos de ejemplo (solo productos terminados para venta)
 INSERT INTO public.productos (id_producto, id_categoria, nombre, num_stock, precio_unitario, estado) VALUES
 (1, 1, 'Croissant mantequilla', 48,  4.50, 1),
 (2, 1, 'Pan de yema especial',  74,  1.80, 1),
@@ -535,17 +562,32 @@ INSERT INTO public.productos (id_producto, id_categoria, nombre, num_stock, prec
 (5, 3, 'Alfajor triple',        40,  2.80, 1),
 (6, 2, 'Queque de zanahoria',    6, 28.00, 1),
 (7, 1, 'Pan integral',          20,  5.50, 1),
-(8, 4, 'Café americano',        99,  6.00, 1),
-(9, 5, 'Harina saco 50kg',      10, 120.00, 1),
-(10, 5, 'Azúcar saco 50kg',     15, 110.00, 1),
-(11, 5, 'Levadura caja 5kg',     5,   75.00, 1),
-(12, 5, 'Mantequilla kg',       20,  18.00, 1),
-(13, 5, 'Chocolate cobertura kg', 8,  35.00, 1),
-(14, 5, 'Pollo kg',             15,   9.50, 1),
-(15, 5, 'Huevos jaba x30',      30,  16.00, 1),
-(16, 5, 'Leche caja 12L',       12,  52.00, 1),
-(17, 5, 'Café en grano kg',     10,  45.00, 1)
+(8, 4, 'Café americano',        99,  6.00, 1)
 ON CONFLICT (id_producto) DO UPDATE SET nombre = EXCLUDED.nombre;
+
+-- Insumos (materias primas)
+INSERT INTO public.insumos (id_insumo, nombre, num_stock, costo_unitario, unidad_medida, stock_minimo, estado) VALUES
+(1, 'Harina saco 50kg',        10, 120.00, 'sacos',    3, 1),
+(2, 'Azúcar saco 50kg',        15, 110.00, 'sacos',    3, 1),
+(3, 'Levadura caja 5kg',        5,  75.00, 'cajas',    2, 1),
+(4, 'Mantequilla kg',          20,  18.00, 'kg',       5, 1),
+(5, 'Chocolate cobertura kg',   8,  35.00, 'kg',       3, 1),
+(6, 'Pollo kg',                15,   9.50, 'kg',       5, 1),
+(7, 'Huevos jaba x30',         30,  16.00, 'jabas',   10, 1),
+(8, 'Leche caja 12L',          12,  52.00, 'cajas',    4, 1),
+(9, 'Café en grano kg',        10,  45.00, 'kg',       3, 1)
+ON CONFLICT (id_insumo) DO UPDATE SET nombre = EXCLUDED.nombre;
+
+-- Receta de ejemplo: Torta de chocolate
+INSERT INTO public.recetas (id_receta, id_producto, rendimiento_base, instrucciones) VALUES
+(1, 3, 1.000, 'Mezclar harina con huevos, añadir chocolate derretido y mantequilla. Hornear 180°C por 45 min.')
+ON CONFLICT (id_receta) DO UPDATE SET instrucciones = EXCLUDED.instrucciones;
+
+INSERT INTO public.detalle_receta (id_receta, id_insumo, cantidad_requerida) VALUES
+(1, 1, 0.030),   -- 0.030 sacos de Harina (~1.5 kg)
+(1, 5, 0.500),   -- 0.5 kg Chocolate cobertura
+(1, 7, 0.200),   -- 0.2 jabas Huevos (~6 huevos)
+(1, 4, 0.300);   -- 0.3 kg Mantequilla
 
 -- Backfill: vincular usuarios auth ya existentes con profiles
 INSERT INTO public.profiles (id, username, nombre, apellido_paterno, correo, id_rol, estado)

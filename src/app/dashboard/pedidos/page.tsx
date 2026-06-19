@@ -225,11 +225,48 @@ export default function PedidosPage() {
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    let currentItems = [...reservationItems];
+    let currentTotal = parseFloat(fTotal) || 0;
+
+    // Si el usuario seleccionó un producto pero olvidó presionar "Añadir", lo agregamos automáticamente
+    if (selectedProdId) {
+      const qty = parseFloat(selectedQty);
+      const prod = selectedProdObj;
+      if (prod && !isNaN(qty) && qty > 0) {
+        let price = prod.price;
+        let versionName: string | null = null;
+
+        if (selectedVersionId) {
+          const versionObj = prod.versions.find(v => String(v.id) === String(selectedVersionId));
+          if (versionObj) {
+            price = versionObj.price;
+            versionName = versionObj.name;
+          }
+        }
+
+        const newItem = {
+          productId: prod.id,
+          name: prod.name,
+          price,
+          qty,
+          versionName,
+          unidadMedida: prod.unidad_medida || 'und'
+        };
+
+        currentItems.push(newItem);
+        
+        if (!isTotalManual) {
+          currentTotal = currentItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+        }
+      }
+    }
+
     if (!fClienteId) {
       alert('Por favor selecciona un cliente válido de la lista sugerida.');
       return;
     }
-    if (reservationItems.length === 0 && !fProductoTexto.trim()) {
+    if (currentItems.length === 0 && !fProductoTexto.trim()) {
       alert('Por favor agrega al menos un producto del inventario o describe el pedido.');
       return;
     }
@@ -245,7 +282,7 @@ export default function PedidosPage() {
       return;
     }
 
-    const totalVal = parseFloat(fTotal) || 0;
+    const totalVal = isTotalManual ? (parseFloat(fTotal) || 0) : currentTotal;
     const adelantoVal = parseFloat(fAdelanto) || 0;
 
     if (adelantoVal > totalVal) {
@@ -254,10 +291,10 @@ export default function PedidosPage() {
     }
 
     let serializedProductoTexto = fProductoTexto;
-    if (reservationItems.length > 0) {
-      const legacyText = reservationItems.map(i => `${i.qty} x ${i.name}${i.versionName ? ` (${i.versionName})` : ''}`).join(', ');
+    if (currentItems.length > 0) {
+      const legacyText = currentItems.map(i => `${i.qty} x ${i.name}${i.versionName ? ` (${i.versionName})` : ''}`).join(', ');
       serializedProductoTexto = JSON.stringify({
-        items: reservationItems,
+        items: currentItems,
         total: totalVal,
         legacyText
       });
@@ -275,6 +312,7 @@ export default function PedidosPage() {
       productoTexto: serializedProductoTexto,
       fecEntrega: new Date(fFecEntrega).toISOString(),
       adelanto: adelantoVal,
+      notes: fNotas, // Make sure both keys are defined to align with database mapping
       notas: fNotas,
       estado: editingPedido?.estado || 'Pendiente'
     };
@@ -665,7 +703,6 @@ export default function PedidosPage() {
                 <div style={{ background: 'var(--bg-card2)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <label style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-3)' }}>Añadir Productos del Inventario</label>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    
                     {/* Select Producto */}
                     <select
                       value={selectedProdId}
@@ -688,7 +725,7 @@ export default function PedidosPage() {
                               'Dulces': '🍬',
                               'Bebidas': '🥤',
                               'Insumos': '🌾'
-                            }[p.cat] || '📦'} {p.name} ({stockText})
+                            }[p.cat] || '📦'} {p.name} - S/. {p.price.toFixed(2)} ({stockText})
                           </option>
                         );
                       })}
@@ -704,7 +741,7 @@ export default function PedidosPage() {
                         <option value="">-- Ver. --</option>
                         {selectedProdObj.versions.map(v => (
                           <option key={v.id} value={v.id}>
-                            {v.name} (Stock: {v.stock})
+                            {v.name} - S/. {v.price.toFixed(2)} (Stock: {v.stock})
                           </option>
                         ))}
                       </select>
@@ -730,6 +767,26 @@ export default function PedidosPage() {
                       Añadir
                     </button>
                   </div>
+
+                  {/* Cálculo previo informativo */}
+                  {selectedProdObj && (
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-3)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255, 255, 255, 0.4)', padding: '6px 10px', borderRadius: '8px', border: '1px dashed var(--border)', marginTop: '4px' }}>
+                      <span>💡</span>
+                      <span>
+                        Se agregará: <strong>{selectedQty} {selectedProdObj.unidad_medida || 'und'}</strong> de <strong>{selectedProdObj.name}</strong> 
+                        {selectedVersionId && ` (${selectedProdObj.versions.find(v => String(v.id) === String(selectedVersionId))?.name})`}
+                        {' por '}
+                        <strong style={{ color: 'var(--accent)' }}>
+                          S/. {(
+                            parseFloat(selectedQty) * 
+                            (selectedVersionId 
+                              ? (selectedProdObj.versions.find(v => String(v.id) === String(selectedVersionId))?.price || 0) 
+                              : selectedProdObj.price)
+                          ).toFixed(2)}
+                        </strong>
+                      </span>
+                    </div>
+                  )}
 
                   {/* Items list */}
                   {reservationItems.length > 0 && (
@@ -758,7 +815,12 @@ export default function PedidosPage() {
 
                 {/* Monto Total del Pedido */}
                 <div className="inp-group">
-                  <label>Monto Total del Pedido (S/.) *</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={{ margin: 0 }}>Monto Total del Pedido (S/.) *</label>
+                    <span style={{ fontSize: '11px', color: isTotalManual ? '#d97706' : '#16a34a', fontWeight: '700' }}>
+                      {isTotalManual ? '✏️ Ajustado manualmente' : '⚡ Calculado del inventario'}
+                    </span>
+                  </div>
                   <div className="inp-wrap">
                     <span className="inp-icon">💵</span>
                     <input 
@@ -772,7 +834,37 @@ export default function PedidosPage() {
                       }}
                       placeholder="0.00"
                       required
+                      style={{
+                        paddingRight: isTotalManual && reservationItems.length > 0 ? '100px' : '16px'
+                      }}
                     />
+                    {isTotalManual && reservationItems.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const autoTotal = reservationItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+                          setFTotal(autoTotal.toFixed(2));
+                          setIsTotalManual(false);
+                        }}
+                        style={{
+                          position: 'absolute',
+                          right: '12px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'var(--accent-bg)',
+                          color: 'var(--accent)',
+                          border: 'none',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          zIndex: 10
+                        }}
+                      >
+                        Reestablecer
+                      </button>
+                    )}
                   </div>
                 </div>
 

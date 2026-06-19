@@ -190,7 +190,9 @@ export interface ReturnRecord {
 }
 
 export interface PurchaseItem {
-  productId: number;
+  type: 'producto' | 'insumo';
+  productId?: number;
+  insumoId?: number;
   qty: number;
   cost: number;
   version?: string | null;
@@ -204,6 +206,33 @@ export interface Purchase {
   igv: string;
   total: string;
   items: PurchaseItem[];
+}
+
+export interface Insumo {
+  id: number;
+  nombre: string;
+  stock: number;
+  costoUnitario: number;
+  unidadMedida: string;
+  stockMinimo: number;
+  active: boolean;
+}
+
+export interface RecetaIngrediente {
+  id?: number;
+  insumoId: number;
+  insumoNombre?: string;
+  cantidadRequerida: number;
+  unidadMedida?: string;
+}
+
+export interface Receta {
+  id: number;
+  productoId: number;
+  productoNombre?: string;
+  rendimientoBase: number;
+  instrucciones?: string;
+  ingredientes: RecetaIngrediente[];
 }
 
 export interface AppContextType {
@@ -227,6 +256,8 @@ export interface AppContextType {
   toastMsg: string;
   pedidos: Pedido[];
   devoluciones: ReturnRecord[];
+  insumos: Insumo[];
+  recetas: Receta[];
   toast: (msg: string) => void;
   login: (uIn: string, pIn: string) => Promise<{ success: boolean; user?: User; message?: string }>;
   logout: () => void;
@@ -262,4 +293,10 @@ export interface AppContextType {
   deliverPedido: (pedidoId: number | string, paymentMethodId: number, paymentMethodName: string, totalVal: number, adelantoVal: number, items: any[]) => Promise<void>;
   processReturn: (saleId: number, items: ReturnedItem[], motivo: string) => Promise<void>;
   fractionateProduct: (parentVersionId: number, childVersionId: number, qtyToDeduct: number, qtyToAdd: number) => Promise<void>;
+  // Insumos
+  saveInsumo: (iObj: any) => Promise<void>;
+  toggleInsumo: (id: number) => Promise<void>;
+  // Recetas
+  saveReceta: (rObj: any) => Promise<void>;
+  deleteReceta: (id: number) => Promise<void>;
 }

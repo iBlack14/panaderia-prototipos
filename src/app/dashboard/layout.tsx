@@ -101,9 +101,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     { label: 'Punto de Venta', path: '/dashboard/ventas', icon: '🛒', type: 'item', show: hasPerm('pos_ventas') },
     { label: 'Control de Caja', path: '/dashboard/caja', icon: '💰', type: 'item', show: hasPerm('caja_operaciones') || hasPerm('caja_auditoria') },
     { label: 'Productos', path: '/dashboard/productos', icon: '📦', type: 'item', show: hasPerm('inventario_ver') },
+    { label: 'Recetas', path: '/dashboard/recetas', icon: '📋', type: 'item', show: isAdmin || isSupervisor },
     { label: 'Pedidos / Reservas', path: '/dashboard/pedidos', icon: '📅', type: 'item', show: hasPerm('pos_ventas') || isAdmin || isSupervisor },
     
     { label: 'Logística', type: 'section', show: isAdmin || isSupervisor },
+    { label: 'Insumos', path: '/dashboard/insumos', icon: '🌾', type: 'item', show: isAdmin || isSupervisor },
     { label: 'Proveedores', path: '/dashboard/proveedores', icon: '🏭', type: 'item', show: isAdmin || isSupervisor },
     { label: 'Compras', path: '/dashboard/compras', icon: '📥', type: 'item', show: isAdmin || isSupervisor },
     
@@ -127,6 +129,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     '/dashboard/ventas': { title: 'Punto de Venta (POS)', sub: 'Registrar nueva venta al detalle' },
     '/dashboard/caja': { title: 'Control de Caja', sub: 'Apertura, cierre y movimientos de efectivo' },
     '/dashboard/productos': { title: 'Productos', sub: 'Control de stock y variantes' },
+    '/dashboard/recetas': { title: 'Recetas y Formulas', sub: 'Ingredientes y costos de produccion' },
+    '/dashboard/insumos': { title: 'Gestion de Insumos', sub: 'Materias primas e ingredientes' },
     '/dashboard/pedidos': { title: 'Pedidos y Reservas', sub: 'Control de apartados y fechas de entrega' },
     '/dashboard/proveedores': { title: 'Directorio de Proveedores', sub: 'Gestión de socios estratégicos' },
     '/dashboard/compras': { title: 'Gestión de Compras', sub: 'Registro de abastecimiento de insumos' },

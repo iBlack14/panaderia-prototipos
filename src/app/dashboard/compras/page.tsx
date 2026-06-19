@@ -6,7 +6,7 @@ import { useApp } from '@/context/AppContext';
 
 export default function ComprasPage() {
   const router = useRouter();
-  const { purchases, providers, products, registerPurchase } = useApp();
+  const { purchases, providers, products, insumos, registerPurchase } = useApp();
   
   const [showModal, setShowModal] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState('');
@@ -28,7 +28,9 @@ export default function ComprasPage() {
   
   interface BuyItem {
     id: number;
-    productId: number;
+    type: 'producto' | 'insumo';
+    productId?: number;
+    insumoId?: number;
     name: string;
     qty: number;
     cost: number;
@@ -39,7 +41,9 @@ export default function ComprasPage() {
   const [itemsToBuy, setItemsToBuy] = useState<BuyItem[]>([]);
   
   // Estados para añadir un item de compra
+  const [itemType, setItemType] = useState<'producto' | 'insumo'>('insumo');
   const [prodId, setProdId] = useState('');
+  const [insId, setInsId] = useState('');
   const [vName, setVName] = useState('');
   const [qty, setQty] = useState('');
   const [cost, setCost] = useState('');
@@ -47,28 +51,47 @@ export default function ComprasPage() {
   const activeProviders = providers.filter(p => p.active);
 
   const handleAddPurchaseItem = () => {
-    const pId = parseInt(prodId);
-    const q = parseInt(qty);
+    const q = parseFloat(qty);
     const c = parseFloat(cost);
+    if (isNaN(q) || isNaN(c) || q <= 0 || c <= 0) return;
 
-    if (isNaN(pId) || isNaN(q) || isNaN(c) || q <= 0 || c <= 0) return;
+    let newItem: BuyItem;
 
-    const prod = products.find(p => p.id === pId);
-    if (!prod) return;
-
-    const newItem: BuyItem = {
-      id: Date.now(),
-      productId: pId,
-      name: prod.name + (vName ? ` (${vName})` : ''),
-      qty: q,
-      cost: c,
-      version: vName || null
-    };
+    if (itemType === 'producto') {
+      const pId = parseInt(prodId);
+      if (isNaN(pId)) return;
+      const prod = products.find(p => p.id === pId);
+      if (!prod) return;
+      newItem = {
+        id: Date.now(),
+        type: 'producto',
+        productId: pId,
+        name: prod.name + (vName ? ` (${vName})` : ''),
+        qty: q,
+        cost: c,
+        version: vName || null
+      };
+    } else {
+      const iId = parseInt(insId);
+      if (isNaN(iId)) return;
+      const ins = insumos.find(i => i.id === iId);
+      if (!ins) return;
+      newItem = {
+        id: Date.now(),
+        type: 'insumo',
+        insumoId: iId,
+        name: ins.nombre,
+        qty: q,
+        cost: c,
+        version: null
+      };
+    }
 
     setItemsToBuy([...itemsToBuy, newItem]);
     
     // Reset item inputs
     setProdId('');
+    setInsId('');
     setVName('');
     setQty('');
     setCost('');
@@ -81,7 +104,9 @@ export default function ComprasPage() {
   const handleOpenNew = () => {
     setSelectedProvider('');
     setItemsToBuy([]);
+    setItemType('insumo');
     setProdId('');
+    setInsId('');
     setVName('');
     setQty('');
     setCost('');
@@ -96,7 +121,9 @@ export default function ComprasPage() {
     registerPurchase({
       providerId: provId,
       items: itemsToBuy.map(item => ({
+        type: item.type,
         productId: item.productId,
+        insumoId: item.insumoId,
         qty: item.qty,
         cost: item.cost,
         version: item.version
@@ -152,10 +179,15 @@ export default function ComprasPage() {
                   <td style={{ fontWeight: '600', color: 'var(--text)' }}>{p.prov}</td>
                   <td style={{ color: 'var(--text-2)', fontSize: '12.5px' }}>
                     {p.items ? p.items.map(i => {
-                      const prodRef = products.find(prod => prod.id === i.productId);
-                      const displayName = prodRef ? (prodRef.name + (i.version ? ` (${i.version})` : '')) : 'Producto';
-                      return `${displayName} x${i.qty}`;
-                    }).join(', ') : 'Insumos varios'}
+                      if (i.type === 'insumo') {
+                        const insRef = insumos.find(ins => ins.id === i.insumoId);
+                        return `${insRef?.nombre || 'Insumo'} x${i.qty}`;
+                      } else {
+                        const prodRef = products.find(prod => prod.id === i.productId);
+                        const displayName = prodRef ? (prodRef.name + (i.version ? ` (${i.version})` : '')) : 'Producto';
+                        return `${displayName} x${i.qty}`;
+                      }
+                    }).join(', ') : 'Artículos varios'}
                   </td>
                   <td>{p.subTotal}</td>
                   <td>{p.igv}</td>
@@ -199,35 +231,58 @@ export default function ComprasPage() {
 
               {/* AÑADIR ITEM DE COMPRA FORM */}
               <div style={{ border: '1.5px dashed var(--border)', padding: '14px', borderRadius: '12px', background: 'var(--bg-card2)', marginBottom: '14px' }}>
-                <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.5px' }}>
-                  Añadir Insumo al Pedido
-                </span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.5px' }}>
+                    Añadir Artículo al Pedido
+                  </span>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <label style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <input type="radio" checked={itemType === 'insumo'} onChange={() => setItemType('insumo')} /> Insumo (Materia Prima)
+                    </label>
+                    <label style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <input type="radio" checked={itemType === 'producto'} onChange={() => setItemType('producto')} /> Producto (Reventa)
+                    </label>
+                  </div>
+                </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
-                  <div className="inp-group" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '9px' }}>Insumo</label>
-                    <select value={prodId} onChange={(e) => setProdId(e.target.value)}>
-                      <option value="">-- Elegir insumo --</option>
-                      {products.filter(p => p.cat === 'Insumos').map(p => (
-                        <option key={p.id} value={String(p.id)}>{p.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {itemType === 'insumo' ? (
+                    <div className="inp-group" style={{ margin: 0 }}>
+                      <label style={{ fontSize: '9px' }}>Insumo</label>
+                      <select value={insId} onChange={(e) => setInsId(e.target.value)}>
+                        <option value="">-- Elegir insumo --</option>
+                        {insumos.filter(i => i.active).map(i => (
+                          <option key={i.id} value={String(i.id)}>{i.nombre}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="inp-group" style={{ margin: 0 }}>
+                        <label style={{ fontSize: '9px' }}>Producto Terminando</label>
+                        <select value={prodId} onChange={(e) => setProdId(e.target.value)}>
+                          <option value="">-- Elegir producto --</option>
+                          {products.map(p => (
+                            <option key={p.id} value={String(p.id)}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
 
-                  {/* Selector de variantes si aplica */}
-                  <div className="inp-group" style={{ margin: 0, opacity: (selectedProduct && selectedProduct.versions && selectedProduct.versions.length > 0) ? 1 : 0.5 }}>
-                    <label style={{ fontSize: '9px' }}>Variante</label>
-                    <select 
-                      value={vName} 
-                      onChange={(e) => setVName(e.target.value)}
-                      disabled={!(selectedProduct && selectedProduct.versions && selectedProduct.versions.length > 0)}
-                    >
-                      <option value="">-- Ninguna --</option>
-                      {selectedProduct?.versions?.map(v => (
-                        <option key={v.name} value={v.name}>{v.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                      <div className="inp-group" style={{ margin: 0, opacity: (selectedProduct && selectedProduct.versions && selectedProduct.versions.length > 0) ? 1 : 0.5 }}>
+                        <label style={{ fontSize: '9px' }}>Variante</label>
+                        <select 
+                          value={vName} 
+                          onChange={(e) => setVName(e.target.value)}
+                          disabled={!(selectedProduct && selectedProduct.versions && selectedProduct.versions.length > 0)}
+                        >
+                          <option value="">-- Ninguna --</option>
+                          {selectedProduct?.versions?.map(v => (
+                            <option key={v.name} value={v.name}>{v.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
 
                   <div className="inp-group" style={{ margin: 0 }}>
                     <label style={{ fontSize: '9px' }}>Cantidad</label>
