@@ -60,7 +60,12 @@ export default function ProductosPage() {
     const matchesCategory = selectedCategory === '' || p.cat === selectedCategory;
     // Exclude insumos from the products catalog view as they have their own page
     const isNotInsumo = p.cat !== 'Insumos';
-    return matchesSearch && matchesCategory && isNotInsumo;
+    
+    // Check if the product's category is active
+    const catObj = categories.find(c => c.name === p.cat);
+    const isCatActive = catObj ? catObj.active : true;
+    
+    return matchesSearch && matchesCategory && isNotInsumo && isCatActive;
   });
 
   const breadProducts = products.filter(p => p.cat === 'Panes');
@@ -91,7 +96,7 @@ export default function ProductosPage() {
   const handleOpenNew = () => {
     setEditingId(null);
     setName('');
-    setCat(categories[0]?.name || 'Panes');
+    setCat(categories.find(c => c.active)?.name || 'Panes');
     setPrice('');
     setStock('0');
     setVariantsList([]);
@@ -246,7 +251,7 @@ export default function ProductosPage() {
                   style={{ background: 'none', border: 'none', outline: 'none', fontFamily: "'Inter', sans-serif", fontSize: '13.5px', color: 'var(--text)', width: '100%', cursor: 'pointer' }}
                 >
                   <option value="" style={{ background: 'var(--bg-card)', color: 'var(--text)' }}>Todas las categorías</option>
-                  {categories.filter(c => c.name !== 'Insumos').map(c => (
+                  {categories.filter(c => c.name !== 'Insumos' && c.active).map(c => (
                     <option key={c.id} value={c.name} style={{ background: 'var(--bg-card)', color: 'var(--text)' }}>
                       {c.name}
                     </option>
@@ -504,8 +509,8 @@ export default function ProductosPage() {
               <div className="inp-group" style={{ gridColumn: 'span 2' }}>
                 <label>Categoría</label>
                 <select value={cat} onChange={(e) => setCat(e.target.value)}>
-                  {categories.filter(c => c.name !== 'Insumos').length > 0 ? (
-                    categories.filter(c => c.name !== 'Insumos').map(c => (
+                  {categories.filter(c => c.name !== 'Insumos' && c.active).length > 0 ? (
+                    categories.filter(c => c.name !== 'Insumos' && c.active).map(c => (
                       <option key={c.id} value={c.name}>{c.name}</option>
                     ))
                   ) : (

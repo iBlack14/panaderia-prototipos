@@ -1,64 +1,23 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 
-import React, { useState, useEffect } from 'react';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import React, { useState } from 'react';
+import { useApp } from '@/context/AppContext';
 
 interface Category {
   id: number;
   name: string;
-  status: number;
+  active: boolean;
 }
 
 export default function CategoriasPage() {
+  const { categories, saveCategory, toggleCategory, loading } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [catName, setCatName] = useState('');
   const [catStatus, setCatStatus] = useState(1);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [toastMsg, setToastMsg] = useState('');
-
-  const toast = (msg: string) => {
-    setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 3000);
-  };
-
-  // --- CARGAR CATEGORÍAS ---
-  const loadCategories = async () => {
-    setLoading(true);
-    if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from('categorias')
-        .select('*')
-        .order('id_categoria', { ascending: true });
-      if (error) {
-        toast(`❌ Error cargando categorías: ${error.message}`);
-      } else if (data) {
-        setCategories(data.map((c: any) => ({
-          id: c.id_categoria,
-          name: c.nombre,
-          status: c.estado
-        })));
-      }
-    } else {
-      // Fallback local
-      const local = localStorage.getItem('snack_categorias');
-      setCategories(local ? JSON.parse(local) : [
-        { id: 1, name: 'Panes', status: 1 },
-        { id: 2, name: 'Tortas', status: 1 },
-        { id: 3, name: 'Dulces', status: 1 },
-        { id: 4, name: 'Bebidas', status: 1 },
-      ]);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    loadCategories();
-  }, []);
 
   const filteredCategories = categories.filter(c =>
     c.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -74,28 +33,12 @@ export default function CategoriasPage() {
   const handleOpenEdit = (c: Category) => {
     setEditingId(c.id);
     setCatName(c.name);
-    setCatStatus(c.status);
+    setCatStatus(c.active ? 1 : 0);
     setShowModal(true);
   };
 
   const handleToggleStatus = async (c: Category) => {
-    const newStatus = c.status === 1 ? 0 : 1;
-    if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase
-        .from('categorias')
-        .update({ estado: newStatus })
-        .eq('id_categoria', c.id);
-      if (error) {
-        toast(`❌ Error: ${error.message}`);
-        return;
-      }
-    } else {
-      const updated = categories.map(x => x.id === c.id ? { ...x, status: newStatus } : x);
-      setCategories(updated);
-      localStorage.setItem('snack_categorias', JSON.stringify(updated));
-    }
-    toast(`🏷️ Categoría ${newStatus === 1 ? 'activada' : 'desactivada'}`);
-    await loadCategories();
+    await toggleCategory(c.id);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -103,50 +46,21 @@ export default function CategoriasPage() {
     if (!catName.trim()) return;
     setSaving(true);
 
-    if (isSupabaseConfigured && supabase) {
-      if (editingId) {
-        const { error } = await supabase
-          .from('categorias')
-          .update({ nombre: catName.trim(), estado: catStatus })
-          .eq('id_categoria', editingId);
-        if (error) {
-          toast(`❌ Error: ${error.message}`);
-          setSaving(false);
-          return;
-        }
-        toast('🏷️ Categoría actualizada en la nube');
-      } else {
-        const { error } = await supabase
-          .from('categorias')
-          .insert({ nombre: catName.trim(), estado: catStatus });
-        if (error) {
-          toast(`❌ Error: ${error.message}`);
-          setSaving(false);
-          return;
-        }
-        toast('🏷️ Categoría creada en la nube');
-      }
-      await loadCategories();
-    } else {
-      if (editingId) {
-        const updated = categories.map(c => c.id === editingId ? { ...c, name: catName.trim(), status: catStatus } : c);
-        setCategories(updated);
-        localStorage.setItem('snack_categorias', JSON.stringify(updated));
-        toast('🏷️ Categoría actualizada');
-      } else {
-        const newCat: Category = { id: Date.now(), name: catName.trim(), status: catStatus };
-        const updated = [...categories, newCat];
-        setCategories(updated);
-        localStorage.setItem('snack_categorias', JSON.stringify(updated));
-        toast('🏷️ Categoría creada');
-      }
+    try {
+      await saveCategory({
+        id: editingId || undefined,
+        name: catName.trim(),
+        active: catStatus === 1
+      });
+      setShowModal(false);
+      setCatName('');
+      setCatStatus(1);
+      setEditingId(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
-    setShowModal(false);
-    setCatName('');
-    setCatStatus(1);
-    setEditingId(null);
   };
 
   return (
@@ -192,8 +106,8 @@ export default function CategoriasPage() {
                   <td>#{c.id}</td>
                   <td style={{ fontWeight: '700', color: 'var(--text)' }}>{c.name}</td>
                   <td>
-                    <span className={`tag ${c.status === 1 ? 'tg-ok' : 'tg-err'}`}>
-                      {c.status === 1 ? 'Activo' : 'Inactivo'}
+                    <span className={`tag ${c.active ? 'tg-ok' : 'tg-err'}`}>
+                      {c.active ? 'Activo' : 'Inactivo'}
                     </span>
                   </td>
                   <td>
@@ -202,10 +116,10 @@ export default function CategoriasPage() {
                       <button
                         className="act-btn"
                         onClick={() => handleToggleStatus(c)}
-                        title={c.status === 1 ? 'Desactivar' : 'Activar'}
-                        style={{ color: c.status === 1 ? 'var(--red)' : 'var(--green)' }}
+                        title={c.active ? 'Desactivar' : 'Activar'}
+                        style={{ color: c.active ? 'var(--red)' : 'var(--green)' }}
                       >
-                        {c.status === 1 ? '🔴' : '🟢'}
+                        {c.active ? '🔴' : '🟢'}
                       </button>
                     </div>
                   </td>
@@ -258,8 +172,6 @@ export default function CategoriasPage() {
         </div>
       )}
 
-      {/* TOAST */}
-      {toastMsg && <div className="snack" style={{ display: 'block' }}>{toastMsg}</div>}
     </div>
   );
 }

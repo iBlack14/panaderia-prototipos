@@ -5,7 +5,8 @@ import { consumeLotesFIFO, getLotesUnitCost } from '@/lib/fifo';
 interface InventoryOpsParams {
   products: Product[];
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
-  categories: { id: number; name: string }[];
+  categories: { id: number; name: string; active: boolean }[];
+  setCategories: React.Dispatch<React.SetStateAction<{ id: number; name: string; active: boolean }[]>>;
   breadLogs: BreadLog[];
   setBreadLogs: React.Dispatch<React.SetStateAction<BreadLog[]>>;
   user: User | null;
@@ -22,6 +23,7 @@ export function useInventoryOps({
   products,
   setProducts,
   categories,
+  setCategories,
   breadLogs,
   setBreadLogs,
   user,
@@ -422,12 +424,97 @@ export function useInventoryOps({
     toast('✂️ Fraccionamiento registrado con éxito.');
   };
 
+  const saveCategory = async (cObj: { id?: number; name: string; active: boolean }) => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        if (cObj.id) {
+          const { error } = await supabase
+            .from('categorias')
+            .update({ nombre: cObj.name, estado: cObj.active ? 1 : 0 })
+            .eq('id_categoria', cObj.id);
+          if (error) throw error;
+          toast('🏷️ Categoría actualizada');
+        } else {
+          const { error } = await supabase
+            .from('categorias')
+            .insert({ nombre: cObj.name, estado: cObj.active ? 1 : 0 });
+          if (error) throw error;
+          toast('🏷️ Categoría creada');
+        }
+        
+        const { data } = await supabase
+          .from('categorias')
+          .select('*')
+          .order('id_categoria', { ascending: true });
+        if (data) {
+          setCategories(data.map((c: any) => ({
+            id: c.id_categoria,
+            name: c.nombre,
+            active: c.estado === 1
+          })));
+        }
+      } catch (err: any) {
+        toast(`❌ Error al guardar categoría: ${err.message}`);
+      }
+    } else {
+      let updated;
+      if (cObj.id) {
+        updated = categories.map(c => c.id === cObj.id ? { ...c, name: cObj.name, active: cObj.active } : c);
+        toast('🏷️ Categoría actualizada');
+      } else {
+        const newCat = { id: Date.now(), name: cObj.name, active: cObj.active };
+        updated = [...categories, newCat];
+        toast('🏷️ Categoría creada');
+      }
+      setCategories(updated);
+      saveOffline('snack_categorias', updated);
+    }
+  };
+
+  const toggleCategory = async (id: number) => {
+    const cat = categories.find(c => c.id === id);
+    if (!cat) return;
+    const newActive = !cat.active;
+    
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase
+          .from('categorias')
+          .update({ estado: newActive ? 1 : 0 })
+          .eq('id_categoria', id);
+        if (error) throw error;
+        toast(`🏷️ Categoría ${newActive ? 'activada' : 'desactivada'}`);
+        
+        const { data } = await supabase
+          .from('categorias')
+          .select('*')
+          .order('id_categoria', { ascending: true });
+        if (data) {
+          setCategories(data.map((c: any) => ({
+            id: c.id_categoria,
+            name: c.nombre,
+            active: c.estado === 1
+          })));
+        }
+      } catch (err: any) {
+        toast(`❌ Error: ${err.message}`);
+      }
+    } else {
+      const updated = categories.map(c => c.id === id ? { ...c, active: newActive } : c);
+      setCategories(updated);
+      saveOffline('snack_categorias', updated);
+      toast(`🏷️ Categoría ${newActive ? 'activada' : 'desactivada'}`);
+    }
+  };
+
   return {
     saveProduct,
     deleteProduct,
     logBreadProduction,
     logBreadDiscard,
     logBreadConversion,
-    fractionateProduct
+    fractionateProduct,
+    saveCategory,
+    toggleCategory
   };
 }

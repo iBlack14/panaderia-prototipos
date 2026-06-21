@@ -242,7 +242,7 @@ export interface AppContextType {
   role: string | null;
   loading: boolean;
   products: Product[];
-  categories: { id: number; name: string }[];
+  categories: { id: number; name: string; active: boolean }[];
   usersList: User[];
   providers: Provider[];
   paymentMethods: PaymentMethod[];
@@ -301,4 +301,7 @@ export interface AppContextType {
   // Recetas
   saveReceta: (rObj: any) => Promise<{ success: boolean; message?: string }>;
   deleteReceta: (id: number) => Promise<void>;
+  // Categorías
+  saveCategory: (cObj: { id?: number; name: string; active: boolean }) => Promise<void>;
+  toggleCategory: (id: number) => Promise<void>;
 }

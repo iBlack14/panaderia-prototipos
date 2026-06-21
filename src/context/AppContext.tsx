@@ -120,7 +120,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState<boolean>(true);
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
+  const [categories, setCategories] = useState<{ id: number; name: string; active: boolean }[]>([]);
   const [usersList, setUsersList] = useState<User[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -208,7 +208,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabase.from('recetas').select('*, detalle_receta(*, insumos(nombre, unidad_medida)), productos(nombre)').order('id_receta', { ascending: true }),
           ]);
           if (prods) setProducts((prods as any[]).map(p => ({ id: p.id_producto, name: p.nombre, cat: p.categorias?.nombre || 'Sin categoria', price: parseFloat(p.precio_unitario), stock: parseFloat(p.num_stock || 0), unidad_medida: p.unidad_medida || 'unidades', versions: p.producto_versiones ? (p.producto_versiones as any[]).map(v => ({ id: v.id_version, name: v.nombre_version, price: parseFloat(v.precio_unitario), stock: parseFloat(v.num_stock || 0) })) : [] })));
-          if (cats) setCategories((cats as any[]).map(c => ({ id: c.id_categoria, name: c.nombre })));
+          if (cats) setCategories((cats as any[]).map(c => ({ id: c.id_categoria, name: c.nombre, active: c.estado === 1 })));
           if (rls) setRolesList((rls as any[]).map(r => ({ id: r.nombre, name: r.nombre, desc: r.descripcion || '', permissions: Array.isArray(r.permisos) ? r.permisos : (typeof r.permisos === 'string' ? JSON.parse(r.permisos) : []) })));
           if (paym) setPaymentMethods((paym as any[]).map(pm => ({ id: pm.id_metodo_pago, name: pm.tipo_pago, desc: 'Metodo en la nube', active: pm.estado === 1 })));
           if (profs) setUsersList((profs as any[]).map(p => ({ id: p.id, u: p.username, p: '••••', n: p.nombre + ' ' + (p.apellido_paterno || ''), rs: [p.roles?.nombre || 'Cajero'], st: p.estado, email: p.correo, phone: p.num_telefono || '' })));
@@ -291,13 +291,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const localPedidos = localStorage.getItem('snack_pedidos');
         const localDevoluciones = localStorage.getItem('snack_devoluciones');
 
-        setProducts(localProds ? JSON.parse(localProds) : DEFAULT_PRODUCTS);
-        setCategories([
-          { id: 1, name: 'Panes' },
-          { id: 2, name: 'Tortas' },
-          { id: 3, name: 'Dulces' },
-          { id: 4, name: 'Bebidas' },
-          { id: 5, name: 'Insumos' },
+        const localCats = localStorage.getItem('snack_categorias');
+        setCategories(localCats ? JSON.parse(localCats) : [
+          { id: 1, name: 'Panes', active: true },
+          { id: 2, name: 'Tortas', active: true },
+          { id: 3, name: 'Dulces', active: true },
+          { id: 4, name: 'Bebidas', active: true },
+          { id: 5, name: 'Insumos', active: true },
         ]);
         setUsersList(localUsers ? JSON.parse(localUsers) : DEFAULT_USERS);
         setProviders(localProviders ? JSON.parse(localProviders) : DEFAULT_PROVIDERS);
@@ -346,7 +346,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const inventoryOps = useInventoryOps({
     products, setProducts,
-    categories,
+    categories, setCategories,
     breadLogs, setBreadLogs,
     user,
     toast,

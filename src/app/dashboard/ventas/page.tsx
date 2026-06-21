@@ -20,7 +20,8 @@ export default function PointOfSalePage() {
     clients,
     toast,
     saveClient,
-    fractionateProduct
+    fractionateProduct,
+    categories
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -111,10 +112,14 @@ export default function PointOfSalePage() {
   const [waPhoneInput, setWaPhoneInput] = useState('');
   const [isWaSending, setIsWaSending] = useState(false);
 
-  // Filtered active products (excluding Insumos since they are not sold directly)
-  const filteredProducts = products.filter(p =>
-    p.cat !== 'Insumos' && p.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filtered active products (excluding Insumos since they are not sold directly, and products from deactivated categories)
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const isNotInsumo = p.cat !== 'Insumos';
+    const catObj = categories.find(c => c.name === p.cat);
+    const isCatActive = catObj ? catObj.active : true;
+    return matchesSearch && isNotInsumo && isCatActive;
+  });
 
   const handleProductClick = (prod: Product) => {
     if (prod.versions && prod.versions.length > 0) {

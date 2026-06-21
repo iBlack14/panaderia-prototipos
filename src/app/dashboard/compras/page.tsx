@@ -87,7 +87,7 @@ export default function ComprasPage() {
     e.preventDefault();
     if (!quickProductNombre.trim()) return;
 
-    const selectedCat = quickProductCat || (categories[0]?.name || 'Sin categoría');
+    const selectedCat = quickProductCat || (categories.find(c => c.active && c.name !== 'Insumos')?.name || 'Sin categoría');
 
     const res = await saveProduct({
       name: quickProductNombre.trim(),
@@ -488,7 +488,7 @@ export default function ComprasPage() {
                   <label>Categoría</label>
                   <select value={quickProductCat} onChange={(e) => setQuickProductCat(e.target.value)}>
                     <option value="">-- Seleccionar --</option>
-                    {categories.map(c => (
+                    {categories.filter(c => c.active && c.name !== 'Insumos').map(c => (
                       <option key={c.id} value={c.name}>{c.name}</option>
                     ))}
                   </select>
