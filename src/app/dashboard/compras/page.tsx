@@ -6,7 +6,7 @@ import { useApp } from '@/context/AppContext';
 
 export default function ComprasPage() {
   const router = useRouter();
-  const { purchases, providers, products, insumos, registerPurchase } = useApp();
+  const { purchases, providers, products, insumos, registerPurchase, categories, saveInsumo, saveProduct } = useApp();
   
   const [showModal, setShowModal] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState('');
@@ -47,6 +47,65 @@ export default function ComprasPage() {
   const [vName, setVName] = useState('');
   const [qty, setQty] = useState('');
   const [cost, setCost] = useState('');
+
+  // Quick modals states
+  const [showQuickInsumoModal, setShowQuickInsumoModal] = useState(false);
+  const [showQuickProductModal, setShowQuickProductModal] = useState(false);
+
+  // Quick Insumo states
+  const [quickInsumoNombre, setQuickInsumoNombre] = useState('');
+  const [quickInsumoUnidad, setQuickInsumoUnidad] = useState('kg');
+  const [quickInsumoMinStock, setQuickInsumoMinStock] = useState('0');
+
+  // Quick Product states
+  const [quickProductNombre, setQuickProductNombre] = useState('');
+  const [quickProductCat, setQuickProductCat] = useState('');
+  const [quickProductPrice, setQuickProductPrice] = useState('');
+
+  const handleQuickInsumoSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickInsumoNombre.trim()) return;
+
+    const res = await saveInsumo({
+      nombre: quickInsumoNombre.trim(),
+      stock: 0,
+      costoUnitario: 0,
+      unidadMedida: quickInsumoUnidad,
+      stockMinimo: parseFloat(quickInsumoMinStock) || 0,
+    });
+
+    if (res && res.id) {
+      setInsId(String(res.id));
+    }
+    setQuickInsumoNombre('');
+    setQuickInsumoUnidad('kg');
+    setQuickInsumoMinStock('0');
+    setShowQuickInsumoModal(false);
+  };
+
+  const handleQuickProductSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickProductNombre.trim()) return;
+
+    const selectedCat = quickProductCat || (categories[0]?.name || 'Sin categoría');
+
+    const res = await saveProduct({
+      name: quickProductNombre.trim(),
+      cat: selectedCat,
+      price: parseFloat(quickProductPrice) || 0,
+      stock: 0,
+      versions: [],
+      unidad_medida: 'unidades'
+    });
+
+    if (res && res.id) {
+      setProdId(String(res.id));
+    }
+    setQuickProductNombre('');
+    setQuickProductCat('');
+    setQuickProductPrice('');
+    setShowQuickProductModal(false);
+  };
 
   const activeProviders = providers.filter(p => p.active);
 
@@ -248,7 +307,15 @@ export default function ComprasPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
                   {itemType === 'insumo' ? (
                     <div className="inp-group" style={{ margin: 0 }}>
-                      <label style={{ fontSize: '9px' }}>Insumo</label>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <label style={{ fontSize: '9px', margin: 0 }}>Insumo</label>
+                        <span 
+                          onClick={() => setShowQuickInsumoModal(true)} 
+                          style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 'bold', fontSize: '9px', textDecoration: 'underline' }}
+                        >
+                          ➕ Nuevo Insumo
+                        </span>
+                      </div>
                       <select value={insId} onChange={(e) => setInsId(e.target.value)}>
                         <option value="">-- Elegir insumo --</option>
                         {insumos.filter(i => i.active).map(i => (
@@ -259,7 +326,15 @@ export default function ComprasPage() {
                   ) : (
                     <>
                       <div className="inp-group" style={{ margin: 0 }}>
-                        <label style={{ fontSize: '9px' }}>Producto Terminando</label>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <label style={{ fontSize: '9px', margin: 0 }}>Producto Terminado</label>
+                          <span 
+                            onClick={() => setShowQuickProductModal(true)} 
+                            style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 'bold', fontSize: '9px', textDecoration: 'underline' }}
+                          >
+                            ➕ Nuevo Producto
+                          </span>
+                        </div>
                         <select value={prodId} onChange={(e) => setProdId(e.target.value)}>
                           <option value="">-- Elegir producto --</option>
                           {products.map(p => (
@@ -342,6 +417,98 @@ export default function ComprasPage() {
                 >
                   Registrar Compra
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* QUICK INSUMO MODAL */}
+      {showQuickInsumoModal && (
+        <div className="modal-overlay open" style={{ zIndex: 1100 }}>
+          <div className="modal-card" style={{ width: '420px' }}>
+            <div className="mc-title" style={{ textAlign: 'left', marginBottom: '14px' }}>🌾 Registrar Insumo Rápido</div>
+            <form onSubmit={handleQuickInsumoSubmit}>
+              <div className="inp-group">
+                <label>Nombre del Insumo</label>
+                <input 
+                  type="text" 
+                  value={quickInsumoNombre} 
+                  onChange={(e) => setQuickInsumoNombre(e.target.value)} 
+                  placeholder="Ej: Harina saco 50kg" 
+                  required 
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div className="inp-group">
+                  <label>Unidad de Medida</label>
+                  <select value={quickInsumoUnidad} onChange={(e) => setQuickInsumoUnidad(e.target.value)}>
+                    {['kg', 'sacos', 'jabas', 'cajas', 'litros', 'unidades', 'gr'].map(u => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="inp-group">
+                  <label>Stock Mínimo</label>
+                  <input 
+                    type="number" 
+                    step="0.001" 
+                    min="0" 
+                    value={quickInsumoMinStock} 
+                    onChange={(e) => setQuickInsumoMinStock(e.target.value)} 
+                  />
+                </div>
+              </div>
+              <div className="mc-btns" style={{ marginTop: '20px' }}>
+                <button type="button" className="mc-sec" onClick={() => setShowQuickInsumoModal(false)}>Cancelar</button>
+                <button type="submit" className="mc-pri">Registrar Insumo</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK PRODUCTO MODAL */}
+      {showQuickProductModal && (
+        <div className="modal-overlay open" style={{ zIndex: 1100 }}>
+          <div className="modal-card" style={{ width: '420px' }}>
+            <div className="mc-title" style={{ textAlign: 'left', marginBottom: '14px' }}>📦 Registrar Producto Rápido</div>
+            <form onSubmit={handleQuickProductSubmit}>
+              <div className="inp-group">
+                <label>Nombre del Producto</label>
+                <input 
+                  type="text" 
+                  value={quickProductNombre} 
+                  onChange={(e) => setQuickProductNombre(e.target.value)} 
+                  placeholder="Ej: Pan de Yema" 
+                  required 
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div className="inp-group">
+                  <label>Categoría</label>
+                  <select value={quickProductCat} onChange={(e) => setQuickProductCat(e.target.value)}>
+                    <option value="">-- Seleccionar --</option>
+                    {categories.map(c => (
+                      <option key={c.id} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="inp-group">
+                  <label>Precio Venta Sugerido</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    min="0" 
+                    value={quickProductPrice} 
+                    onChange={(e) => setQuickProductPrice(e.target.value)} 
+                    placeholder="0.00" 
+                    required 
+                  />
+                </div>
+              </div>
+              <div className="mc-btns" style={{ marginTop: '20px' }}>
+                <button type="button" className="mc-sec" onClick={() => setShowQuickProductModal(false)}>Cancelar</button>
+                <button type="submit" className="mc-pri">Registrar Producto</button>
               </div>
             </form>
           </div>

@@ -17,6 +17,47 @@ export default function ProveedoresPage() {
   const [address, setAddress] = useState('');
 
   const [validationError, setValidationError] = useState('');
+  const [loadingSunat, setLoadingSunat] = useState(false);
+  const [isAutoFilled, setIsAutoFilled] = useState(false);
+
+  const lookupRuc = async (rucVal: string) => {
+    if (!rucVal || !/^\d{11}$/.test(rucVal)) return;
+
+    setLoadingSunat(true);
+    setValidationError('');
+    try {
+      const res = await fetch('/api/consulta-ruc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ruc: rucVal }),
+      });
+      const result = await res.json();
+      if (res.ok && result.success && result.data) {
+        setName(result.data.nombre_o_razon_social || '');
+        setAddress(result.data.direccion_completa || result.data.direccion || '');
+        setIsAutoFilled(true);
+      } else {
+        setValidationError(result.message || 'No se encontró el RUC en SUNAT.');
+        setIsAutoFilled(false);
+      }
+    } catch (err) {
+      console.error('Error al consultar RUC:', err);
+      setValidationError('Error al conectar con la API de SUNAT.');
+      setIsAutoFilled(false);
+    } finally {
+      setLoadingSunat(false);
+    }
+  };
+
+  const handleRucChange = (val: string) => {
+    const cleanVal = val.replace(/\D/g, '').slice(0, 11);
+    setRuc(cleanVal);
+    if (cleanVal.length === 11) {
+      lookupRuc(cleanVal);
+    } else {
+      setIsAutoFilled(false);
+    }
+  };
 
   const filteredProviders = providers.filter(p =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -30,6 +71,8 @@ export default function ProveedoresPage() {
     setPhone('');
     setAddress('');
     setValidationError('');
+    setIsAutoFilled(false);
+    setLoadingSunat(false);
     setShowModal(true);
   };
 
@@ -52,6 +95,8 @@ export default function ProveedoresPage() {
     setPhone(prov.phone);
     setAddress(prov.address);
     setValidationError('');
+    setIsAutoFilled(prov.ruc.length === 11);
+    setLoadingSunat(false);
     setShowModal(true);
   };
 
@@ -65,11 +110,13 @@ export default function ProveedoresPage() {
       return;
     }
 
-    // Name Validation (only letters and valid company characters)
-    const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s'\-\.,&]+$/;
-    if (!nameRegex.test(name.trim())) {
-      setValidationError('⚠️ El nombre de la empresa / razón social solo debe contener letras.');
-      return;
+    // Name Validation (relaxed regex, or skip check if auto-filled)
+    if (!isAutoFilled) {
+      const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ0-9\s'\-\.,&/()]+$/;
+      if (!nameRegex.test(name.trim())) {
+        setValidationError('⚠️ El nombre de la empresa / razón social contiene caracteres no válidos.');
+        return;
+      }
     }
 
     // Phone Validation (only digits)
@@ -174,13 +221,17 @@ export default function ProveedoresPage() {
 
             <form onSubmit={handleFormSubmit}>
               <div className="inp-group">
-                <label>RUC (11 dígitos)</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label>RUC (11 dígitos)</label>
+                  {loadingSunat && <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 'bold' }}>⚡ Buscando en SUNAT...</span>}
+                  {isAutoFilled && <span style={{ fontSize: '11px', color: 'var(--green)', fontWeight: 'bold' }}>✓ Verificado por SUNAT</span>}
+                </div>
                 <div className="inp-wrap">
                   <input 
                     type="text" 
                     placeholder="Ej: 20123456789" 
                     value={ruc}
-                    onChange={(e) => setRuc(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                    onChange={(e) => handleRucChange(e.target.value)}
                     maxLength={11}
                     required 
                   />
@@ -194,8 +245,10 @@ export default function ProveedoresPage() {
                     type="text" 
                     placeholder="Ej: Harinas del Norte S.A.C." 
                     value={name}
-                    onChange={(e) => setName(e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s'\-\.,&]/g, ''))}
+                    onChange={(e) => setName(e.target.value)}
                     required 
+                    readOnly={isAutoFilled}
+                    style={isAutoFilled ? { backgroundColor: 'var(--bg-hover)', color: 'var(--text-3)', cursor: 'not-allowed' } : {}}
                   />
                 </div>
               </div>
@@ -220,6 +273,8 @@ export default function ProveedoresPage() {
                     placeholder="Ej: Av. Industrial 543, Callao" 
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
+                    readOnly={isAutoFilled}
+                    style={isAutoFilled ? { backgroundColor: 'var(--bg-hover)', color: 'var(--text-3)', cursor: 'not-allowed' } : {}}
                   />
                 </div>
               </div>

@@ -62,12 +62,22 @@ export function useInsumoOps({
           }).eq('id_insumo', iObj.id);
           if (error) throw error;
 
+          const updatedInsumo = { 
+            id: iObj.id, 
+            nombre: iObj.nombre, 
+            stock: iObj.stock ?? (existing ? existing.stock : 0), 
+            costoUnitario: calculatedCost, 
+            unidadMedida: iObj.unidadMedida || (existing ? existing.unidadMedida : 'kg'), 
+            stockMinimo: iObj.stockMinimo ?? (existing ? existing.stockMinimo : 0), 
+            lotes: newLotes,
+            active: existing ? existing.active : true
+          };
+
           setInsumos(prev => prev.map(ins =>
-            ins.id === iObj.id
-              ? { ...ins, nombre: iObj.nombre, stock: iObj.stock ?? ins.stock, costoUnitario: calculatedCost, unidadMedida: iObj.unidadMedida || ins.unidadMedida, stockMinimo: iObj.stockMinimo ?? ins.stockMinimo, lotes: newLotes }
-              : ins
+            ins.id === iObj.id ? updatedInsumo : ins
           ));
           toast('Insumo actualizado correctamente');
+          return updatedInsumo;
         } else {
           // Insert new
           const { data, error } = await supabase.from('insumos').insert({
@@ -92,6 +102,7 @@ export function useInsumoOps({
           };
           setInsumos(prev => [...prev, newInsumo]);
           toast('Insumo registrado correctamente');
+          return newInsumo;
         }
       } catch (err: any) {
         console.error('Error saving insumo:', err);
@@ -100,14 +111,23 @@ export function useInsumoOps({
     } else {
       // Offline mode
       if (iObj.id) {
+        const updatedInsumo = { 
+          id: iObj.id, 
+          nombre: iObj.nombre, 
+          stock: iObj.stock, 
+          costoUnitario: calculatedCost, 
+          unidadMedida: iObj.unidadMedida, 
+          stockMinimo: iObj.stockMinimo, 
+          lotes: newLotes,
+          active: existing ? existing.active : true
+        };
         const updated = insumos.map(ins =>
-          ins.id === iObj.id
-            ? { ...ins, nombre: iObj.nombre, stock: iObj.stock, costoUnitario: calculatedCost, unidadMedida: iObj.unidadMedida, stockMinimo: iObj.stockMinimo, lotes: newLotes }
-            : ins
+          ins.id === iObj.id ? updatedInsumo : ins
         );
         setInsumos(updated);
         saveOffline('snack_insumos', updated);
         toast('Insumo actualizado (offline)');
+        return updatedInsumo;
       } else {
         const newId = insumos.length > 0 ? Math.max(...insumos.map(i => i.id)) + 1 : 1;
         const newInsumo: Insumo = {
@@ -124,6 +144,7 @@ export function useInsumoOps({
         setInsumos(updated);
         saveOffline('snack_insumos', updated);
         toast('Insumo registrado (offline)');
+        return newInsumo;
       }
     }
   };

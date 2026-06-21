@@ -127,8 +127,9 @@ export function useInventoryOps({
         }
 
         const { data: prods } = await supabase.from('productos').select('*, producto_versiones(*), categorias(nombre)').eq('estado', 1);
+        let returnedProduct: any = null;
         if (prods) {
-          setProducts((prods as any[]).map(p => ({
+          const mapped = (prods as any[]).map(p => ({
             id: p.id_producto,
             name: p.nombre,
             cat: p.categorias?.nombre || 'Sin categoría',
@@ -143,23 +144,35 @@ export function useInventoryOps({
               parent_version_id: v.parent_version_id,
               fraction_ratio: v.fraction_ratio ? parseFloat(v.fraction_ratio) : 1
             })) : []
-          })));
+          }));
+          setProducts(mapped);
+          
+          if (pObj.id) {
+            returnedProduct = mapped.find(p => p.id === pObj.id);
+          } else {
+            // Find the newly created product by name
+            returnedProduct = mapped.find(p => p.name === pObj.name);
+          }
         }
+        return returnedProduct;
       } catch (err: any) {
         toast(`❌ Error en Supabase: ${err.message}`);
       }
     } else {
       let updated;
+      let returnedProduct: any = null;
       if (pObj.id) {
-        updated = products.map(p => p.id === pObj.id ? { ...p, ...pObj } : p);
+        returnedProduct = products.find(p => p.id === pObj.id) ? { ...products.find(p => p.id === pObj.id), ...pObj } : pObj;
+        updated = products.map(p => p.id === pObj.id ? returnedProduct : p);
         toast('📦 Producto actualizado');
       } else {
-        const newProd = { ...pObj, id: Date.now(), stock: pObj.stock || 0, versions: pObj.versions || [], unidad_medida: pObj.unidad_medida || 'unidades' };
-        updated = [...products, newProd];
+        returnedProduct = { ...pObj, id: Date.now(), stock: pObj.stock || 0, versions: pObj.versions || [], unidad_medida: pObj.unidad_medida || 'unidades' };
+        updated = [...products, returnedProduct];
         toast('📦 Producto creado');
       }
       setProducts(updated);
       saveOffline('snack_products', updated);
+      return returnedProduct;
     }
   };
 

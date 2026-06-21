@@ -742,3 +742,11 @@ CREATE POLICY "detalle_receta_write" ON public.detalle_receta FOR ALL TO authent
 -- Recargar caché del esquema PostgREST
 NOTIFY pgrst, 'reload schema';
 
+-- Sincronizar secuencias después de insertar datos semilla (previene errores de llave duplicada)
+SELECT setval(pg_get_serial_sequence('public.roles', 'id_rol'), COALESCE((SELECT MAX(id_rol) FROM public.roles), 1), true);
+SELECT setval(pg_get_serial_sequence('public.categorias', 'id_categoria'), COALESCE((SELECT MAX(id_categoria) FROM public.categorias), 1), true);
+SELECT setval(pg_get_serial_sequence('public.metodos_pago', 'id_metodo_pago'), COALESCE((SELECT MAX(id_metodo_pago) FROM public.metodos_pago), 1), true);
+SELECT setval(pg_get_serial_sequence('public.productos', 'id_producto'), COALESCE((SELECT MAX(id_producto) FROM public.productos), 1), true);
+SELECT setval(pg_get_serial_sequence('public.insumos', 'id_insumo'), COALESCE((SELECT MAX(id_insumo) FROM public.insumos), 1), true);
+SELECT setval(pg_get_serial_sequence('public.recetas', 'id_receta'), COALESCE((SELECT MAX(id_receta) FROM public.recetas), 1), true);
+

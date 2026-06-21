@@ -280,7 +280,7 @@ export interface AppContextType {
   openCashSession: (initialAmount: string | number, shift: string) => Promise<void>;
   closeCashSession: (countedAmount: string | number, observaciones: string, denominaciones?: DenominacionArqueo) => Promise<void>;
   registerCashDrop: (monto: number, motivo: string) => Promise<void>;
-  saveProduct: (pObj: any) => Promise<void>;
+  saveProduct: (pObj: any) => Promise<any>;
   deleteProduct: (id: number) => Promise<void>;
   logBreadProduction: (prodId: number, qty: number, version?: string | null) => Promise<void>;
   logBreadDiscard: (prodId: number, qty: number, reason: string, version?: string | null) => Promise<void>;
@@ -296,7 +296,7 @@ export interface AppContextType {
   processReturn: (saleId: number, items: ReturnedItem[], motivo: string) => Promise<void>;
   fractionateProduct: (parentVersionId: number, childVersionId: number, qtyToDeduct: number, qtyToAdd: number) => Promise<void>;
   // Insumos
-  saveInsumo: (iObj: any) => Promise<void>;
+  saveInsumo: (iObj: any) => Promise<any>;
   toggleInsumo: (id: number) => Promise<void>;
   // Recetas
   saveReceta: (rObj: any) => Promise<{ success: boolean; message?: string }>;
