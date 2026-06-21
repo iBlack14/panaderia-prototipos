@@ -216,6 +216,7 @@ export interface Insumo {
   unidadMedida: string;
   stockMinimo: number;
   active: boolean;
+  lotes?: { qty: number; cost: number }[];
 }
 
 export interface RecetaIngrediente {
@@ -233,6 +234,7 @@ export interface Receta {
   rendimientoBase: number;
   instrucciones?: string;
   ingredientes: RecetaIngrediente[];
+  margenDeseado: number;
 }
 
 export interface AppContextType {

@@ -16,6 +16,7 @@ export default function InsumosPage() {
   const [costo, setCosto] = useState('0');
   const [unidad, setUnidad] = useState('kg');
   const [minStock, setMinStock] = useState('0');
+  const [ruc, setRuc] = useState(''); // SUNAT RUC of provider
 
   const UNIDADES = ['kg', 'sacos', 'jabas', 'cajas', 'litros', 'unidades', 'gr'];
 
@@ -30,6 +31,7 @@ export default function InsumosPage() {
     setCosto('0');
     setUnidad('kg');
     setMinStock('0');
+    setRuc('');
     setShowModal(true);
   };
 
@@ -39,13 +41,28 @@ export default function InsumosPage() {
     setStock(String(ins.stock));
     setCosto(String(ins.costoUnitario));
     setUnidad(ins.unidadMedida);
-    setMinStock(String(ins.stockMinimo));
+    setRuc('');
     setShowModal(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nombre.trim()) return;
+
+    // Validate RUC against SUNAT API (public endpoint, no auth)
+    if (ruc.trim()) {
+      try {
+        const res = await fetch(`https://api.sunat.cloud/v1/ruc/${ruc.trim()}`);
+        if (res.ok) {
+          // RUC exists in SUNAT, block the operation
+          alert('RUC encontrado en SUNAT. No se permite registrar el insumo.');
+          return;
+        }
+      } catch (err) {
+        console.error('Error checking SUNAT RUC:', err);
+        // If the check fails, allow proceeding (optional)
+      }
+    }
 
     saveInsumo({
       id: editingId,
@@ -62,7 +79,12 @@ export default function InsumosPage() {
   const totalInsumos = insumos.length;
   const stockBajo = insumos.filter(i => i.stock <= i.stockMinimo && i.stock > 0 && i.active).length;
   const agotados = insumos.filter(i => i.stock <= 0 && i.active).length;
-  const valorTotal = insumos.reduce((sum, i) => sum + (i.stock * i.costoUnitario), 0);
+  const valorTotal = insumos.reduce((sum, i) => {
+    const lotesVal = i.lotes && i.lotes.length > 0
+      ? i.lotes.reduce((s, l) => s + (l.qty * l.cost), 0)
+      : (i.stock * i.costoUnitario);
+    return sum + lotesVal;
+  }, 0);
 
   return (
     <div className="screen active">
@@ -122,7 +144,6 @@ export default function InsumosPage() {
               <th style={{ textAlign: 'left' }}>Unidad</th>
               <th style={{ textAlign: 'left' }}>Stock Actual</th>
               <th style={{ textAlign: 'left' }}>Stock Minimo</th>
-              <th style={{ textAlign: 'left' }}>Costo Unitario</th>
               <th style={{ textAlign: 'left' }}>Estado</th>
               <th style={{ textAlign: 'left' }}>Acciones</th>
             </tr>
@@ -130,7 +151,7 @@ export default function InsumosPage() {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: '600' }}>
+                <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: '600' }}>
                   <div style={{ fontSize: '40px', marginBottom: '8px' }}>🌾</div>
                   No hay insumos registrados. Agrega materias primas para empezar.
                 </td>
@@ -166,9 +187,6 @@ export default function InsumosPage() {
                     </td>
                     <td style={{ fontWeight: '600', color: 'var(--text-2)' }}>
                       {ins.stockMinimo.toFixed(3)} {ins.unidadMedida}
-                    </td>
-                    <td style={{ fontWeight: '800', color: 'var(--accent)' }}>
-                      S/. {ins.costoUnitario.toFixed(2)}
                     </td>
                     <td>
                       {!ins.active ? (
@@ -210,6 +228,17 @@ export default function InsumosPage() {
               <div className="mc-title" style={{ margin: 0, textAlign: 'left' }}>
                 {editingId ? '✏️ Editar Insumo' : '🌾 Registrar Nuevo Insumo'}
               </div>
+{/* RUC Field */}
+<div className="inp-group" style={{ marginTop: '8px' }}>
+  <label>RUC del Proveedor</label>
+  <input
+    type="text"
+    value={ruc}
+    onChange={(e) => setRuc(e.target.value)}
+    placeholder="Ej: 20512345678"
+    pattern="[0-9]{11}"
+  />
+</div>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
@@ -266,19 +295,7 @@ export default function InsumosPage() {
                   />
                 </div>
 
-                <div className="inp-group">
-                  <label>Costo Unitario (S/.)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={costo}
-                    onChange={(e) => setCosto(e.target.value)}
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <div className="inp-group">
+                <div className="inp-group" style={{ gridColumn: 'span 2' }}>
                   <label>Stock Minimo (alerta)</label>
                   <input
                     type="number"
@@ -291,21 +308,7 @@ export default function InsumosPage() {
                 </div>
               </div>
 
-              <div style={{
-                marginTop: '16px',
-                padding: '12px 14px',
-                background: 'var(--accent-bg)',
-                borderRadius: '12px',
-                border: '1px solid rgba(176, 125, 46, 0.15)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-2)' }}>Valor estimado en inventario:</span>
-                <span style={{ fontSize: '14px', fontWeight: '800', color: 'var(--accent)' }}>
-                  S/. {((parseFloat(stock) || 0) * (parseFloat(costo) || 0)).toFixed(2)}
-                </span>
-              </div>
+
 
               <div className="mc-btns" style={{ marginTop: '24px' }}>
                 <button type="button" className="mc-sec" onClick={() => setShowModal(false)}>Cancelar</button>

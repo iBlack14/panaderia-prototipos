@@ -1,5 +1,6 @@
 import React from 'react';
-import { Product, BreadLog, User } from '@/context/types';
+import { Product, BreadLog, User, Insumo, Receta } from '@/context/types';
+import { consumeLotesFIFO, getLotesUnitCost } from '@/lib/fifo';
 
 interface InventoryOpsParams {
   products: Product[];
@@ -12,6 +13,9 @@ interface InventoryOpsParams {
   isSupabaseConfigured: boolean;
   supabase: any;
   saveOffline: (key: string, data: any) => void;
+  insumos: Insumo[];
+  setInsumos: React.Dispatch<React.SetStateAction<Insumo[]>>;
+  recetas: Receta[];
 }
 
 export function useInventoryOps({
@@ -24,7 +28,10 @@ export function useInventoryOps({
   toast,
   isSupabaseConfigured,
   supabase,
-  saveOffline
+  saveOffline,
+  insumos,
+  setInsumos,
+  recetas
 }: InventoryOpsParams) {
 
   const saveProduct = async (pObj: any) => {
@@ -207,6 +214,30 @@ export function useInventoryOps({
     const newLogs = [log, ...breadLogs];
     setBreadLogs(newLogs);
     saveOffline('snack_bread_logs', newLogs);
+
+    // Recipe Insumos Deduction (updates local state instantly)
+    const receta = recetas.find(r => r.productoId === prodId);
+    if (receta && receta.ingredientes.length > 0) {
+      const factor = qty / (receta.rendimientoBase || 1);
+      const updatedInsumos = insumos.map(ins => {
+        const ing = receta.ingredientes.find(i => i.insumoId === ins.id);
+        if (!ing) return ins;
+
+        const qtyToConsume = ing.cantidadRequerida * factor;
+        const newLotes = consumeLotesFIFO(ins.lotes || [], qtyToConsume);
+        const newCost = getLotesUnitCost(newLotes);
+        const newStock = Math.max(0, ins.stock - qtyToConsume);
+
+        return {
+          ...ins,
+          stock: newStock,
+          lotes: newLotes,
+          costoUnitario: newCost
+        };
+      });
+      setInsumos(updatedInsumos);
+      saveOffline('snack_insumos', updatedInsumos);
+    }
 
     if (isSupabaseConfigured && supabase) {
       try {

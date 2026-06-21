@@ -1,5 +1,6 @@
 import React from 'react';
 import { Receta, RecetaIngrediente, Product, Insumo, User } from '@/context/types';
+import { getFIFOCost } from '@/lib/fifo';
 
 interface RecetaOpsParams {
   recetas: Receta[];
@@ -28,6 +29,12 @@ export function useRecetaOps({
   const saveReceta = async (rObj: any) => {
     const ingredientes: RecetaIngrediente[] = rObj.ingredientes || [];
 
+// Validate margenDeseado > 10%
+if (rObj.margenDeseado && rObj.margenDeseado <= 10) {
+  toast('El margen de ganancia deseado debe ser mayor a 10%.');
+  return { success: false, message: 'Margen deseado debe ser mayor a 10%' };
+}
+
     if (isSupabaseConfigured && supabase) {
       try {
         let recetaId: number;
@@ -38,6 +45,7 @@ export function useRecetaOps({
             id_producto: rObj.productoId,
             rendimiento_base: rObj.rendimientoBase || 1,
             instrucciones: rObj.instrucciones || null,
+            margen_deseado: rObj.margenDeseado || 30
           }).eq('id_receta', rObj.id);
           if (error) throw error;
           recetaId = rObj.id;
@@ -50,6 +58,7 @@ export function useRecetaOps({
             id_producto: rObj.productoId,
             rendimiento_base: rObj.rendimientoBase || 1,
             instrucciones: rObj.instrucciones || null,
+            margen_deseado: rObj.margenDeseado || 30
           }).select().single();
           if (error) throw error;
           recetaId = data.id_receta;
@@ -84,6 +93,7 @@ export function useRecetaOps({
           rendimientoBase: rObj.rendimientoBase || 1,
           instrucciones: rObj.instrucciones || '',
           ingredientes: fullIngredientes,
+          margenDeseado: rObj.margenDeseado || 30
         };
 
         if (rObj.id) {
@@ -114,7 +124,7 @@ export function useRecetaOps({
       if (rObj.id) {
         const updated = recetas.map(r =>
           r.id === rObj.id
-            ? { ...r, productoId: rObj.productoId, productoNombre: prod?.name || r.productoNombre, rendimientoBase: rObj.rendimientoBase || 1, instrucciones: rObj.instrucciones || '', ingredientes: fullIngredientes }
+            ? { ...r, productoId: rObj.productoId, productoNombre: prod?.name || r.productoNombre, rendimientoBase: rObj.rendimientoBase || 1, instrucciones: rObj.instrucciones || '', ingredientes: fullIngredientes, margenDeseado: rObj.margenDeseado || 30 }
             : r
         );
         setRecetas(updated);
@@ -129,6 +139,7 @@ export function useRecetaOps({
           rendimientoBase: rObj.rendimientoBase || 1,
           instrucciones: rObj.instrucciones || '',
           ingredientes: fullIngredientes,
+          margenDeseado: rObj.margenDeseado || 30
         };
         const updated = [...recetas, newReceta];
         setRecetas(updated);
@@ -174,7 +185,7 @@ export function useRecetaOps({
     for (const ing of receta.ingredientes) {
       const insumo = insumos.find(i => i.id === ing.insumoId);
       const cantidadNecesaria = ing.cantidadRequerida * factor;
-      const costoLinea = cantidadNecesaria * (insumo?.costoUnitario || 0);
+      const costoLinea = insumo ? getFIFOCost(insumo.lotes || [], cantidadNecesaria) : 0;
       costoTotal += costoLinea;
       detalles.push({
         insumoNombre: ing.insumoNombre || insumo?.nombre || `Insumo #${ing.insumoId}`,

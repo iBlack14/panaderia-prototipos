@@ -141,7 +141,8 @@ CREATE TABLE public.insumos (
     costo_unitario  DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     unidad_medida   VARCHAR(20)  DEFAULT 'kg',
     stock_minimo    DECIMAL(10,3) DEFAULT 0.000,
-    estado          INT DEFAULT 1
+    estado          INT DEFAULT 1,
+    lotes           JSONB DEFAULT '[]'::jsonb
 );
 
 -- 2.10 Cierres / Sesiones de Caja
@@ -224,7 +225,8 @@ CREATE TABLE public.recetas (
     id_receta         SERIAL PRIMARY KEY,
     id_producto       INT UNIQUE NOT NULL REFERENCES public.productos(id_producto) ON DELETE CASCADE,
     rendimiento_base  DECIMAL(10,3) NOT NULL DEFAULT 1.000,
-    instrucciones     TEXT
+    instrucciones     TEXT,
+    margen_deseado    DECIMAL(5,2) NOT NULL DEFAULT 30.00
 );
 
 -- 2.17 Detalle de Ingredientes de la Receta (referencia a insumos)
@@ -271,14 +273,63 @@ CREATE TRIGGER tr_venta_descontar_stock
 AFTER INSERT ON public.detalle_venta
 FOR EACH ROW EXECUTE FUNCTION fn_descontar_stock_venta();
 
+-- FIFO Inventory cost & lotes helper functions
+CREATE OR REPLACE FUNCTION consume_lotes_fifo(lotes_json JSONB, amount_to_consume DECIMAL)
+RETURNS JSONB AS $$
+DECLARE
+    item JSONB;
+    new_lotes JSONB := '[]'::jsonb;
+    rem_amount DECIMAL := amount_to_consume;
+    qty_in_lote DECIMAL;
+BEGIN
+    FOR item IN SELECT * FROM jsonb_array_elements(lotes_json) LOOP
+        qty_in_lote := (item->>'qty')::DECIMAL;
+        IF rem_amount > 0 THEN
+            IF qty_in_lote > rem_amount THEN
+                new_lotes := jsonb_insert(new_lotes, '{999999}', jsonb_build_object('qty', qty_in_lote - rem_amount, 'cost', (item->>'cost')::DECIMAL));
+                rem_amount := 0;
+            ELSE
+                rem_amount := rem_amount - qty_in_lote;
+            END IF;
+        ELSE
+            new_lotes := jsonb_insert(new_lotes, '{999999}', item);
+        END IF;
+    END LOOP;
+    RETURN new_lotes;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION get_lotes_unit_cost(lotes_json JSONB)
+RETURNS DECIMAL AS $$
+DECLARE
+    item JSONB;
+BEGIN
+    FOR item IN SELECT * FROM jsonb_array_elements(lotes_json) LOOP
+        IF (item->>'qty')::DECIMAL > 0 THEN
+            RETURN (item->>'cost')::DECIMAL;
+        END IF;
+    END LOOP;
+    RETURN 0.00;
+END;
+$$ LANGUAGE plpgsql;
+
 -- B. Aumentar stock al comprar (productos o insumos)
 CREATE OR REPLACE FUNCTION fn_aumentar_stock_compra()
 RETURNS TRIGGER AS $$
+DECLARE
+    current_lotes JSONB;
+    new_lotes JSONB;
+    new_unit_cost DECIMAL(10,2);
 BEGIN
     IF NEW.id_insumo IS NOT NULL THEN
-        -- Compra de insumo: actualizar tabla insumos
+        SELECT COALESCE(lotes, '[]'::jsonb) INTO current_lotes FROM public.insumos WHERE id_insumo = NEW.id_insumo;
+        new_lotes := jsonb_insert(current_lotes, '{999999}', jsonb_build_object('qty', NEW.num_cantidad, 'cost', NEW.precio_compra));
+        new_unit_cost := get_lotes_unit_cost(new_lotes);
+        
         UPDATE public.insumos
-           SET num_stock = num_stock + NEW.num_cantidad
+           SET num_stock = num_stock + NEW.num_cantidad,
+               lotes = new_lotes,
+               costo_unitario = new_unit_cost
          WHERE id_insumo = NEW.id_insumo;
     ELSIF NEW.id_version IS NOT NULL THEN
         UPDATE public.producto_versiones
@@ -306,6 +357,9 @@ DECLARE
     det_row RECORD;
     factor DECIMAL(10,6);
     rend_base DECIMAL(10,3);
+    current_lotes JSONB;
+    new_lotes JSONB;
+    new_unit_cost DECIMAL(10,2);
 BEGIN
     IF NEW.tipo_registro = 'produccion' THEN
         -- 1. Incrementar el stock del producto o variante producida
@@ -334,9 +388,17 @@ BEGIN
                       FROM public.detalle_receta 
                      WHERE id_receta = receta_row.id_receta
                 LOOP
-                    -- Descontar stock del insumo en la tabla insumos
+                    -- Fetch current lotes
+                    SELECT COALESCE(lotes, '[]'::jsonb) INTO current_lotes FROM public.insumos WHERE id_insumo = det_row.id_insumo;
+                    -- Consume FIFO style
+                    new_lotes := consume_lotes_fifo(current_lotes, det_row.cantidad_requerida * factor);
+                    new_unit_cost := get_lotes_unit_cost(new_lotes);
+                    
+                    -- Descontar stock del insumo en la tabla insumos y actualizar costo_unitario y lotes
                     UPDATE public.insumos
-                       SET num_stock = num_stock - (det_row.cantidad_requerida * factor)
+                       SET num_stock = num_stock - (det_row.cantidad_requerida * factor),
+                           lotes = new_lotes,
+                           costo_unitario = new_unit_cost
                      WHERE id_insumo = det_row.id_insumo;
                 END LOOP;
             END IF;

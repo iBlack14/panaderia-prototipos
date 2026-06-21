@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useApp, Receta, RecetaIngrediente } from '@/context/AppContext';
+import { getFIFOCost } from '@/lib/fifo';
 
 export default function RecetasPage() {
   const { recetas, products, insumos, saveReceta, deleteReceta } = useApp();
@@ -14,6 +15,7 @@ export default function RecetasPage() {
   const [rendimiento, setRendimiento] = useState('1');
   const [instrucciones, setInstrucciones] = useState('');
   const [ingredientes, setIngredientes] = useState<RecetaIngrediente[]>([]);
+  const [margenDeseado, setMargenDeseado] = useState('30');
 
   // Add ingredient form
   const [ingInsumoId, setIngInsumoId] = useState('');
@@ -30,6 +32,7 @@ export default function RecetasPage() {
     setRendimiento('1');
     setInstrucciones('');
     setIngredientes([]);
+    setMargenDeseado('30');
     setShowModal(true);
   };
 
@@ -39,6 +42,7 @@ export default function RecetasPage() {
     setRendimiento(String(r.rendimientoBase));
     setInstrucciones(r.instrucciones || '');
     setIngredientes([...r.ingredientes]);
+    setMargenDeseado(String(r.margenDeseado || 30));
     setShowModal(true);
   };
 
@@ -89,12 +93,19 @@ export default function RecetasPage() {
       return;
     }
 
+    const marg = parseFloat(margenDeseado);
+    if (isNaN(marg) || marg <= 10) {
+      alert('El margen de ganancia deseado debe ser mayor a 10%.');
+      return;
+    }
+
     const res = await saveReceta({
       id: editingId,
       productoId: pId,
       rendimientoBase: parseFloat(rendimiento) || 1,
       instrucciones: instrucciones.trim(),
       ingredientes,
+      margenDeseado: marg
     });
     
     if (res && res.success) {
@@ -113,7 +124,7 @@ export default function RecetasPage() {
   const calcCost = (ings: RecetaIngrediente[]) => {
     return ings.reduce((sum, ing) => {
       const insumo = insumos.find(i => i.id === ing.insumoId);
-      return sum + (ing.cantidadRequerida * (insumo?.costoUnitario || 0));
+      return sum + (insumo ? getFIFOCost(insumo.lotes || [], ing.cantidadRequerida) : 0);
     }, 0);
   };
 
@@ -148,7 +159,8 @@ export default function RecetasPage() {
           {recetas.map((r) => {
             const costoProd = calcCost(r.ingredientes);
             const prod = products.find(p => p.id === r.productoId);
-            const margen = prod && prod.price > 0 ? ((prod.price - costoProd) / prod.price * 100) : 0;
+            const costoUnitarioProd = costoProd / (r.rendimientoBase || 1);
+            const margen = prod && prod.price > 0 ? ((prod.price - costoUnitarioProd) / prod.price * 100) : 0;
 
             return (
               <div key={r.id} className="panel" style={{ padding: '18px' }}>
@@ -195,20 +207,40 @@ export default function RecetasPage() {
                 </div>
 
                 {/* Cost Footer */}
-                <div style={{ borderTop: '1px solid var(--border)', marginTop: '10px', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ borderTop: '1px solid var(--border)', marginTop: '10px', paddingTop: '10px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div>
-                    <div style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-3)' }}>Costo de Produccion</div>
-                    <div style={{ fontWeight: '800', fontSize: '16px', color: 'var(--accent)' }}>S/. {costoProd.toFixed(2)}</div>
+                    <div style={{ fontSize: '9px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-3)' }}>Costo Receta</div>
+                    <div style={{ fontWeight: '800', fontSize: '14px', color: 'var(--accent)' }}>S/. {costoProd.toFixed(2)}</div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-2)', marginTop: '2px' }}>
+                      S/. {costoUnitarioProd.toFixed(2)} / ud
+                    </div>
                   </div>
                   {prod && (
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-3)' }}>Precio Venta</div>
-                      <div style={{ fontWeight: '800', fontSize: '16px', color: 'var(--text)' }}>S/. {prod.price.toFixed(2)}</div>
-                      <div style={{ fontSize: '11px', fontWeight: '700', color: margen > 30 ? 'var(--green)' : margen > 10 ? 'var(--amber)' : 'var(--red)' }}>
-                        Margen: {margen.toFixed(1)}%
+                      <div style={{ fontSize: '9px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-3)' }}>Precio Venta (Actual)</div>
+                      <div style={{ fontWeight: '800', fontSize: '14px', color: 'var(--text)' }}>S/. {prod.price.toFixed(2)}</div>
+                      <div style={{ fontSize: '10px', fontWeight: '700', color: margen >= (r.margenDeseado || 30) ? 'var(--green)' : 'var(--red)', marginTop: '2px' }}>
+                        Margen: {margen.toFixed(1)}% (Des. {r.margenDeseado}%)
                       </div>
                     </div>
                   )}
+                </div>
+
+                <div style={{ 
+                  marginTop: '8px', 
+                  padding: '6px 10px', 
+                  background: 'var(--bg-card2)', 
+                  border: '1px solid var(--border)', 
+                  borderRadius: '8px', 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  fontSize: '11px' 
+                }}>
+                  <span style={{ fontWeight: '600', color: 'var(--text-2)' }}>Precio Sugerido (+{r.margenDeseado}%):</span>
+                  <span style={{ fontWeight: '800', color: 'var(--accent)' }}>
+                    S/. {(costoUnitarioProd * (1 + (r.margenDeseado || 30) / 100)).toFixed(2)}
+                  </span>
                 </div>
 
                 {/* Instructions */}
@@ -282,9 +314,9 @@ export default function RecetasPage() {
                   </select>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '12px' }}>
                   <div className="inp-group">
-                    <label>Rendimiento (unidades que produce)</label>
+                    <label>Rendimiento (unidades)</label>
                     <input
                       type="number"
                       step="0.001"
@@ -292,6 +324,18 @@ export default function RecetasPage() {
                       value={rendimiento}
                       onChange={(e) => setRendimiento(e.target.value)}
                       placeholder="1"
+                    />
+                  </div>
+                  <div className="inp-group">
+                    <label>Ganancia Deseada (%) (&gt; 10%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="10.01"
+                      value={margenDeseado}
+                      onChange={(e) => setMargenDeseado(e.target.value)}
+                      placeholder="30"
+                      required
                     />
                   </div>
                   <div className="inp-group">
@@ -435,7 +479,7 @@ export default function RecetasPage() {
                         <div style={{ fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.5px', marginBottom: '10px' }}>
                           Análisis de Costos y Margen
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.2fr', gap: '12px' }}>
                           <div style={{ background: 'var(--bg-card2)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)' }}>
                             <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--text-3)', textTransform: 'uppercase' }}>Costo Receta</div>
                             <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text)' }}>S/. {costoTotalReceta.toFixed(2)}</div>
@@ -449,22 +493,29 @@ export default function RecetasPage() {
                             <div style={{ fontSize: '9.5px', color: 'var(--text-2)', marginTop: '2px' }}>S/. {precioVenta.toFixed(2)} / ud</div>
                           </div>
                           <div style={{
-                            background: margenPorcentaje >= 30 ? 'rgba(16, 185, 129, 0.08)' : margenPorcentaje >= 10 ? 'rgba(245, 158, 11, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+                            background: margenPorcentaje >= (parseFloat(margenDeseado) || 30) ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
                             padding: '10px',
                             borderRadius: '10px',
-                            border: `1px solid ${margenPorcentaje >= 30 ? 'rgba(16, 185, 129, 0.2)' : margenPorcentaje >= 10 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
+                            border: `1px solid ${margenPorcentaje >= (parseFloat(margenDeseado) || 30) ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
                           }}>
                             <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--text-3)', textTransform: 'uppercase' }}>Margen Est.</div>
                             <div style={{
                               fontSize: '14px',
                               fontWeight: '800',
-                              color: margenPorcentaje >= 30 ? 'var(--green)' : margenPorcentaje >= 10 ? 'var(--amber)' : 'var(--red)'
+                              color: margenPorcentaje >= (parseFloat(margenDeseado) || 30) ? 'var(--green)' : 'var(--red)'
                             }}>
                               {margenPorcentaje.toFixed(1)}%
                             </div>
                             <div style={{ fontSize: '9.5px', color: 'var(--text-2)', marginTop: '2px' }}>
-                              Ganancia: S/. {utilidadPorUnidad.toFixed(2)}
+                              Deseado: {margenDeseado}%
                             </div>
+                          </div>
+                          <div style={{ background: 'var(--bg-card2)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--text-3)', textTransform: 'uppercase' }}>Precio Sugerido</div>
+                            <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--accent)' }}>
+                              S/. {(costoPorUnidad * (1 + (parseFloat(margenDeseado) || 30) / 100)).toFixed(2)}
+                            </div>
+                            <div style={{ fontSize: '9.5px', color: 'var(--text-2)', marginTop: '2px' }}>Con +{margenDeseado}% margen</div>
                           </div>
                         </div>
                       </div>

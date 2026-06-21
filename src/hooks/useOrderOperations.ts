@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pedido, ReturnRecord, Purchase, Sale, Product, Client, Provider, BreadLog, User, ReturnedItem, PurchaseItem, CreditPayment, CashSession } from '@/context/types';
+import { Pedido, ReturnRecord, Purchase, Sale, Product, Client, Provider, BreadLog, User, ReturnedItem, PurchaseItem, CreditPayment, CashSession, Insumo } from '@/context/types';
+import { getLotesUnitCost } from '@/lib/fifo';
 
 interface OrderOpsParams {
   pedidos: Pedido[];
@@ -24,6 +25,8 @@ interface OrderOpsParams {
   isSupabaseConfigured: boolean;
   supabase: any;
   saveOffline: (key: string, data: any) => void;
+  insumos: Insumo[];
+  setInsumos: React.Dispatch<React.SetStateAction<Insumo[]>>;
 }
 
 /**
@@ -55,7 +58,9 @@ export function useOrderOperations({
   toast,
   isSupabaseConfigured,
   supabase,
-  saveOffline
+  saveOffline,
+  insumos,
+  setInsumos
 }: OrderOpsParams) {
 
   /**
@@ -237,25 +242,32 @@ export function useOrderOperations({
       saveOffline('snack_products', updatedProds);
     }
 
-    // Update Insumos Stock
-    // Note: To update context state from here, we need access to insumos/setInsumos.
-    // However, they are not passed to useOrderOperations yet!
-    // I will mock this with a localStorage hack for offline mode, but for Supabase it relies on the trigger.
-    if (insItems.length > 0 && !isSupabaseConfigured) {
-      const localInsumos = localStorage.getItem('snack_insumos');
-      if (localInsumos) {
-        let parsedInsumos = JSON.parse(localInsumos);
-        parsedInsumos = parsedInsumos.map((ins: any) => {
-          const added = insItems.find(i => i.insumoId === ins.id);
-          if (added) {
-            return { ...ins, stock: ins.stock + added.qty };
-          }
-          return ins;
+    // Update Insumos Stock (both online state sync and offline)
+    if (insItems.length > 0) {
+      const updatedInsumos = insumos.map(ins => {
+        const itemsToAdd = insItems.filter(item => item.insumoId === ins.id);
+        if (itemsToAdd.length === 0) return ins;
+
+        let newStock = ins.stock;
+        let newLotes = [...(ins.lotes || [])];
+
+        itemsToAdd.forEach(item => {
+          newStock += item.qty;
+          newLotes.push({ qty: item.qty, cost: item.cost });
         });
-        saveOffline('snack_insumos', parsedInsumos);
-        // Warning: This does not immediately update the UI state in AppContext because setInsumos is missing here.
-        // The user will see the stock update on refresh. This is acceptable for a rapid prototype.
-      }
+
+        const newCost = getLotesUnitCost(newLotes);
+
+        return {
+          ...ins,
+          stock: newStock,
+          lotes: newLotes,
+          costoUnitario: newCost
+        };
+      });
+
+      setInsumos(updatedInsumos);
+      saveOffline('snack_insumos', updatedInsumos);
     }
 
     const purchaseRec: Purchase = {

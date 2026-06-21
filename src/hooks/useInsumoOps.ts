@@ -1,5 +1,6 @@
 import React from 'react';
 import { Insumo, User } from '@/context/types';
+import { consumeLotesFIFO, getLotesUnitCost } from '@/lib/fifo';
 
 interface InsumoOpsParams {
   insumos: Insumo[];
@@ -22,6 +23,31 @@ export function useInsumoOps({
 }: InsumoOpsParams) {
 
   const saveInsumo = async (iObj: any) => {
+    // 1. Determine existing lotes & stock
+    const existing = insumos.find(i => i.id === iObj.id);
+    const oldStock = existing ? existing.stock : 0;
+    let newLotes = existing && existing.lotes ? [...existing.lotes] : [];
+    
+    if (iObj.id) {
+      // Edit mode: check if stock has changed
+      if (iObj.stock !== oldStock) {
+        const diff = iObj.stock - oldStock;
+        if (diff > 0) {
+          // Increased: append batch with last known cost
+          const lastCost = newLotes.length > 0 ? newLotes[newLotes.length - 1].cost : 0;
+          newLotes.push({ qty: diff, cost: lastCost });
+        } else if (diff < 0) {
+          // Decreased: consume FIFO style
+          newLotes = consumeLotesFIFO(newLotes, -diff);
+        }
+      }
+    } else {
+      // New mode
+      newLotes = iObj.stock > 0 ? [{ qty: iObj.stock, cost: 0 }] : [];
+    }
+
+    const calculatedCost = getLotesUnitCost(newLotes);
+
     if (isSupabaseConfigured && supabase) {
       try {
         if (iObj.id) {
@@ -29,15 +55,16 @@ export function useInsumoOps({
           const { error } = await supabase.from('insumos').update({
             nombre: iObj.nombre,
             num_stock: iObj.stock ?? 0,
-            costo_unitario: iObj.costoUnitario ?? 0,
+            costo_unitario: calculatedCost,
             unidad_medida: iObj.unidadMedida || 'kg',
             stock_minimo: iObj.stockMinimo ?? 0,
+            lotes: newLotes
           }).eq('id_insumo', iObj.id);
           if (error) throw error;
 
           setInsumos(prev => prev.map(ins =>
             ins.id === iObj.id
-              ? { ...ins, nombre: iObj.nombre, stock: iObj.stock ?? ins.stock, costoUnitario: iObj.costoUnitario ?? ins.costoUnitario, unidadMedida: iObj.unidadMedida || ins.unidadMedida, stockMinimo: iObj.stockMinimo ?? ins.stockMinimo }
+              ? { ...ins, nombre: iObj.nombre, stock: iObj.stock ?? ins.stock, costoUnitario: calculatedCost, unidadMedida: iObj.unidadMedida || ins.unidadMedida, stockMinimo: iObj.stockMinimo ?? ins.stockMinimo, lotes: newLotes }
               : ins
           ));
           toast('Insumo actualizado correctamente');
@@ -46,9 +73,10 @@ export function useInsumoOps({
           const { data, error } = await supabase.from('insumos').insert({
             nombre: iObj.nombre,
             num_stock: iObj.stock ?? 0,
-            costo_unitario: iObj.costoUnitario ?? 0,
+            costo_unitario: 0,
             unidad_medida: iObj.unidadMedida || 'kg',
             stock_minimo: iObj.stockMinimo ?? 0,
+            lotes: newLotes
           }).select().single();
           if (error) throw error;
 
@@ -60,6 +88,7 @@ export function useInsumoOps({
             unidadMedida: data.unidad_medida || 'kg',
             stockMinimo: parseFloat(data.stock_minimo) || 0,
             active: data.estado === 1,
+            lotes: data.lotes || newLotes
           };
           setInsumos(prev => [...prev, newInsumo]);
           toast('Insumo registrado correctamente');
@@ -73,7 +102,7 @@ export function useInsumoOps({
       if (iObj.id) {
         const updated = insumos.map(ins =>
           ins.id === iObj.id
-            ? { ...ins, nombre: iObj.nombre, stock: iObj.stock ?? ins.stock, costoUnitario: iObj.costoUnitario ?? ins.costoUnitario, unidadMedida: iObj.unidadMedida || ins.unidadMedida, stockMinimo: iObj.stockMinimo ?? ins.stockMinimo }
+            ? { ...ins, nombre: iObj.nombre, stock: iObj.stock, costoUnitario: calculatedCost, unidadMedida: iObj.unidadMedida, stockMinimo: iObj.stockMinimo, lotes: newLotes }
             : ins
         );
         setInsumos(updated);
@@ -85,10 +114,11 @@ export function useInsumoOps({
           id: newId,
           nombre: iObj.nombre,
           stock: iObj.stock ?? 0,
-          costoUnitario: iObj.costoUnitario ?? 0,
+          costoUnitario: calculatedCost,
           unidadMedida: iObj.unidadMedida || 'kg',
           stockMinimo: iObj.stockMinimo ?? 0,
           active: true,
+          lotes: newLotes
         };
         const updated = [...insumos, newInsumo];
         setInsumos(updated);

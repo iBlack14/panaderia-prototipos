@@ -243,6 +243,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             unidadMedida: i.unidad_medida || 'kg',
             stockMinimo: parseFloat(i.stock_minimo) || 0,
             active: i.estado === 1,
+            lotes: i.lotes || []
           })));
           if (recetasData) setRecetas((recetasData as any[]).map(r => ({
             id: r.id_receta,
@@ -257,6 +258,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               cantidadRequerida: parseFloat(d.cantidad_requerida) || 0,
               unidadMedida: d.insumos?.unidad_medida || 'kg',
             })),
+            margenDeseado: parseFloat(r.margen_deseado) || 30
           })));
         } catch (err) {
           console.error('Error cargando datos de Supabase', err);
@@ -350,7 +352,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast,
     isSupabaseConfigured,
     supabase,
-    saveOffline
+    saveOffline,
+    insumos,
+    setInsumos,
+    recetas
   });
 
   const cartOps = useCartOperations({
@@ -403,7 +408,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast,
     isSupabaseConfigured,
     supabase,
-    saveOffline
+    saveOffline,
+    insumos,
+    setInsumos
   });
 
   const insumoOps = useInsumoOps({

@@ -32,6 +32,8 @@ describe('useOrderOperations Unit Tests (TDD)', () => {
   let setClients: any;
   let mockBreadLogs: any[];
   let setBreadLogs: any;
+  let mockInsumos: any[];
+  let setInsumos: any;
   let toast: any;
   let saveOffline: any;
 
@@ -79,6 +81,26 @@ describe('useOrderOperations Unit Tests (TDD)', () => {
       }
     });
 
+    mockInsumos = [
+      {
+        id: 1,
+        nombre: 'Harina',
+        stock: 10,
+        costoUnitario: 5,
+        unidadMedida: 'kg',
+        stockMinimo: 2,
+        active: true,
+        lotes: [{ qty: 10, cost: 5 }]
+      }
+    ];
+    setInsumos = vi.fn((cb) => {
+      if (typeof cb === 'function') {
+        mockInsumos = cb(mockInsumos);
+      } else {
+        mockInsumos = cb;
+      }
+    });
+
     mockPurchases = [];
     setPurchases = vi.fn();
     mockSales = [];
@@ -117,6 +139,8 @@ describe('useOrderOperations Unit Tests (TDD)', () => {
       isSupabaseConfigured: false,
       supabase: null,
       saveOffline,
+      insumos: mockInsumos,
+      setInsumos,
     });
 
     await hook.updatePedidoStatus(1, 'Listo');
@@ -152,6 +176,13 @@ describe('useOrderOperations Unit Tests (TDD)', () => {
         cost: 0.3,
         version: null,
       },
+      {
+        type: 'insumo',
+        insumoId: 1, // Harina
+        qty: 20,
+        cost: 6,
+        version: null
+      }
     ];
 
     const hook = useOrderOperations({
@@ -177,6 +208,8 @@ describe('useOrderOperations Unit Tests (TDD)', () => {
       isSupabaseConfigured: false,
       supabase: null,
       saveOffline,
+      insumos: mockInsumos,
+      setInsumos
     });
 
     await hook.registerPurchase({
@@ -188,6 +221,14 @@ describe('useOrderOperations Unit Tests (TDD)', () => {
     expect(setProducts).toHaveBeenCalled();
     expect(mockProducts[0].stock).toBe(150); // 100 + 50
     expect(saveOffline).toHaveBeenCalledWith('snack_products', mockProducts);
+
+    // Check insumos FIFO update
+    expect(setInsumos).toHaveBeenCalled();
+    expect(mockInsumos[0].stock).toBe(30); // 10 + 20
+    expect(mockInsumos[0].lotes.length).toBe(2); // Initial batch + new batch
+    expect(mockInsumos[0].lotes[1].qty).toBe(20);
+    expect(mockInsumos[0].lotes[1].cost).toBe(6);
+    expect(mockInsumos[0].costoUnitario).toBe(5); // Oldest unit cost remains 5 until first batch is consumed
 
     // Check purchases list update
     expect(setPurchases).toHaveBeenCalled();
@@ -302,6 +343,8 @@ describe('useOrderOperations Unit Tests (TDD)', () => {
       isSupabaseConfigured: false,
       supabase: null,
       saveOffline,
+      insumos: mockInsumos,
+      setInsumos
     });
 
     // Act
