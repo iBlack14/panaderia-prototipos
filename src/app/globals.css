@@ -677,6 +677,13 @@ button {
   margin-bottom: 22px;
 }
 
+.stats-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
 .stat-tile {
   background: var(--bg-card);
   border-radius: var(--r-lg);
@@ -1533,6 +1540,11 @@ tr:last-child td { border-bottom: none; }
     gap: 14px;
   }
 
+  .stats-3 {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+
   .pos-layout {
     grid-template-columns: 1fr;
   }
@@ -1654,6 +1666,11 @@ tr:last-child td { border-bottom: none; }
   }
 
   .stats-4 {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .stats-3 {
     grid-template-columns: 1fr;
     gap: 12px;
   }
@@ -2058,6 +2075,11 @@ tr:last-child td { border-bottom: none; }
 
   /* --- COMPACT CARD & GRID LAYOUTS --- */
   .stats-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+  }
+
+  .stats-3 {
     grid-template-columns: repeat(2, 1fr) !important;
     gap: 12px !important;
   }

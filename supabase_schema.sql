@@ -627,29 +627,7 @@ INSERT INTO public.productos (id_producto, id_categoria, nombre, num_stock, prec
 (8, 4, 'Café americano',        99,  6.00, 1)
 ON CONFLICT (id_producto) DO UPDATE SET nombre = EXCLUDED.nombre;
 
--- Insumos (materias primas)
-INSERT INTO public.insumos (id_insumo, nombre, num_stock, costo_unitario, unidad_medida, stock_minimo, estado) VALUES
-(1, 'Harina saco 50kg',        10, 120.00, 'sacos',    3, 1),
-(2, 'Azúcar saco 50kg',        15, 110.00, 'sacos',    3, 1),
-(3, 'Levadura caja 5kg',        5,  75.00, 'cajas',    2, 1),
-(4, 'Mantequilla kg',          20,  18.00, 'kg',       5, 1),
-(5, 'Chocolate cobertura kg',   8,  35.00, 'kg',       3, 1),
-(6, 'Pollo kg',                15,   9.50, 'kg',       5, 1),
-(7, 'Huevos jaba x30',         30,  16.00, 'jabas',   10, 1),
-(8, 'Leche caja 12L',          12,  52.00, 'cajas',    4, 1),
-(9, 'Café en grano kg',        10,  45.00, 'kg',       3, 1)
-ON CONFLICT (id_insumo) DO UPDATE SET nombre = EXCLUDED.nombre;
 
--- Receta de ejemplo: Torta de chocolate
-INSERT INTO public.recetas (id_receta, id_producto, rendimiento_base, instrucciones) VALUES
-(1, 3, 1.000, 'Mezclar harina con huevos, añadir chocolate derretido y mantequilla. Hornear 180°C por 45 min.')
-ON CONFLICT (id_receta) DO UPDATE SET instrucciones = EXCLUDED.instrucciones;
-
-INSERT INTO public.detalle_receta (id_receta, id_insumo, cantidad_requerida) VALUES
-(1, 1, 0.030),   -- 0.030 sacos de Harina (~1.5 kg)
-(1, 5, 0.500),   -- 0.5 kg Chocolate cobertura
-(1, 7, 0.200),   -- 0.2 jabas Huevos (~6 huevos)
-(1, 4, 0.300);   -- 0.3 kg Mantequilla
 
 -- Backfill: vincular usuarios auth ya existentes con profiles
 INSERT INTO public.profiles (id, username, nombre, apellido_paterno, correo, id_rol, estado)

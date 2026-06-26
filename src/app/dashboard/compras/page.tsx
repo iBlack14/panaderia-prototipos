@@ -11,6 +11,14 @@ export default function ComprasPage() {
   const [showModal, setShowModal] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState('');
 
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedPurchase, setSelectedPurchase] = useState<any>(null);
+
+  const handleOpenDetails = (purchase: any) => {
+    setSelectedPurchase(purchase);
+    setShowDetailsModal(true);
+  };
+
   // Keyboard shortcut listener to redirect to new provider view when modal is open
   React.useEffect(() => {
     if (!showModal) return;
@@ -221,6 +229,7 @@ export default function ComprasPage() {
               <th style={{ textAlign: 'left' }}>Subtotal</th>
               <th style={{ textAlign: 'left' }}>IGV (18%)</th>
               <th style={{ textAlign: 'left' }}>Total</th>
+              <th style={{ textAlign: 'center' }}>Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -251,12 +260,84 @@ export default function ComprasPage() {
                   <td>{p.subTotal}</td>
                   <td>{p.igv}</td>
                   <td style={{ fontWeight: '800', color: 'var(--green)' }}>{p.total}</td>
+                  <td style={{ textAlign: 'center' }}>
+                    <button className="act-btn" onClick={() => handleOpenDetails(p)} title="Ver Detalle">👁️</button>
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+
+      {/* DETAILS MODAL */}
+      {showDetailsModal && selectedPurchase && (
+        <div className="modal-overlay open" onClick={() => setShowDetailsModal(false)}>
+          <div className="modal-card" style={{ width: '600px', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div className="mc-title" style={{ margin: 0, textAlign: 'left' }}>
+                <span style={{ fontSize: '20px', marginRight: '8px' }}>🧾</span>
+                Detalle de Compra #{selectedPurchase.id}
+              </div>
+              <button 
+                className="act-btn" 
+                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}
+                onClick={() => setShowDetailsModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div style={{ marginBottom: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13.5px', color: 'var(--text)' }}>
+              <div><strong>Fecha:</strong> {selectedPurchase.d}</div>
+              <div><strong>Proveedor:</strong> {selectedPurchase.prov}</div>
+              <div><strong>Subtotal:</strong> S/. {parseFloat(selectedPurchase.subTotal.toString().replace(/[^0-9.-]+/g,"")).toFixed(2)}</div>
+              <div><strong>IGV (18%):</strong> S/. {parseFloat(selectedPurchase.igv.toString().replace(/[^0-9.-]+/g,"")).toFixed(2)}</div>
+              <div style={{ color: 'var(--green)', fontSize: '15px' }}><strong>Total:</strong> S/. {parseFloat(selectedPurchase.total.toString().replace(/[^0-9.-]+/g,"")).toFixed(2)}</div>
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+              <strong style={{ display: 'block', marginBottom: '8px', color: 'var(--text-2)' }}>Artículos Adquiridos:</strong>
+              <table className="inv-table">
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left' }}>Artículo</th>
+                    <th style={{ textAlign: 'right' }}>Cant.</th>
+                    <th style={{ textAlign: 'right' }}>Costo Unit.</th>
+                    <th style={{ textAlign: 'right' }}>Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedPurchase.items && selectedPurchase.items.length > 0 ? (
+                    selectedPurchase.items.map((i: any, idx: number) => {
+                      let displayName = 'Artículo';
+                      if (i.type === 'insumo') {
+                        const insRef = insumos.find(ins => ins.id === i.insumoId);
+                        displayName = insRef?.nombre || 'Insumo';
+                      } else {
+                        const prodRef = products.find(prod => prod.id === i.productId);
+                        displayName = prodRef ? (prodRef.name + (i.version ? ` (${i.version})` : '')) : 'Producto';
+                      }
+                      return (
+                        <tr key={idx}>
+                          <td>{displayName}</td>
+                          <td style={{ textAlign: 'right' }}>{i.qty}</td>
+                          <td style={{ textAlign: 'right' }}>S/. {parseFloat(i.cost).toFixed(2)}</td>
+                          <td style={{ textAlign: 'right', fontWeight: '600' }}>S/. {(parseFloat(i.qty) * parseFloat(i.cost)).toFixed(2)}</td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: 'center', padding: '16px' }}>Sin artículos detallados</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* REGISTRATION MODAL */}
       {showModal && (

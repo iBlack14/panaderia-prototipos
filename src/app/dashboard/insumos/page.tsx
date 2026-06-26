@@ -16,7 +16,6 @@ export default function InsumosPage() {
   const [costo, setCosto] = useState('0');
   const [unidad, setUnidad] = useState('kg');
   const [minStock, setMinStock] = useState('0');
-  const [ruc, setRuc] = useState(''); // SUNAT RUC of provider
 
   const UNIDADES = ['kg', 'sacos', 'jabas', 'cajas', 'litros', 'unidades', 'gr'];
 
@@ -31,7 +30,6 @@ export default function InsumosPage() {
     setCosto('0');
     setUnidad('kg');
     setMinStock('0');
-    setRuc('');
     setShowModal(true);
   };
 
@@ -41,7 +39,6 @@ export default function InsumosPage() {
     setStock(String(ins.stock));
     setCosto(String(ins.costoUnitario));
     setUnidad(ins.unidadMedida);
-    setRuc('');
     setShowModal(true);
   };
 
@@ -49,20 +46,6 @@ export default function InsumosPage() {
     e.preventDefault();
     if (!nombre.trim()) return;
 
-    // Validate RUC against SUNAT API (public endpoint, no auth)
-    if (ruc.trim()) {
-      try {
-        const res = await fetch(`https://api.sunat.cloud/v1/ruc/${ruc.trim()}`);
-        if (res.ok) {
-          // RUC exists in SUNAT, block the operation
-          alert('RUC encontrado en SUNAT. No se permite registrar el insumo.');
-          return;
-        }
-      } catch (err) {
-        console.error('Error checking SUNAT RUC:', err);
-        // If the check fails, allow proceeding (optional)
-      }
-    }
 
     saveInsumo({
       id: editingId,
@@ -79,17 +62,11 @@ export default function InsumosPage() {
   const totalInsumos = insumos.length;
   const stockBajo = insumos.filter(i => i.stock <= i.stockMinimo && i.stock > 0 && i.active).length;
   const agotados = insumos.filter(i => i.stock <= 0 && i.active).length;
-  const valorTotal = insumos.reduce((sum, i) => {
-    const lotesVal = i.lotes && i.lotes.length > 0
-      ? i.lotes.reduce((s, l) => s + (l.qty * l.cost), 0)
-      : (i.stock * i.costoUnitario);
-    return sum + lotesVal;
-  }, 0);
 
   return (
     <div className="screen active">
       {/* KPI Cards */}
-      <div className="stats-4">
+      <div className="stats-3">
         <div className="stat-tile">
           <div className="st-header">
             <div className="st-icon ic-lav">🌾</div>
@@ -110,13 +87,6 @@ export default function InsumosPage() {
           </div>
           <div className="st-val" style={{ color: agotados > 0 ? 'var(--red)' : 'var(--green)' }}>{agotados}</div>
           <div className="st-lbl">Agotados</div>
-        </div>
-        <div className="stat-tile">
-          <div className="st-header">
-            <div className="st-icon ic-ok">💰</div>
-          </div>
-          <div className="st-val">S/. {valorTotal.toFixed(2)}</div>
-          <div className="st-lbl">Valor en Inventario</div>
         </div>
       </div>
 
@@ -228,17 +198,6 @@ export default function InsumosPage() {
               <div className="mc-title" style={{ margin: 0, textAlign: 'left' }}>
                 {editingId ? '✏️ Editar Insumo' : '🌾 Registrar Nuevo Insumo'}
               </div>
-{/* RUC Field */}
-<div className="inp-group" style={{ marginTop: '8px' }}>
-  <label>RUC del Proveedor</label>
-  <input
-    type="text"
-    value={ruc}
-    onChange={(e) => setRuc(e.target.value)}
-    placeholder="Ej: 20512345678"
-    pattern="[0-9]{11}"
-  />
-</div>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
@@ -285,17 +244,6 @@ export default function InsumosPage() {
                 </div>
 
                 <div className="inp-group">
-                  <label>Stock Actual</label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    value={stock}
-                    onChange={(e) => setStock(e.target.value)}
-                  />
-                </div>
-
-                <div className="inp-group" style={{ gridColumn: 'span 2' }}>
                   <label>Stock Minimo (alerta)</label>
                   <input
                     type="number"

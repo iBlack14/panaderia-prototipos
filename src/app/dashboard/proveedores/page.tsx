@@ -110,6 +110,13 @@ export default function ProveedoresPage() {
       return;
     }
 
+    // Duplicate Validation
+    const isDuplicate = providers.some(p => p.ruc === ruc && p.id !== editingId);
+    if (isDuplicate) {
+      alert('No se puede, este proveedor ya está registrado en el sistema.');
+      return;
+    }
+
     // Name Validation (relaxed regex, or skip check if auto-filled)
     if (!isAutoFilled) {
       const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ0-9\s'\-\.,&/()]+$/;
