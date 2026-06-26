@@ -208,9 +208,9 @@ export function useOrderOperations({
    * @param pObj Objeto con el ID del proveedor y la lista de ítems comprados (productId, qty, cost, version).
    */
   const registerPurchase = async (pObj: { providerId: number | string; items: PurchaseItem[] }) => {
-    const sub = pObj.items.reduce((a, b) => a + (b.qty * b.cost), 0);
-    const igv = sub * 0.18;
-    const tot = sub + igv;
+    const tot = pObj.items.reduce((a, b) => a + (b.qty * b.cost), 0);
+    const sub = tot / 1.18;
+    const igv = tot - sub;
     const provName = providers.find(p => p.id === pObj.providerId)?.name || 'Proveedor';
 
     // Separate items

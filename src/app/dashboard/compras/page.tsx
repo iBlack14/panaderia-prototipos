@@ -203,9 +203,9 @@ export default function ComprasPage() {
   const selectedProduct = products.find(x => x.id === parseInt(prodId));
 
   // Totales de la compra actual
-  const buySubtotal = itemsToBuy.reduce((a, b) => a + (b.qty * b.cost), 0);
-  const buyIgv = buySubtotal * 0.18;
-  const buyTotal = buySubtotal + buyIgv;
+  const buyTotal = itemsToBuy.reduce((a, b) => a + (b.qty * b.cost), 0);
+  const buySubtotal = buyTotal / 1.18;
+  const buyIgv = buyTotal - buySubtotal;
 
   return (
     <div className="screen active">
