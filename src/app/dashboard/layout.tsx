@@ -3,11 +3,12 @@
 import React, { useEffect, useState, useMemo, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
+import { SyncIndicator } from '@/components/SyncIndicator';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, role, logout, loading, rolesList, products } = useApp();
+  const { user, role, logout, loading, rolesList, products, syncStatus, lastSyncedAt } = useApp();
   const [timeStr, setTimeStr] = useState('');
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 
@@ -241,6 +242,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 <span>🔍</span>
                 <input placeholder="Buscar operaciones..." />
               </div>
+              <SyncIndicator status={syncStatus} lastSyncedAt={lastSyncedAt} />
               <div className="datetime-chip">{timeStr}</div>
             </div>
           </div>

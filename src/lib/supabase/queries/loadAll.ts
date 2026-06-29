@@ -6,7 +6,8 @@ import {
   mapProvidersFromDb,
   mapRolesFromDb,
 } from '../mappers/catalog.mapper';
-import { mapCashHistoryListFromDb, mapCashSessionFromDb } from '../mappers/cash.mapper';
+import { mapCashDropsFromDb, mapCashHistoryListFromDb, mapCashSessionFromDb } from '../mappers/cash.mapper';
+import { mapBreadLogsFromDb } from '../mappers/kardex.mapper';
 import { mapClientsFromDb } from '../mappers/client.mapper';
 import { mapInsumosFromDb } from '../mappers/insumo.mapper';
 import { mapPedidosFromDb } from '../mappers/pedido.mapper';
@@ -30,6 +31,8 @@ export interface LoadedAppData {
   pedidos: ReturnType<typeof mapPedidosFromDb>;
   insumos: ReturnType<typeof mapInsumosFromDb>;
   recetas: ReturnType<typeof mapRecetasFromDb>;
+  cashDrops: ReturnType<typeof mapCashDropsFromDb>;
+  breadLogs: ReturnType<typeof mapBreadLogsFromDb>;
 }
 
 export async function loadAllFromSupabase(supabase: SupabaseClient): Promise<LoadedAppData> {
@@ -48,6 +51,8 @@ export async function loadAllFromSupabase(supabase: SupabaseClient): Promise<Loa
     { data: peds },
     { data: insumosData },
     { data: recetasData },
+    { data: retirosData },
+    { data: breadLogsData },
   ] = await Promise.all([
     supabase.from('productos').select('*, producto_versiones(*), categorias(nombre)').eq('estado', 1),
     supabase.from('categorias').select('*').order('id_categoria', { ascending: true }),
@@ -57,7 +62,7 @@ export async function loadAllFromSupabase(supabase: SupabaseClient): Promise<Loa
     supabase.from('clientes').select('*').order('id_cliente', { ascending: true }),
     supabase.from('proveedores').select('*'),
     supabase.from('cierres_caja').select('*').eq('estado', 'abierto').limit(1),
-    supabase.from('cierres_caja').select('*').eq('estado', 'cerrado').order('fec_cierre', { ascending: false }),
+    supabase.from('cierres_caja').select('*, profiles(nombre, apellido_paterno)').eq('estado', 'cerrado').order('fec_cierre', { ascending: false }),
     supabase
       .from('ventas')
       .select(
@@ -79,6 +84,15 @@ export async function loadAllFromSupabase(supabase: SupabaseClient): Promise<Loa
       .from('recetas')
       .select('*, detalle_receta(*, insumos(nombre, unidad_medida)), productos(nombre)')
       .order('id_receta', { ascending: true }),
+    supabase
+      .from('retiros_caja')
+      .select('*, profiles(nombre, apellido_paterno)')
+      .order('fec_retiro', { ascending: false }),
+    supabase
+      .from('produccion_descarte')
+      .select('*, productos(nombre), producto_versiones(nombre_version), profiles(nombre, apellido_paterno)')
+      .order('fec_registro', { ascending: false })
+      .limit(500),
   ]);
 
   return {
@@ -99,5 +113,7 @@ export async function loadAllFromSupabase(supabase: SupabaseClient): Promise<Loa
     pedidos: mapPedidosFromDb(peds as Record<string, unknown>[]),
     insumos: mapInsumosFromDb(insumosData as Record<string, unknown>[]),
     recetas: mapRecetasFromDb(recetasData as Record<string, unknown>[]),
+    cashDrops: mapCashDropsFromDb(retirosData as Record<string, unknown>[]),
+    breadLogs: mapBreadLogsFromDb(breadLogsData as Record<string, unknown>[]),
   };
 }

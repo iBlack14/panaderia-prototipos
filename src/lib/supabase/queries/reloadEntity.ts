@@ -6,7 +6,8 @@ import {
   mapProvidersFromDb,
   mapRolesFromDb,
 } from '../mappers/catalog.mapper';
-import { mapCashHistoryListFromDb, mapCashSessionFromDb } from '../mappers/cash.mapper';
+import { mapCashDropsFromDb, mapCashHistoryListFromDb, mapCashSessionFromDb } from '../mappers/cash.mapper';
+import { mapBreadLogsFromDb } from '../mappers/kardex.mapper';
 import { mapClientsFromDb } from '../mappers/client.mapper';
 import { mapInsumosFromDb } from '../mappers/insumo.mapper';
 import { mapPedidosFromDb } from '../mappers/pedido.mapper';
@@ -125,14 +126,42 @@ export async function fetchProviders(supabase: SupabaseClient) {
   return mapProvidersFromDb(data as Record<string, unknown>[]);
 }
 
+const CASH_HISTORY_SELECT = '*, profiles(nombre, apellido_paterno)';
+const CASH_DROPS_SELECT = '*, profiles(nombre, apellido_paterno)';
+const BREAD_LOGS_SELECT =
+  '*, productos(nombre), producto_versiones(nombre_version), profiles(nombre, apellido_paterno)';
+
 export async function fetchCashHistory(supabase: SupabaseClient) {
   const { data, error } = await supabase
     .from('cierres_caja')
-    .select('*')
+    .select(CASH_HISTORY_SELECT)
     .eq('estado', 'cerrado')
     .order('fec_cierre', { ascending: false });
   if (error) throw error;
   return mapCashHistoryListFromDb(data as Record<string, unknown>[]);
+}
+
+export async function fetchCashDrops(supabase: SupabaseClient, sessionId?: number | string) {
+  let query = supabase
+    .from('retiros_caja')
+    .select(CASH_DROPS_SELECT)
+    .order('fec_retiro', { ascending: false });
+  if (sessionId != null) {
+    query = query.eq('id_cierre_caja', sessionId);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return mapCashDropsFromDb(data as Record<string, unknown>[]);
+}
+
+export async function fetchBreadLogs(supabase: SupabaseClient, limit = 500) {
+  const { data, error } = await supabase
+    .from('produccion_descarte')
+    .select(BREAD_LOGS_SELECT)
+    .order('fec_registro', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return mapBreadLogsFromDb(data as Record<string, unknown>[]);
 }
 
 export async function fetchPedidos(supabase: SupabaseClient) {
@@ -180,9 +209,28 @@ export async function refetchAfterPurchase(supabase: SupabaseClient) {
 
 /** Refetch tras producción/descarte (triggers SQL actualizan stock). */
 export async function refetchAfterProduction(supabase: SupabaseClient) {
-  const [products, insumos] = await Promise.all([
+  const [products, insumos, breadLogs] = await Promise.all([
     fetchProducts(supabase),
     fetchInsumos(supabase),
+    fetchBreadLogs(supabase),
   ]);
-  return { products, insumos };
+  return { products, insumos, breadLogs };
+}
+
+/** Refetch tras retiro de caja (trigger SQL actualiza tot_retiros). */
+export async function refetchAfterCashDrop(
+  supabase: SupabaseClient,
+  sessionId: number | string
+) {
+  const [cashSession, cashDrops] = await Promise.all([
+    fetchCashSessionById(supabase, sessionId),
+    fetchCashDrops(supabase, sessionId),
+  ]);
+  return { cashSession, cashDrops };
+}
+
+/** Refetch tras cerrar caja. */
+export async function refetchAfterCashClose(supabase: SupabaseClient) {
+  const cashHistory = await fetchCashHistory(supabase);
+  return { cashHistory };
 }

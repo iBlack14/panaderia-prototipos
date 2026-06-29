@@ -1,6 +1,7 @@
 import React from 'react';
 import { Product, BreadLog, User, Insumo, Receta } from '@/context/types';
 import { consumeLotesFIFO, getLotesUnitCost } from '@/lib/fifo';
+import { calcularCostoProduccion } from '@/lib/production/planPedido';
 import { fetchProducts, refetchAfterProduction } from '@/lib/supabase/queries/reloadEntity';
 
 interface InventoryOpsParams {
@@ -187,6 +188,16 @@ export function useInventoryOps({
       reason: 'Ingreso inicial de producción diaria',
     };
 
+    const costoCheck = calcularCostoProduccion(recetas, insumos, prodId, qty);
+    if (costoCheck && !costoCheck.todosDisponibles) {
+      const faltantes = costoCheck.detalles
+        .filter(d => !d.suficiente)
+        .map(d => d.insumoNombre)
+        .join(', ');
+      toast(`⚠️ Stock insuficiente: ${faltantes}`);
+      return;
+    }
+
     if (isSupabaseConfigured && supabase) {
       try {
         const { error } = await supabase.from('produccion_descarte').insert({
@@ -201,7 +212,7 @@ export function useInventoryOps({
         const refreshed = await refetchAfterProduction(supabase);
         setProducts(refreshed.products);
         setInsumos(refreshed.insumos);
-        setBreadLogs([log, ...breadLogs]);
+        setBreadLogs(refreshed.breadLogs);
         toast('➕ Producción de panes registrada');
       } catch (err) {
         console.error('Error al registrar producción en Supabase', err);
@@ -277,7 +288,7 @@ export function useInventoryOps({
         const refreshed = await refetchAfterProduction(supabase);
         setProducts(refreshed.products);
         setInsumos(refreshed.insumos);
-        setBreadLogs([log, ...breadLogs]);
+        setBreadLogs(refreshed.breadLogs);
         toast('⚠️ Reporte de descarte registrado');
       } catch (err) {
         console.error('Error al registrar descarte en Supabase', err);
@@ -386,7 +397,7 @@ export function useInventoryOps({
         const refreshed = await refetchAfterProduction(supabase);
         setProducts(refreshed.products);
         setInsumos(refreshed.insumos);
-        setBreadLogs([log, ...breadLogs]);
+        setBreadLogs(refreshed.breadLogs);
         toast('✂️ Fraccionamiento registrado con éxito.');
       } catch (err) {
         console.error('Error fraccionando en Supabase', err);

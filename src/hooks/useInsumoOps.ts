@@ -42,11 +42,12 @@ export function useInsumoOps({
         }
       }
     } else {
-      // New mode
-      newLotes = iObj.stock > 0 ? [{ qty: iObj.stock, cost: 0 }] : [];
+      const initialCost = parseFloat(String(iObj.costoUnitario ?? 0)) || 0;
+      newLotes = iObj.stock > 0 ? [{ qty: iObj.stock, cost: initialCost }] : [];
     }
 
-    const calculatedCost = getLotesUnitCost(newLotes);
+    const calculatedCost =
+      newLotes.length > 0 ? getLotesUnitCost(newLotes) : parseFloat(String(iObj.costoUnitario ?? 0)) || 0;
 
     if (isSupabaseConfigured && supabase) {
       try {
@@ -83,7 +84,7 @@ export function useInsumoOps({
           const { data, error } = await supabase.from('insumos').insert({
             nombre: iObj.nombre,
             num_stock: iObj.stock ?? 0,
-            costo_unitario: 0,
+            costo_unitario: calculatedCost,
             unidad_medida: iObj.unidadMedida || 'kg',
             stock_minimo: iObj.stockMinimo ?? 0,
             lotes: newLotes

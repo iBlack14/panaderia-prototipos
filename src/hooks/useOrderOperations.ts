@@ -1,7 +1,8 @@
 import React from 'react';
 import { Pedido, Purchase, Sale, Product, Client, Provider, BreadLog, User, PurchaseItem, CashSession, Insumo } from '@/context/types';
-import { getLotesUnitCost } from '@/lib/fifo';
-import { fetchPedidos, refetchAfterPurchase, refetchAfterSale } from '@/lib/supabase/queries/reloadEntity';
+import { consumeLotesFIFO, getLotesUnitCost } from '@/lib/fifo';
+import { PedidoItem } from '@/context/types';
+import { fetchInsumos, fetchPedidos, refetchAfterPurchase, refetchAfterSale } from '@/lib/supabase/queries/reloadEntity';
 
 interface OrderOpsParams {
   pedidos: Pedido[];
@@ -350,13 +351,52 @@ export function useOrderOperations({
     toast('📥 Compra registrada e inventario actualizado');
   };
 
+  const deductInsumoItemsOffline = (insumoItems: PedidoItem[]) => {
+    if (insumoItems.length === 0) return;
+    const updatedInsumos = insumos.map(ins => {
+      const toDeduct = insumoItems.filter(i => i.insumoId === ins.id);
+      if (toDeduct.length === 0) return ins;
+      const qty = toDeduct.reduce((sum, i) => sum + i.qty, 0);
+      const newLotes = consumeLotesFIFO(ins.lotes || [], qty);
+      return {
+        ...ins,
+        stock: Math.max(0, ins.stock - qty),
+        lotes: newLotes,
+        costoUnitario: getLotesUnitCost(newLotes),
+      };
+    });
+    setInsumos(updatedInsumos);
+    saveOffline('snack_insumos', updatedInsumos);
+  };
+
+  const deductInsumoItemsOnline = async (insumoItems: PedidoItem[]) => {
+    if (!supabase || insumoItems.length === 0) return;
+    const qtyByInsumo = new Map<number, number>();
+    for (const item of insumoItems) {
+      if (!item.insumoId) continue;
+      qtyByInsumo.set(item.insumoId, (qtyByInsumo.get(item.insumoId) || 0) + item.qty);
+    }
+    for (const [insumoId, qty] of qtyByInsumo) {
+      const ins = insumos.find(i => i.id === insumoId);
+      if (!ins) continue;
+      const newLotes = consumeLotesFIFO(ins.lotes || [], qty);
+      const newStock = Math.max(0, ins.stock - qty);
+      const { error } = await supabase.from('insumos').update({
+        num_stock: newStock,
+        lotes: newLotes,
+        costo_unitario: getLotesUnitCost(newLotes),
+      }).eq('id_insumo', insumoId);
+      if (error) throw error;
+    }
+  };
+
   const deliverPedido = async (
     pedidoId: number | string,
     paymentMethodId: number,
     paymentMethodName: string,
     totalVal: number,
     adelantoVal: number,
-    items: any[]
+    items: PedidoItem[]
   ) => {
     if (!cashSession) {
       toast('⚠️ Debe iniciar caja para poder realizar cobros y entregar el pedido.');
@@ -364,8 +404,10 @@ export function useOrderOperations({
     }
 
     const saldo = Math.max(0, totalVal - adelantoVal);
-    const cartItems = items.map(i => ({
-      id: i.productId,
+    const productItems = items.filter(i => i.type === 'producto' && i.productId);
+    const insumoItems = items.filter(i => i.type === 'insumo' && i.insumoId);
+    const cartItems = productItems.map(i => ({
+      id: i.productId!,
       name: i.name + (i.versionName ? ` (${i.versionName})` : ''),
       price: i.price,
       qty: i.qty,
@@ -409,7 +451,7 @@ export function useOrderOperations({
         }).select().single();
         if (vError) throw vError;
 
-        if (vData) {
+        if (vData && cartItems.length > 0) {
           const detailRows = cartItems.map(item => {
             const prodRef = products.find(p => p.id === item.id);
             const vRef = item.version && prodRef
@@ -427,6 +469,8 @@ export function useOrderOperations({
           if (detError) throw detError;
         }
 
+        await deductInsumoItemsOnline(insumoItems);
+
         if (saldo > 0) {
           const isEfectivo = paymentMethodName.toLowerCase().includes('efectivo');
           const updatedSession = {
@@ -441,14 +485,16 @@ export function useOrderOperations({
           if (cashError) throw cashError;
         }
 
-        const [refreshed, refreshedPedidos] = await Promise.all([
+        const [refreshed, refreshedPedidos, refreshedInsumos] = await Promise.all([
           refetchAfterSale(supabase, cashSession.id),
           fetchPedidos(supabase),
+          insumoItems.length > 0 ? fetchInsumos(supabase) : Promise.resolve(null),
         ]);
         setProducts(refreshed.products);
         setSales(refreshed.sales);
         if (refreshed.cashSession) setCashSession(refreshed.cashSession);
         setPedidos(refreshedPedidos);
+        if (refreshedInsumos) setInsumos(refreshedInsumos);
 
         const savedSale = vData
           ? refreshed.sales.find(s => s.id === vData.id_venta)
@@ -464,8 +510,10 @@ export function useOrderOperations({
       return;
     }
 
+    deductInsumoItemsOffline(insumoItems);
+
     const updatedProds = products.map(p => {
-      const itemsToDeduct = items.filter(c => c.productId === p.id);
+      const itemsToDeduct = productItems.filter(c => c.productId === p.id);
       if (itemsToDeduct.length === 0) return p;
 
       let newStock = p.stock;

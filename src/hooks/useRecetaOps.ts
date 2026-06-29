@@ -1,6 +1,10 @@
 import React from 'react';
 import { Receta, RecetaIngrediente, Product, Insumo, User } from '@/context/types';
-import { getFIFOCost } from '@/lib/fifo';
+import {
+  calcularCostoProduccion as calcCostoProduccion,
+  calcularInsumosParaPedido as calcInsumosPedido,
+} from '@/lib/production/planPedido';
+import { PedidoItem } from '@/context/types';
 
 interface RecetaOpsParams {
   recetas: Receta[];
@@ -170,35 +174,11 @@ if (rObj.margenDeseado && rObj.margenDeseado <= 10) {
     }
   };
 
-  /**
-   * Calcula el costo total de producir `cantidad` unidades de un producto
-   * basándose en su receta. Retorna { costoTotal, detalles[] } o null si no hay receta.
-   */
-  const calcularCostoProduccion = (productoId: number, cantidad: number) => {
-    const receta = recetas.find(r => r.productoId === productoId);
-    if (!receta) return null;
+  const calcularCostoProduccion = (productoId: number, cantidad: number) =>
+    calcCostoProduccion(recetas, insumos, productoId, cantidad);
 
-    const factor = cantidad / (receta.rendimientoBase || 1);
-    let costoTotal = 0;
-    const detalles: { insumoNombre: string; cantidadNecesaria: number; unidad: string; costoLinea: number; stockDisponible: number; suficiente: boolean }[] = [];
+  const calcularInsumosParaPedido = (items: PedidoItem[]) =>
+    calcInsumosPedido(items, recetas, insumos);
 
-    for (const ing of receta.ingredientes) {
-      const insumo = insumos.find(i => i.id === ing.insumoId);
-      const cantidadNecesaria = ing.cantidadRequerida * factor;
-      const costoLinea = insumo ? getFIFOCost(insumo.lotes || [], cantidadNecesaria) : 0;
-      costoTotal += costoLinea;
-      detalles.push({
-        insumoNombre: ing.insumoNombre || insumo?.nombre || `Insumo #${ing.insumoId}`,
-        cantidadNecesaria,
-        unidad: ing.unidadMedida || insumo?.unidadMedida || 'kg',
-        costoLinea,
-        stockDisponible: insumo?.stock || 0,
-        suficiente: (insumo?.stock || 0) >= cantidadNecesaria,
-      });
-    }
-
-    return { costoTotal, detalles, todosDisponibles: detalles.every(d => d.suficiente) };
-  };
-
-  return { saveReceta, deleteReceta, calcularCostoProduccion };
+  return { saveReceta, deleteReceta, calcularCostoProduccion, calcularInsumosParaPedido };
 }

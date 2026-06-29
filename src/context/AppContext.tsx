@@ -15,7 +15,8 @@ import {
   Client, 
   BreadLog, 
   Sale, 
-  Pedido, 
+  Pedido,
+  PedidoItem,
   Purchase,
   Insumo,
   Receta,
@@ -37,7 +38,8 @@ export type {
   CreditPayment,
   BreadLog, 
   Sale, 
-  Pedido, 
+  Pedido,
+  PedidoItem,
   PurchaseItem,
   Purchase,
   DenominacionArqueo,
@@ -57,6 +59,7 @@ import { useOrderOperations } from '@/hooks/useOrderOperations';
 import { useInsumoOps } from '@/hooks/useInsumoOps';
 import { useRecetaOps } from '@/hooks/useRecetaOps';
 import { loadAllFromSupabase } from '@/lib/supabase/queries/loadAll';
+import { useSupabaseRealtime } from '@/hooks/useSupabaseRealtime';
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -193,6 +196,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setProviders(data.providers);
           setCashSession(data.cashSession);
           setCashHistory(data.cashHistory);
+          setCashDrops(data.cashDrops);
+          setBreadLogs(data.breadLogs);
           setSales(data.sales);
           setPurchases(data.purchases);
           setPedidos(data.pedidos);
@@ -368,11 +373,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveOffline
   });
 
+  const { syncStatus, lastSyncedAt } = useSupabaseRealtime({
+    supabase,
+    enabled: isSupabaseConfigured && !!user,
+    cashSessionId: cashSession?.id,
+    setters: {
+      setProducts,
+      setSales,
+      setPurchases,
+      setClients,
+      setInsumos,
+      setRecetas,
+      setPedidos,
+      setCategories,
+      setProviders,
+      setPaymentMethods,
+      setUsersList,
+      setRolesList,
+      setCashHistory,
+      setCashDrops,
+      setBreadLogs,
+    },
+    setCashSession,
+  });
+
   return (
     <AppContext.Provider value={{
       user,
       role,
       loading,
+      syncStatus,
+      lastSyncedAt,
       products,
       categories,
       usersList,

@@ -1,5 +1,10 @@
 import React from 'react';
 import { CashSession, CashHistoryRecord, CashDrop, DenominacionArqueo, User } from '@/context/types';
+import {
+  fetchOpenCashSession,
+  refetchAfterCashClose,
+  refetchAfterCashDrop,
+} from '@/lib/supabase/queries/reloadEntity';
 
 interface CashOpsParams {
   cashSession: CashSession | null;
@@ -31,6 +36,33 @@ export function useCashOperations({
 
   const openCashSession = async (initialAmount: string | number, shift: string) => {
     const parsedInit = typeof initialAmount === 'string' ? parseFloat(initialAmount) || 0 : initialAmount;
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase.from('cierres_caja').insert({
+          id_usuario: user?.id,
+          tot_saldo_inicial: parsedInit,
+          estado: 'abierto',
+          turno: shift,
+        }).select().single();
+        if (error) throw error;
+
+        const session = await fetchOpenCashSession(supabase);
+        if (session) {
+          setCashSession({
+            ...session,
+            cajero: user ? user.n : 'Carlos Mendoza',
+            turno: shift,
+          });
+        }
+        toast(`💰 Caja abierta en turno ${shift}. Ventas habilitadas.`);
+      } catch (err) {
+        console.error('Error al abrir caja en Supabase', err);
+        toast('❌ Error al abrir caja en la nube');
+      }
+      return;
+    }
+
     const newSession: CashSession = {
       id: Date.now(),
       fec_apertura: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -46,24 +78,6 @@ export function useCashOperations({
 
     setCashSession(newSession);
     saveOffline('snack_session', newSession);
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data } = await supabase.from('cierres_caja').insert({
-          id_usuario: user?.id,
-          tot_saldo_inicial: parsedInit,
-          estado: 'abierto'
-        }).select().single();
-        if (data) {
-          setCashSession({
-            ...newSession,
-            id: data.id_cierre_caja
-          });
-        }
-      } catch (err) {
-        console.error('Error al abrir caja en Supabase', err);
-      }
-    }
     toast(`💰 Caja abierta en turno ${shift}. Ventas habilitadas.`);
   };
 
@@ -74,6 +88,33 @@ export function useCashOperations({
     const totalRetiros = cashSession.tot_retiros || 0;
     const expected = cashSession.tot_saldo_inicial + cashSession.tot_ventas_efectivo - totalRetiros;
     const diff = parsedCounted - expected;
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase.from('cierres_caja').update({
+          fec_cierre: new Date(),
+          tot_ventas_efectivo: cashSession.tot_ventas_efectivo,
+          tot_ventas_otros: cashSession.tot_ventas_otros,
+          tot_retiros: totalRetiros,
+          tot_saldo_final: parsedCounted,
+          diferencia: diff,
+          estado: 'cerrado',
+          turno: cashSession.turno,
+          observaciones,
+          denominaciones: denominaciones ?? null,
+        }).eq('id_cierre_caja', cashSession.id);
+        if (error) throw error;
+
+        const { cashHistory: refreshed } = await refetchAfterCashClose(supabase);
+        setCashHistory(refreshed);
+        setCashSession(null);
+        toast('🔴 Caja cerrada correctamente. POS bloqueado.');
+      } catch (err) {
+        console.error('Error al cerrar caja en Supabase', err);
+        toast('❌ Error al cerrar caja en la nube');
+      }
+      return;
+    }
 
     const closedRecord: CashHistoryRecord = {
       id: cashSession.id,
@@ -97,26 +138,7 @@ export function useCashOperations({
     setCashHistory(newHistory);
     saveOffline('snack_cash_history', newHistory);
     setCashSession(null);
-    if (!isSupabaseConfigured) {
-      localStorage.removeItem('snack_session');
-    }
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        await supabase.from('cierres_caja').update({
-          fec_cierre: new Date(),
-          tot_ventas_efectivo: cashSession.tot_ventas_efectivo,
-          tot_ventas_otros: cashSession.tot_ventas_otros,
-          tot_retiros: totalRetiros,
-          tot_saldo_final: parsedCounted,
-          diferencia: diff,
-          estado: 'cerrado'
-        }).eq('id_cierre_caja', cashSession.id);
-      } catch (err) {
-        console.error('Error al cerrar caja en Supabase', err);
-      }
-    }
-
+    localStorage.removeItem('snack_session');
     toast('🔴 Caja cerrada correctamente. POS bloqueado.');
   };
 
@@ -125,6 +147,37 @@ export function useCashOperations({
       toast('⚠️ No hay caja activa para registrar un retiro.');
       return;
     }
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase.from('retiros_caja').insert({
+          id_cierre_caja: cashSession.id,
+          monto,
+          motivo,
+          id_usuario: user?.id,
+        });
+        if (error) throw error;
+
+        const refreshed = await refetchAfterCashDrop(supabase, cashSession.id);
+        if (refreshed.cashSession) {
+          setCashSession({
+            ...refreshed.cashSession,
+            cajero: cashSession.cajero,
+            turno: cashSession.turno,
+          });
+        }
+        setCashDrops(prev => [
+          ...refreshed.cashDrops,
+          ...prev.filter(d => d.sessionId !== cashSession.id),
+        ]);
+        toast(`💸 Retiro de S/. ${monto.toFixed(2)} registrado y descontado de caja.`);
+      } catch (err) {
+        console.error('Error al registrar retiro en Supabase', err);
+        toast('❌ Error al registrar retiro en la nube');
+      }
+      return;
+    }
+
     const drop: CashDrop = {
       id: Date.now(),
       sessionId: cashSession.id,
@@ -143,19 +196,6 @@ export function useCashOperations({
     };
     setCashSession(updatedSession);
     saveOffline('snack_session', updatedSession);
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        await supabase.from('cierres_caja').update({
-          tot_ventas_efectivo: updatedSession.tot_ventas_efectivo,
-          tot_ventas_otros: updatedSession.tot_ventas_otros,
-          tot_retiros: updatedSession.tot_retiros
-        }).eq('id_cierre_caja', cashSession.id);
-      } catch (err) {
-        console.error('Error al registrar retiro en Supabase', err);
-      }
-    }
-
     toast(`💸 Retiro de S/. ${monto.toFixed(2)} registrado y descontado de caja.`);
   };
 

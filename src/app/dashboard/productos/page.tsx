@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp, Product, ProductVersion } from '@/context/AppContext';
 
 export default function ProductosPage() {
@@ -13,7 +13,8 @@ export default function ProductosPage() {
     logBreadProduction, 
     logBreadDiscard,
     logBreadConversion,
-    fractionateProduct
+    fractionateProduct,
+    calcularCostoProduccion,
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -205,6 +206,13 @@ export default function ProductosPage() {
   };
 
   const selectedBreadProd = products.find(x => x.id === parseInt(logProductId));
+
+  const productionPreview = useMemo(() => {
+    const pId = parseInt(logProductId);
+    const qty = parseFloat(logQty);
+    if (!logProductId || isNaN(pId) || isNaN(qty) || qty <= 0 || logType !== 'produccion') return null;
+    return calcularCostoProduccion(pId, qty);
+  }, [logProductId, logQty, logType, calcularCostoProduccion]);
 
   return (
     <div className="screen active">
@@ -750,6 +758,35 @@ export default function ProductosPage() {
                   <div className="inp-wrap">
                     <input type="text" value={logReason} onChange={(e) => setLogReason(e.target.value)} placeholder="Detalle del ingreso..." />
                   </div>
+                </div>
+              )}
+
+              {productionPreview && (
+                <div style={{
+                  marginTop: '12px',
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  border: `1px solid ${productionPreview.todosDisponibles ? 'rgba(34,197,94,0.3)' : 'rgba(234,179,8,0.35)'}`,
+                  background: productionPreview.todosDisponibles ? 'rgba(34,197,94,0.06)' : 'rgba(234,179,8,0.08)',
+                  fontSize: '12px',
+                }}>
+                  <div style={{ fontWeight: 800, marginBottom: '6px' }}>
+                    {productionPreview.todosDisponibles ? '✅ Insumos suficientes' : '⚠️ Faltan insumos'}
+                    <span style={{ fontWeight: 600, color: 'var(--text-3)', marginLeft: '8px' }}>
+                      Costo: S/. {productionPreview.costoTotal.toFixed(2)}
+                    </span>
+                  </div>
+                  {productionPreview.detalles.map((d, i) => (
+                    <div key={i} style={{
+                      display: 'flex', justifyContent: 'space-between', gap: '8px',
+                      color: d.suficiente ? 'var(--text-2)' : 'var(--red)',
+                    }}>
+                      <span>{d.insumoNombre}</span>
+                      <span style={{ fontWeight: 700 }}>
+                        {d.cantidadNecesaria.toFixed(3)} {d.unidad} / {d.stockDisponible.toFixed(3)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
 

@@ -39,6 +39,7 @@ export default function InsumosPage() {
     setStock(String(ins.stock));
     setCosto(String(ins.costoUnitario));
     setUnidad(ins.unidadMedida);
+    setMinStock(String(ins.stockMinimo));
     setShowModal(true);
   };
 
@@ -231,6 +232,31 @@ export default function InsumosPage() {
                   placeholder="Ej: Harina saco 50kg"
                   required
                 />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="inp-group">
+                  <label>Stock Inicial / Actual</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    value={stock}
+                    onChange={(e) => setStock(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="inp-group">
+                  <label>Costo Unitario (S/.)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={costo}
+                    onChange={(e) => setCosto(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>

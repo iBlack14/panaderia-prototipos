@@ -657,6 +657,44 @@ button {
   white-space: nowrap;
 }
 
+.sync-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.sync-chip--synced {
+  background: rgba(34, 197, 94, 0.1);
+  color: #16a34a;
+  border-color: rgba(34, 197, 94, 0.25);
+}
+.sync-chip--syncing {
+  background: rgba(234, 179, 8, 0.12);
+  color: #ca8a04;
+  border-color: rgba(234, 179, 8, 0.3);
+  animation: syncPulse 1.4s ease-in-out infinite;
+}
+.sync-chip--offline,
+.sync-chip--error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+.sync-chip--local {
+  background: var(--surface-2, var(--accent-bg));
+  color: var(--text-3);
+}
+@keyframes syncPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
 .page-body { padding: 28px 36px; flex: 1; }
 
 .screen { display: none; animation: fadeSlide 0.25s var(--ease); }

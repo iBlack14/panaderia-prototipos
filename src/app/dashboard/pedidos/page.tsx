@@ -1,10 +1,14 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { useApp, Pedido } from '@/context/AppContext';
+import { useApp, Pedido, PedidoItem } from '@/context/AppContext';
+import { MateriaPrimaPanel } from '@/components/MateriaPrimaPanel';
 
 export default function PedidosPage() {
-  const { pedidos, clients, savePedido, updatePedidoStatus, user, products, paymentMethods, deliverPedido, insumos } = useApp();
+  const {
+    pedidos, clients, savePedido, updatePedidoStatus, user, products,
+    paymentMethods, deliverPedido, insumos, calcularInsumosParaPedido,
+  } = useApp();
 
   const [nowTime] = useState(() => Date.now());
   const [activeTab, setActiveTab] = useState<'Todos' | 'Pendiente' | 'Listo' | 'Entregado' | 'Cancelado'>('Todos');
@@ -32,7 +36,12 @@ export default function PedidosPage() {
 
   const [fTotal, setFTotal] = useState('0');
   const [isTotalManual, setIsTotalManual] = useState(false);
-  const [reservationItems, setReservationItems] = useState<any[]>([]);
+  const [reservationItems, setReservationItems] = useState<PedidoItem[]>([]);
+
+  const reservationPlan = useMemo(
+    () => calcularInsumosParaPedido(reservationItems),
+    [reservationItems, calcularInsumosParaPedido]
+  );
 
   // Product/Insumo/Custom picker states
   const [itemType, setItemType] = useState<'producto' | 'insumo' | 'personalizado'>('producto');
@@ -262,6 +271,7 @@ export default function PedidosPage() {
   };
 
   const openEditPedido = (p: Pedido) => {
+    if (p.estado !== 'Pendiente') return;
     setEditingPedido(p);
     setFClienteId(String(p.clienteId || ''));
     setClientSearch(p.clienteNombre || '');
@@ -591,6 +601,15 @@ export default function PedidosPage() {
                 }}>
                   {getPedidoDescription(p.productoTexto)}
                 </div>
+
+                {itemsList.length > 0 && (p.estado === 'Pendiente' || p.estado === 'Listo') && (
+                  <div style={{ marginBottom: '8px' }}>
+                    <MateriaPrimaPanel
+                      plan={calcularInsumosParaPedido(itemsList as PedidoItem[])}
+                      compact
+                    />
+                  </div>
+                )}
  
                 {/* Notes */}
                 {p.notas && (
@@ -627,7 +646,20 @@ export default function PedidosPage() {
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                   {p.estado === 'Pendiente' && (
                     <button 
-                      onClick={() => updatePedidoStatus(p.id, 'Listo')}
+                      onClick={() => {
+                        const plan = calcularInsumosParaPedido(itemsList as PedidoItem[]);
+                        if (itemsList.length > 0 && !plan.todosDisponibles) {
+                          const ok = window.confirm(
+                            'Hay insumos insuficientes para este pedido. ¿Marcar como listo de todos modos?'
+                          );
+                          if (!ok) return;
+                        }
+                        updatePedidoStatus(p.id, 'Listo');
+                        if (editingPedido?.id === p.id) {
+                          setShowModal(false);
+                          setEditingPedido(null);
+                        }
+                      }}
                       style={{ flex: 1, padding: '6px 8px', fontSize: '11px', fontWeight: '800', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer' }}
                     >
                       🥐 Listo para Entregar
@@ -657,8 +689,8 @@ export default function PedidosPage() {
                     </button>
                   )}
  
-                  {/* Edit button */}
-                  {p.estado !== 'Entregado' && p.estado !== 'Cancelado' && (
+                  {/* Editar solo mientras está pendiente (no en Listo ni después de entregar) */}
+                  {p.estado === 'Pendiente' && (
                     <button 
                       onClick={() => openEditPedido(p)}
                       style={{ padding: '6px 10px', fontSize: '11px', fontWeight: '700', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-card2)', color: 'var(--text-2)', cursor: 'pointer' }}
@@ -1019,6 +1051,12 @@ export default function PedidosPage() {
                       ))}
                     </div>
                   )}
+
+                  {reservationItems.length > 0 && (
+                    <div style={{ marginTop: '10px' }}>
+                      <MateriaPrimaPanel plan={reservationPlan} />
+                    </div>
+                  )}
                 </div>
 
                 {/* Monto Total del Pedido */}
@@ -1256,6 +1294,11 @@ export default function PedidosPage() {
                       items
                     );
                     setShowDeliveryModal(false);
+                    setDeliveringPedido(null);
+                    if (editingPedido?.id === deliveringPedido.id) {
+                      setShowModal(false);
+                      setEditingPedido(null);
+                    }
                   }}
                 >
                   Confirmar Entrega

@@ -24,6 +24,7 @@ DROP TABLE IF EXISTS public.detalle_compra        CASCADE;
 DROP TABLE IF EXISTS public.compras               CASCADE;
 DROP TABLE IF EXISTS public.detalle_venta         CASCADE;
 DROP TABLE IF EXISTS public.ventas                CASCADE;
+DROP TABLE IF EXISTS public.retiros_caja          CASCADE;
 DROP TABLE IF EXISTS public.cierres_caja          CASCADE;
 DROP TABLE IF EXISTS public.producto_versiones    CASCADE;
 DROP TABLE IF EXISTS public.productos             CASCADE;
@@ -160,7 +161,20 @@ CREATE TABLE public.cierres_caja (
     tot_retiros         DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     tot_saldo_final     DECIMAL(10,2) DEFAULT 0.00,
     diferencia          DECIMAL(10,2) DEFAULT 0.00,
-    estado              VARCHAR(20)   DEFAULT 'abierto'  -- 'abierto', 'cerrado'
+    estado              VARCHAR(20)   DEFAULT 'abierto',  -- 'abierto', 'cerrado'
+    turno               VARCHAR(50),
+    observaciones       TEXT,
+    denominaciones      JSONB
+);
+
+-- 2.10b Retiros de Caja (detalle por sesión)
+CREATE TABLE public.retiros_caja (
+    id_retiro       SERIAL PRIMARY KEY,
+    id_cierre_caja  INT NOT NULL REFERENCES public.cierres_caja(id_cierre_caja) ON DELETE CASCADE,
+    monto           DECIMAL(10,2) NOT NULL CONSTRAINT chk_retiro_monto CHECK (monto > 0),
+    motivo          VARCHAR(200) NOT NULL,
+    id_usuario      UUID REFERENCES public.profiles(id),
+    fec_retiro      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- 2.11 Ventas
@@ -427,6 +441,27 @@ CREATE TRIGGER tr_panes_actualizar_stock
 AFTER INSERT ON public.produccion_descarte
 FOR EACH ROW EXECUTE FUNCTION fn_actualizar_stock_panes();
 
+-- 3.5 Trigger: sincronizar tot_retiros en cierres_caja al registrar retiros
+CREATE OR REPLACE FUNCTION fn_actualizar_tot_retiros()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_cierre_id INT;
+BEGIN
+    v_cierre_id := COALESCE(NEW.id_cierre_caja, OLD.id_cierre_caja);
+    UPDATE public.cierres_caja
+       SET tot_retiros = COALESCE((
+           SELECT SUM(monto) FROM public.retiros_caja WHERE id_cierre_caja = v_cierre_id
+       ), 0)
+     WHERE id_cierre_caja = v_cierre_id;
+    RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_retiros_actualizar_tot ON public.retiros_caja;
+CREATE TRIGGER tr_retiros_actualizar_tot
+AFTER INSERT OR UPDATE OR DELETE ON public.retiros_caja
+FOR EACH ROW EXECUTE FUNCTION fn_actualizar_tot_retiros();
+
 
 -- ============================================================
 -- 4. TRIGGER: SINCRONIZAR AUTH.USERS → PUBLIC.PROFILES
@@ -534,6 +569,13 @@ DROP POLICY IF EXISTS "cierres_caja_select" ON public.cierres_caja;
 DROP POLICY IF EXISTS "cierres_caja_mod" ON public.cierres_caja;
 CREATE POLICY "cierres_caja_select" ON public.cierres_caja FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 2, 4, 5)));
 CREATE POLICY "cierres_caja_mod" ON public.cierres_caja FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 2, 5)));
+
+-- retiros_caja
+ALTER TABLE public.retiros_caja ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "retiros_caja_select" ON public.retiros_caja;
+DROP POLICY IF EXISTS "retiros_caja_mod" ON public.retiros_caja;
+CREATE POLICY "retiros_caja_select" ON public.retiros_caja FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 2, 4, 5)));
+CREATE POLICY "retiros_caja_mod" ON public.retiros_caja FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 2, 5)));
 
 -- ventas
 ALTER TABLE public.ventas ENABLE ROW LEVEL SECURITY;
@@ -686,6 +728,46 @@ DROP POLICY IF EXISTS "detalle_receta_select" ON public.detalle_receta;
 DROP POLICY IF EXISTS "detalle_receta_write" ON public.detalle_receta;
 CREATE POLICY "detalle_receta_select" ON public.detalle_receta FOR SELECT TO authenticated USING (true);
 CREATE POLICY "detalle_receta_write" ON public.detalle_receta FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 5)));
+
+-- ============================================================
+-- 6. REALTIME (Supabase Publication)
+-- ============================================================
+-- Habilita postgres_changes en el cliente. Ejecutar una vez por proyecto.
+DO $$
+DECLARE
+  t TEXT;
+  tables TEXT[] := ARRAY[
+    'productos', 'producto_versiones', 'ventas', 'compras',
+    'cierres_caja', 'retiros_caja', 'produccion_descarte',
+    'clientes', 'pedidos_reserva', 'insumos', 'recetas',
+    'detalle_receta', 'categorias', 'proveedores',
+    'metodos_pago', 'profiles', 'roles'
+  ];
+BEGIN
+  FOREACH t IN ARRAY tables LOOP
+    BEGIN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', t);
+    EXCEPTION WHEN duplicate_object THEN
+      NULL; -- ya estaba en la publicación
+    END;
+  END LOOP;
+END $$;
+
+-- ============================================================
+-- MIGRACIÓN INCREMENTAL (BD ya desplegada — ejecutar solo esta sección)
+-- ============================================================
+-- ALTER TABLE public.cierres_caja ADD COLUMN IF NOT EXISTS turno VARCHAR(50);
+-- ALTER TABLE public.cierres_caja ADD COLUMN IF NOT EXISTS observaciones TEXT;
+-- ALTER TABLE public.cierres_caja ADD COLUMN IF NOT EXISTS denominaciones JSONB;
+-- CREATE TABLE IF NOT EXISTS public.retiros_caja (
+--     id_retiro SERIAL PRIMARY KEY,
+--     id_cierre_caja INT NOT NULL REFERENCES public.cierres_caja(id_cierre_caja) ON DELETE CASCADE,
+--     monto DECIMAL(10,2) NOT NULL CONSTRAINT chk_retiro_monto CHECK (monto > 0),
+--     motivo VARCHAR(200) NOT NULL,
+--     id_usuario UUID REFERENCES public.profiles(id),
+--     fec_retiro TIMESTAMPTZ DEFAULT NOW()
+-- );
+-- (Re-ejecutar trigger fn_actualizar_tot_retiros y RLS de retiros_caja de arriba)
 
 -- Recargar caché del esquema PostgREST
 NOTIFY pgrst, 'reload schema';

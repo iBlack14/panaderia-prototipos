@@ -155,6 +155,17 @@ export interface Sale {
   estado?: number;
 }
 
+export interface PedidoItem {
+  type: 'producto' | 'insumo' | 'personalizado';
+  productId?: number | null;
+  insumoId?: number | null;
+  name: string;
+  price: number;
+  qty: number;
+  versionName?: string | null;
+  unidadMedida?: string;
+}
+
 export interface Pedido {
   id: number | string;
   clienteId?: number | string;
@@ -218,10 +229,14 @@ export interface Receta {
   margenDeseado: number;
 }
 
+export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error';
+
 export interface AppContextType {
   user: User | null;
   role: string | null;
   loading: boolean;
+  syncStatus: SyncStatus;
+  lastSyncedAt: Date | null;
   products: Product[];
   categories: { id: number; name: string; active: boolean }[];
   usersList: User[];
@@ -280,6 +295,36 @@ export interface AppContextType {
   // Recetas
   saveReceta: (rObj: any) => Promise<{ success: boolean; message?: string }>;
   deleteReceta: (id: number) => Promise<void>;
+  calcularCostoProduccion: (
+    productoId: number,
+    cantidad: number
+  ) => {
+    costoTotal: number;
+    detalles: {
+      insumoNombre: string;
+      cantidadNecesaria: number;
+      unidad: string;
+      costoLinea: number;
+      stockDisponible: number;
+      suficiente: boolean;
+    }[];
+    todosDisponibles: boolean;
+  } | null;
+  calcularInsumosParaPedido: (items: PedidoItem[]) => {
+    requerimientos: {
+      insumoId: number;
+      insumoNombre: string;
+      cantidadNecesaria: number;
+      unidad: string;
+      stockDisponible: number;
+      suficiente: boolean;
+      costoLinea: number;
+      origen: string[];
+    }[];
+    costoMateriaPrima: number;
+    todosDisponibles: boolean;
+    sinReceta: string[];
+  };
   // Categorías
   saveCategory: (cObj: { id?: number; name: string; active: boolean }) => Promise<void>;
   toggleCategory: (id: number) => Promise<void>;
