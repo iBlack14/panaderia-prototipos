@@ -1,5 +1,6 @@
 import React from 'react';
 import { CartItem, Product, ProductVersion, Sale, PaymentMethod, CashSession, Client, BreadLog, User, CreditPayment } from '@/context/types';
+import { refetchAfterSale } from '@/lib/supabase/queries/reloadEntity';
 
 interface CartOpsParams {
   cart: CartItem[];
@@ -191,25 +192,26 @@ export function useCartOperations({
       return;
     }
 
-    const updatedProds = products.map(p => {
-      const itemsToDeduct = cart.filter(c => c.id === p.id);
-      if (itemsToDeduct.length === 0) return p;
+    const applyLocalStockDeduction = (prods: Product[]) =>
+      prods.map(p => {
+        const itemsToDeduct = cart.filter(c => c.id === p.id);
+        if (itemsToDeduct.length === 0) return p;
 
-      let newStock = p.stock;
-      let newVersions = [...p.versions];
+        let newStock = p.stock;
+        let newVersions = [...p.versions];
 
-      itemsToDeduct.forEach(item => {
-        if (item.version) {
-          newVersions = newVersions.map(v => 
-            v.name === item.version ? { ...v, stock: v.stock - item.qty } : v
-          );
-        } else {
-          newStock -= item.qty;
-        }
+        itemsToDeduct.forEach(item => {
+          if (item.version) {
+            newVersions = newVersions.map(v =>
+              v.name === item.version ? { ...v, stock: v.stock - item.qty } : v
+            );
+          } else {
+            newStock -= item.qty;
+          }
+        });
+
+        return { ...p, stock: newStock, versions: newVersions };
       });
-
-      return { ...p, stock: newStock, versions: newVersions };
-    });
 
     const isEfectivo = methodStr.toLowerCase().includes('efectivo');
     const updatedSession = {
@@ -306,27 +308,26 @@ export function useCartOperations({
         }).eq('id_cierre_caja', activeSession.id);
         if (cashError) throw cashError;
 
-        // Solo si todo en la nube es exitoso, actualizamos los estados locales en caliente
-        setProducts(updatedProds);
-        saveOffline('snack_products', updatedProds);
-
-        setCashSession(updatedSession);
-        saveOffline('snack_session', updatedSession);
-
-        if (isPrepago && clienteObj) {
-          setClients(updClients);
-          saveOffline('snack_clients', updClients);
-        }
-
-        setSales(newSales);
-        saveOffline('snack_sales', newSales);
+        // Stock lo descuentan los triggers SQL — refetch desde BD como fuente de verdad
+        const refreshed = await refetchAfterSale(
+          supabase,
+          activeSession.id,
+          isPrepago && !!clienteObj
+        );
+        setProducts(refreshed.products);
+        if (refreshed.cashSession) setCashSession(refreshed.cashSession);
+        setSales(refreshed.sales);
+        if (refreshed.clients) setClients(refreshed.clients);
 
         setBreadLogs(updLogs);
-        saveOffline('snack_bread_logs', updLogs);
 
         setCart([]);
         toast('✅ Venta registrada correctamente');
-        return saleObj;
+
+        const savedSale = vData
+          ? refreshed.sales.find(s => s.id === vData.id_venta)
+          : undefined;
+        return savedSale ?? { ...saleObj, id: vData?.id_venta ?? saleObj.id, n: vData?.id_venta ?? saleObj.n };
 
       } catch (err: any) {
         console.error('Error al sincronizar venta con Supabase', err);
@@ -334,7 +335,7 @@ export function useCartOperations({
         return undefined;
       }
     } else {
-      // Modo offline: se actualizan estados locales de inmediato
+      const updatedProds = applyLocalStockDeduction(products);
       setProducts(updatedProds);
       saveOffline('snack_products', updatedProds);
 

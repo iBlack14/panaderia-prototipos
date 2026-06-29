@@ -1,6 +1,7 @@
 import React from 'react';
 import { Product, BreadLog, User, Insumo, Receta } from '@/context/types';
 import { consumeLotesFIFO, getLotesUnitCost } from '@/lib/fifo';
+import { fetchProducts, refetchAfterProduction } from '@/lib/supabase/queries/reloadEntity';
 
 interface InventoryOpsParams {
   products: Product[];
@@ -128,35 +129,12 @@ export function useInventoryOps({
           toast('📦 Producto creado en la nube');
         }
 
-        const { data: prods } = await supabase.from('productos').select('*, producto_versiones(*), categorias(nombre)').eq('estado', 1);
-        let returnedProduct: any = null;
-        if (prods) {
-          const mapped = (prods as any[]).map(p => ({
-            id: p.id_producto,
-            name: p.nombre,
-            cat: p.categorias?.nombre || 'Sin categoría',
-            price: parseFloat(p.precio_unitario),
-            stock: parseFloat(p.num_stock || 0),
-            unidad_medida: p.unidad_medida || 'unidades',
-            versions: p.producto_versiones ? (p.producto_versiones as any[]).map(v => ({
-              id: v.id_version,
-              name: v.nombre_version,
-              price: parseFloat(v.precio_unitario),
-              stock: parseFloat(v.num_stock || 0),
-              parent_version_id: v.parent_version_id,
-              fraction_ratio: v.fraction_ratio ? parseFloat(v.fraction_ratio) : 1
-            })) : []
-          }));
-          setProducts(mapped);
-          
-          if (pObj.id) {
-            returnedProduct = mapped.find(p => p.id === pObj.id);
-          } else {
-            // Find the newly created product by name
-            returnedProduct = mapped.find(p => p.name === pObj.name);
-          }
+        const mapped = await fetchProducts(supabase);
+        setProducts(mapped);
+        if (pObj.id) {
+          return mapped.find(p => p.id === pObj.id) ?? null;
         }
-        return returnedProduct;
+        return mapped.find(p => p.name === pObj.name) ?? null;
       } catch (err: any) {
         toast(`❌ Error en Supabase: ${err.message}`);
       }
@@ -197,40 +175,55 @@ export function useInventoryOps({
   };
 
   const logBreadProduction = async (prodId: number, qty: number, version: string | null = null) => {
-    const updated = products.map(p => {
-      if (p.id === prodId) {
-        if (version) {
-          const newVers = p.versions.map(v => 
-            v.name === version ? { ...v, stock: v.stock + qty } : v
-          );
-          return { ...p, versions: newVers };
-        } else {
-          return { ...p, stock: p.stock + qty };
-        }
+    const prod = products.find(x => x.id === prodId);
+    const vRef = version && prod ? prod.versions.find(v => v.name === version) : null;
+
+    const log: BreadLog = {
+      id: Date.now(),
+      d: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      prodName: (prod?.name || 'Producto') + (version ? ` (${version})` : ''),
+      type: 'produccion',
+      qty,
+      reason: 'Ingreso inicial de producción diaria',
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase.from('produccion_descarte').insert({
+          id_producto: prodId,
+          id_version: vRef?.id || null,
+          tipo_registro: 'produccion',
+          num_cantidad: qty,
+          id_usuario: user?.id,
+        });
+        if (error) throw error;
+
+        const refreshed = await refetchAfterProduction(supabase);
+        setProducts(refreshed.products);
+        setInsumos(refreshed.insumos);
+        setBreadLogs([log, ...breadLogs]);
+        toast('➕ Producción de panes registrada');
+      } catch (err) {
+        console.error('Error al registrar producción en Supabase', err);
+        toast('❌ Error al registrar producción en la nube');
       }
-      return p;
+      return;
+    }
+
+    const updated = products.map(p => {
+      if (p.id !== prodId) return p;
+      if (version) {
+        const newVers = p.versions.map(v =>
+          v.name === version ? { ...v, stock: v.stock + qty } : v
+        );
+        return { ...p, versions: newVers };
+      }
+      return { ...p, stock: p.stock + qty };
     });
 
     setProducts(updated);
     saveOffline('snack_products', updated);
 
-    const prod = products.find(x => x.id === prodId);
-    const vRef = (version && prod) ? prod.versions.find(v => v.name === version) : null;
-
-    const log: BreadLog = {
-      id: Date.now(),
-      d: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
-      prodName: (prod?.name || 'Producto') + (version ? ` (${version})` : ''),
-      type: 'produccion',
-      qty,
-      reason: 'Ingreso inicial de producción diaria'
-    };
-
-    const newLogs = [log, ...breadLogs];
-    setBreadLogs(newLogs);
-    saveOffline('snack_bread_logs', newLogs);
-
-    // Recipe Insumos Deduction (updates local state instantly)
     const receta = recetas.find(r => r.productoId === prodId);
     if (receta && receta.ingredientes.length > 0) {
       const factor = qty / (receta.rendimientoBase || 1);
@@ -240,86 +233,74 @@ export function useInventoryOps({
 
         const qtyToConsume = ing.cantidadRequerida * factor;
         const newLotes = consumeLotesFIFO(ins.lotes || [], qtyToConsume);
-        const newCost = getLotesUnitCost(newLotes);
-        const newStock = Math.max(0, ins.stock - qtyToConsume);
-
         return {
           ...ins,
-          stock: newStock,
+          stock: Math.max(0, ins.stock - qtyToConsume),
           lotes: newLotes,
-          costoUnitario: newCost
+          costoUnitario: getLotesUnitCost(newLotes),
         };
       });
       setInsumos(updatedInsumos);
       saveOffline('snack_insumos', updatedInsumos);
     }
 
-    if (isSupabaseConfigured && supabase) {
-      try {
-        await supabase.from('produccion_descarte').insert({
-          id_producto: prodId,
-          id_version: vRef?.id || null,
-          tipo_registro: 'produccion',
-          num_cantidad: qty,
-          id_usuario: user?.id
-        });
-      } catch (err) {
-        console.error('Error al registrar producción en Supabase', err);
-      }
-    }
-
+    setBreadLogs([log, ...breadLogs]);
+    saveOffline('snack_bread_logs', [log, ...breadLogs]);
     toast('➕ Producción de panes registrada');
   };
 
   const logBreadDiscard = async (prodId: number, qty: number, reason: string, version: string | null = null) => {
-    const updated = products.map(p => {
-      if (p.id === prodId) {
-        if (version) {
-          const newVers = p.versions.map(v => 
-            v.name === version ? { ...v, stock: Math.max(0, v.stock - qty) } : v
-          );
-          return { ...p, versions: newVers };
-        } else {
-          return { ...p, stock: Math.max(0, p.stock - qty) };
-        }
-      }
-      return p;
-    });
-
-    setProducts(updated);
-    saveOffline('snack_products', updated);
-
     const prod = products.find(x => x.id === prodId);
-    const vRef = (version && prod) ? prod.versions.find(v => v.name === version) : null;
+    const vRef = version && prod ? prod.versions.find(v => v.name === version) : null;
 
     const log: BreadLog = {
       id: Date.now(),
-      d: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
+      d: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       prodName: (prod?.name || 'Producto') + (version ? ` (${version})` : ''),
       type: 'descarte',
       qty,
-      reason
+      reason,
     };
-
-    const newLogs = [log, ...breadLogs];
-    setBreadLogs(newLogs);
-    saveOffline('snack_bread_logs', newLogs);
 
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('produccion_descarte').insert({
+        const { error } = await supabase.from('produccion_descarte').insert({
           id_producto: prodId,
           id_version: vRef?.id || null,
           tipo_registro: 'descarte',
           num_cantidad: qty,
           motivo_descarte: reason,
-          id_usuario: user?.id
+          id_usuario: user?.id,
         });
+        if (error) throw error;
+
+        const refreshed = await refetchAfterProduction(supabase);
+        setProducts(refreshed.products);
+        setInsumos(refreshed.insumos);
+        setBreadLogs([log, ...breadLogs]);
+        toast('⚠️ Reporte de descarte registrado');
       } catch (err) {
         console.error('Error al registrar descarte en Supabase', err);
+        toast('❌ Error al registrar descarte en la nube');
       }
+      return;
     }
 
+    const updated = products.map(p => {
+      if (p.id !== prodId) return p;
+      if (version) {
+        const newVers = p.versions.map(v =>
+          v.name === version ? { ...v, stock: Math.max(0, v.stock - qty) } : v
+        );
+        return { ...p, versions: newVers };
+      }
+      return { ...p, stock: Math.max(0, p.stock - qty) };
+    });
+
+    setProducts(updated);
+    saveOffline('snack_products', updated);
+    setBreadLogs([log, ...breadLogs]);
+    saveOffline('snack_bread_logs', [log, ...breadLogs]);
     toast('⚠️ Reporte de descarte registrado');
   };
 
@@ -359,22 +340,6 @@ export function useInventoryOps({
   };
 
   const fractionateProduct = async (parentVersionId: number, childVersionId: number, qtyToDeduct: number, qtyToAdd: number) => {
-    const updated = products.map(p => {
-      const parent = p.versions.find(v => v.id === parentVersionId);
-      const child = p.versions.find(v => v.id === childVersionId);
-      if (parent && child) {
-        const newVersions = p.versions.map(v => {
-          if (v.id === parentVersionId) return { ...v, stock: Math.max(0, v.stock - qtyToDeduct) };
-          if (v.id === childVersionId) return { ...v, stock: v.stock + qtyToAdd };
-          return v;
-        });
-        return { ...p, versions: newVersions };
-      }
-      return p;
-    });
-    setProducts(updated);
-    saveOffline('snack_products', updated);
-
     let parentName = `Var #${parentVersionId}`;
     let childName = `Var #${childVersionId}`;
     products.forEach(p => {
@@ -391,36 +356,61 @@ export function useInventoryOps({
       type: 'conversion',
       qty: qtyToDeduct,
       reason: `Fraccionado en ${qtyToAdd} de ${childName}`,
-      cajero: user?.n || 'Sistema'
+      cajero: user?.n || 'Sistema',
     };
-    const newLogs = [log, ...breadLogs];
-    setBreadLogs(newLogs);
-    saveOffline('snack_bread_logs', newLogs);
 
     if (isSupabaseConfigured && supabase) {
       try {
+        const parentProductId = products.find(p => p.versions.some(v => v.id === parentVersionId))?.id ?? null;
+        const childProductId = products.find(p => p.versions.some(v => v.id === childVersionId))?.id ?? null;
+
         await Promise.all([
           supabase.from('produccion_descarte').insert({
-            id_producto: products.find(p => p.versions.some(v => v.id === parentVersionId))?.id || null,
+            id_producto: parentProductId,
             id_version: parentVersionId,
             tipo_registro: 'descarte',
             num_cantidad: qtyToDeduct,
             motivo_descarte: `Fraccionado a ${childName}`,
-            id_usuario: user?.id
+            id_usuario: user?.id,
           }),
           supabase.from('produccion_descarte').insert({
-            id_producto: products.find(p => p.versions.some(v => v.id === childVersionId))?.id || null,
+            id_producto: childProductId,
             id_version: childVersionId,
             tipo_registro: 'produccion',
             num_cantidad: qtyToAdd,
             motivo_descarte: 'Ingreso por fraccionamiento',
-            id_usuario: user?.id
-          })
+            id_usuario: user?.id,
+          }),
         ]);
+
+        const refreshed = await refetchAfterProduction(supabase);
+        setProducts(refreshed.products);
+        setInsumos(refreshed.insumos);
+        setBreadLogs([log, ...breadLogs]);
+        toast('✂️ Fraccionamiento registrado con éxito.');
       } catch (err) {
         console.error('Error fraccionando en Supabase', err);
+        toast('❌ Error al fraccionar en la nube');
       }
+      return;
     }
+
+    const updated = products.map(p => {
+      const parent = p.versions.find(v => v.id === parentVersionId);
+      const child = p.versions.find(v => v.id === childVersionId);
+      if (!parent || !child) return p;
+      const newVersions = p.versions.map(v => {
+        if (v.id === parentVersionId) return { ...v, stock: Math.max(0, v.stock - qtyToDeduct) };
+        if (v.id === childVersionId) return { ...v, stock: v.stock + qtyToAdd };
+        return v;
+      });
+      return { ...p, versions: newVersions };
+    });
+
+    setProducts(updated);
+    saveOffline('snack_products', updated);
+    setBreadLogs([log, ...breadLogs]);
+    saveOffline('snack_bread_logs', [log, ...breadLogs]);
     toast('✂️ Fraccionamiento registrado con éxito.');
   };
 

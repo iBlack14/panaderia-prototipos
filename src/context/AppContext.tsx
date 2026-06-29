@@ -16,7 +16,6 @@ import {
   BreadLog, 
   Sale, 
   Pedido, 
-  ReturnRecord, 
   Purchase,
   Insumo,
   Receta,
@@ -39,8 +38,6 @@ export type {
   BreadLog, 
   Sale, 
   Pedido, 
-  ReturnRecord, 
-  ReturnedItem,
   PurchaseItem,
   Purchase,
   DenominacionArqueo,
@@ -59,6 +56,7 @@ import { useClientOps } from '@/hooks/useClientOps';
 import { useOrderOperations } from '@/hooks/useOrderOperations';
 import { useInsumoOps } from '@/hooks/useInsumoOps';
 import { useRecetaOps } from '@/hooks/useRecetaOps';
+import { loadAllFromSupabase } from '@/lib/supabase/queries/loadAll';
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -136,7 +134,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [clients, setClients] = useState<Client[]>([]);
   const [rolesList, setRolesList] = useState<CustomRole[]>([]);
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
-  const [devoluciones, setDevoluciones] = useState<ReturnRecord[]>([]);
+
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [recetas, setRecetas] = useState<Receta[]>([]);
 
@@ -185,81 +183,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
               setRole(prof.roles?.nombre || 'Cajero');
             }
           }
-          console.log('Cargando datos en paralelo...');
-          const [
-            { data: prods }, { data: cats }, { data: rls }, { data: paym }, { data: profs },
-            { data: clis }, { data: provs }, { data: sesAbierta }, { data: cashHist }, { data: ventas }, { data: compras },
-            { data: peds }, { data: devs }, { data: insumosData }, { data: recetasData }
-          ] = await Promise.all([
-            supabase.from('productos').select('*, producto_versiones(*), categorias(nombre)').eq('estado', 1),
-            supabase.from('categorias').select('*').order('id_categoria', { ascending: true }),
-            supabase.from('roles').select('*').order('id_rol', { ascending: true }),
-            supabase.from('metodos_pago').select('*'),
-            supabase.from('profiles').select('*, roles(nombre)'),
-            supabase.from('clientes').select('*').order('id_cliente', { ascending: true }),
-            supabase.from('proveedores').select('*'),
-            supabase.from('cierres_caja').select('*').eq('estado', 'abierto').limit(1),
-            supabase.from('cierres_caja').select('*').eq('estado', 'cerrado').order('fec_cierre', { ascending: false }),
-            supabase.from('ventas').select('*, detalle_venta(*, productos(nombre), producto_versiones(nombre_version)), metodos_pago(tipo_pago), profiles(nombre, apellido_paterno)').order('fec_venta', { ascending: false }).limit(500),
-            supabase.from('compras').select('*, detalle_compra(*, productos(nombre)), proveedores(nombre_empresa)').eq('estado', 1).order('fec_compra', { ascending: false }).limit(200),
-            supabase.from('pedidos_reserva').select('*, clientes(nombre)').order('fec_entrega', { ascending: true }),
-            supabase.from('devoluciones').select('*, detalle_devolucion(*, productos(nombre)), clientes(nombre), profiles(nombre, apellido_paterno)').order('fec_devolucion', { ascending: false }),
-            supabase.from('insumos').select('*').order('id_insumo', { ascending: true }),
-            supabase.from('recetas').select('*, detalle_receta(*, insumos(nombre, unidad_medida)), productos(nombre)').order('id_receta', { ascending: true }),
-          ]);
-          if (prods) setProducts((prods as any[]).map(p => ({ id: p.id_producto, name: p.nombre, cat: p.categorias?.nombre || 'Sin categoria', price: parseFloat(p.precio_unitario), stock: parseFloat(p.num_stock || 0), unidad_medida: p.unidad_medida || 'unidades', versions: p.producto_versiones ? (p.producto_versiones as any[]).map(v => ({ id: v.id_version, name: v.nombre_version, price: parseFloat(v.precio_unitario), stock: parseFloat(v.num_stock || 0) })) : [] })));
-          if (cats) setCategories((cats as any[]).map(c => ({ id: c.id_categoria, name: c.nombre, active: c.estado === 1 })));
-          if (rls) setRolesList((rls as any[]).map(r => ({ id: r.nombre, name: r.nombre, desc: r.descripcion || '', permissions: Array.isArray(r.permisos) ? r.permisos : (typeof r.permisos === 'string' ? JSON.parse(r.permisos) : []) })));
-          if (paym) setPaymentMethods((paym as any[]).map(pm => ({ id: pm.id_metodo_pago, name: pm.tipo_pago, desc: 'Metodo en la nube', active: pm.estado === 1 })));
-          if (profs) setUsersList((profs as any[]).map(p => ({ id: p.id, u: p.username, p: '••••', n: p.nombre + ' ' + (p.apellido_paterno || ''), rs: [p.roles?.nombre || 'Cajero'], st: p.estado, email: p.correo, phone: p.num_telefono || '' })));
-          if (clis) setClients((clis as any[]).map(c => ({ id: c.id_cliente, nombre: c.nombre, dni: c.dni || '', telefono: c.telefono || '', email: c.email || '', saldoCred: parseFloat(c.saldo_credito || 0), historialPagos: c.historial_pagos ? (typeof c.historial_pagos === 'string' ? JSON.parse(c.historial_pagos) : c.historial_pagos) : [], active: c.estado === 1 })));
-          if (provs) setProviders((provs as any[]).map(pr => ({ id: pr.id_proveedor, ruc: pr.ruc, name: pr.nombre_empresa, phone: pr.num_telefono, address: pr.direccion, active: pr.estado === 1 })));
-          if (sesAbierta && sesAbierta.length > 0) setCashSession({ id: sesAbierta[0].id_cierre_caja, fec_apertura: new Date(sesAbierta[0].fec_apertura), tot_saldo_inicial: parseFloat(sesAbierta[0].tot_saldo_inicial), tot_ventas_efectivo: parseFloat(sesAbierta[0].tot_ventas_efectivo), tot_ventas_otros: parseFloat(sesAbierta[0].tot_ventas_otros), tot_retiros: parseFloat(sesAbierta[0].tot_retiros || 0), estado: 'abierto' });
-          if (cashHist) setCashHistory((cashHist as any[]).map(h => ({ id: h.id_cierre_caja, fec_apertura: new Date(h.fec_apertura).toLocaleDateString(), fec_cierre: new Date(h.fec_cierre).toLocaleDateString(), monto_inicial: parseFloat(h.tot_saldo_inicial), monto_final: parseFloat(h.tot_saldo_final), ventas_efectivo: parseFloat(h.tot_ventas_efectivo), ventas_otros: parseFloat(h.tot_ventas_otros), estado: 'cerrado' })));
-          if (ventas) setSales((ventas as any[]).map(v => ({ id: v.id_venta, n: v.id_venta, items: (v.detalle_venta || []).map((d: any) => ({ id: d.id_producto, name: (d.productos?.nombre || '') + (d.producto_versiones ? ` (${d.producto_versiones.nombre_version})` : ''), price: parseFloat(d.precio_unitario), qty: parseFloat(d.num_cantidad || 0), version: d.producto_versiones?.nombre_version || null })), total: parseFloat(v.tot_pago), method: v.metodos_pago?.tipo_pago || 'Efectivo', methodId: v.id_metodo_pago, d: new Date(v.fec_venta).toLocaleDateString(), t: new Date(v.fec_venta).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), cajero: v.profiles ? (v.profiles.nombre + ' ' + (v.profiles.apellido_paterno || '')).trim() : 'Sistema', clienteId: v.id_cliente || undefined, estado: v.estado })));
-          if (compras) setPurchases((compras as any[]).map(c => ({ id: 'COM-' + c.id_compra, d: new Date(c.fec_compra).toLocaleDateString(), prov: c.proveedores?.nombre_empresa || 'Proveedor', subTotal: 'S/. ' + parseFloat(c.sub_total).toFixed(2), igv: 'S/. ' + parseFloat(c.igv).toFixed(2), total: 'S/. ' + parseFloat(c.tot_pago).toFixed(2), items: (c.detalle_compra || []).map((d: any) => ({ productId: d.id_producto, qty: parseFloat(d.num_cantidad || 0), cost: parseFloat(d.precio_compra), version: null })) })));
-          if (peds) setPedidos((peds as any[]).map(p => ({ id: p.id_pedido, clienteId: p.id_cliente, clienteNombre: p.clientes?.nombre || 'Cliente Genérico', productoTexto: p.producto_texto, fecEntrega: p.fec_entrega, adelanto: parseFloat(p.adelanto || 0), notas: p.notas || '', estado: p.estado || 'Pendiente', idUsuario: p.id_usuario, createdAt: p.created_at, updatedAt: p.updated_at })));
-          if (devs) setDevoluciones((devs as any[]).map(d => ({
-            id: d.id_devolucion,
-            saleId: d.id_venta,
-            clienteId: d.id_cliente,
-            clienteNombre: d.clientes?.nombre || 'Cliente Genérico',
-            motivo: d.motivo || '',
-            totalReturned: parseFloat(d.total_devuelto || 0),
-            cajero: d.profiles ? (d.profiles.nombre + ' ' + (d.profiles.apellido_paterno || '')).trim() : 'Sistema',
-            date: new Date(d.fec_devolucion).toLocaleDateString(),
-            items: (d.detalle_devolucion || []).map((det: any) => ({
-              productId: det.id_producto,
-              version: det.id_version ? String(det.id_version) : null,
-              qty: parseFloat(det.num_cantidad || 0),
-              price: parseFloat(det.precio_unitario)
-            }))
-          })));
-          if (insumosData) setInsumos((insumosData as any[]).map(i => ({
-            id: i.id_insumo,
-            nombre: i.nombre,
-            stock: parseFloat(i.num_stock) || 0,
-            costoUnitario: parseFloat(i.costo_unitario) || 0,
-            unidadMedida: i.unidad_medida || 'kg',
-            stockMinimo: parseFloat(i.stock_minimo) || 0,
-            active: i.estado === 1,
-            lotes: i.lotes || []
-          })));
-          if (recetasData) setRecetas((recetasData as any[]).map(r => ({
-            id: r.id_receta,
-            productoId: r.id_producto,
-            productoNombre: r.productos?.nombre || `Producto #${r.id_producto}`,
-            rendimientoBase: parseFloat(r.rendimiento_base) || 1,
-            instrucciones: r.instrucciones || '',
-            ingredientes: (r.detalle_receta || []).map((d: any) => ({
-              id: d.id_detalle,
-              insumoId: d.id_insumo,
-              insumoNombre: d.insumos?.nombre || `Insumo #${d.id_insumo}`,
-              cantidadRequerida: parseFloat(d.cantidad_requerida) || 0,
-              unidadMedida: d.insumos?.unidad_medida || 'kg',
-            })),
-            margenDeseado: parseFloat(r.margen_deseado) || 30
-          })));
+          const data = await loadAllFromSupabase(supabase);
+          setProducts(data.products);
+          setCategories(data.categories);
+          setRolesList(data.rolesList);
+          setPaymentMethods(data.paymentMethods);
+          setUsersList(data.usersList);
+          setClients(data.clients);
+          setProviders(data.providers);
+          setCashSession(data.cashSession);
+          setCashHistory(data.cashHistory);
+          setSales(data.sales);
+          setPurchases(data.purchases);
+          setPedidos(data.pedidos);
+          setInsumos(data.insumos);
+          setRecetas(data.recetas);
         } catch (err) {
           console.error('Error cargando datos de Supabase', err);
         }
@@ -289,7 +227,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const localClients = localStorage.getItem('snack_clients');
         const localRoles = localStorage.getItem('snack_custom_roles_v1');
         const localPedidos = localStorage.getItem('snack_pedidos');
-        const localDevoluciones = localStorage.getItem('snack_devoluciones');
 
         const localCats = localStorage.getItem('snack_categorias');
         setCategories(localCats ? JSON.parse(localCats) : [
@@ -311,7 +248,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setClients(localClients ? JSON.parse(localClients) : DEFAULT_CLIENTS);
         setRolesList(localRoles ? JSON.parse(localRoles) : DEFAULT_ROLES);
         setPedidos(localPedidos ? JSON.parse(localPedidos) : []);
-        setDevoluciones(localDevoluciones ? JSON.parse(localDevoluciones) : []);
 
         const localInsumos = localStorage.getItem('snack_insumos');
         const localRecetas = localStorage.getItem('snack_recetas');
@@ -396,7 +332,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const orderOps = useOrderOperations({
     pedidos, setPedidos,
-    devoluciones, setDevoluciones,
     purchases, setPurchases,
     sales, setSales,
     products, setProducts,
@@ -454,7 +389,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       rolesList,
       toastMsg,
       pedidos,
-      devoluciones,
       insumos,
       recetas,
       toast,

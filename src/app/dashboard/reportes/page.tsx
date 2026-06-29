@@ -5,15 +5,9 @@ import { useApp, Sale } from '@/context/AppContext';
 import { loadJsPDFAutoTable, loadSheetJS } from '@/lib/cdn';
 
 export default function ReportesEstadisticasPage() {
-  const { sales, processReturn, devoluciones, toast } = useApp();
+  const { sales, toast } = useApp();
 
   const [txSearch, setTxSearch] = useState('');
-  
-  // Return Modal states
-  const [showReturnModal, setShowReturnModal] = useState(false);
-  const [selectedSaleForReturn, setSelectedSaleForReturn] = useState<any>(null);
-  const [returnQuantities, setReturnQuantities] = useState<Record<string, number>>({});
-  const [returnReason, setReturnReason] = useState('');
 
   const reportMetrics = useMemo(() => {
     // Only active (non-annulled) sales count towards KPI statistics
@@ -92,68 +86,6 @@ export default function ReportesEstadisticasPage() {
       );
     });
   }, [reportMetrics.historyList, txSearch]);
-
-  const openReturnModal = (sale: any) => {
-    setSelectedSaleForReturn(sale);
-    const initialQtys: Record<string, number> = {};
-    sale.items.forEach((item: any) => {
-      const key = item.version ? `${item.id}-${item.version}` : `${item.id}`;
-      initialQtys[key] = 0;
-    });
-    setReturnQuantities(initialQtys);
-    setReturnReason('');
-    setShowReturnModal(true);
-  };
-
-  const getRemainingQty = (item: any) => {
-    const pastSaleReturns = devoluciones.filter(r => r.saleId === selectedSaleForReturn?.id);
-    const returnedQty = pastSaleReturns.reduce((sum, ret) => {
-      const match = ret.items.find((i: any) => i.productId === item.id && i.version === item.version);
-      return sum + (match ? match.qty : 0);
-    }, 0);
-    return Math.max(0, item.qty - returnedQty);
-  };
-
-  const handleReturnSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedSaleForReturn) return;
-
-    const returnedItemsPayload: any[] = [];
-    let hasValidReturn = false;
-
-    selectedSaleForReturn.items.forEach((item: any) => {
-      const key = item.version ? `${item.id}-${item.version}` : `${item.id}`;
-      const qtyToReturn = returnQuantities[key] || 0;
-
-      if (qtyToReturn > 0) {
-         hasValidReturn = true;
-         returnedItemsPayload.push({
-           productId: item.id,
-           version: item.version,
-           qty: qtyToReturn,
-           price: item.price
-         });
-      }
-    });
-
-    if (!hasValidReturn) {
-      alert('Por favor selecciona al menos un producto y cantidad a devolver.');
-      return;
-    }
-
-    if (!returnReason.trim()) {
-      alert('Por favor ingresa un motivo para la devolución.');
-      return;
-    }
-
-    try {
-      await processReturn(selectedSaleForReturn.id, returnedItemsPayload, returnReason);
-      setShowReturnModal(false);
-    } catch (err: any) {
-      console.error(err);
-      alert('Error al procesar la devolución: ' + err.message);
-    }
-  };
 
   const exportToExcel = async () => {
     try {
@@ -434,7 +366,6 @@ export default function ReportesEstadisticasPage() {
                   <th style={{ textAlign: 'left' }}>Método</th>
                   <th style={{ textAlign: 'left' }}>Total</th>
                   <th style={{ textAlign: 'left' }}>Estado</th>
-                  <th style={{ textAlign: 'center' }}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -455,19 +386,6 @@ export default function ReportesEstadisticasPage() {
                         <span className="tag tg-ok">Pagado</span>
                       )}
                     </td>
-                    <td style={{ textAlign: 'center' }}>
-                      {h.estado !== 0 ? (
-                        <button 
-                          className="act-btn del" 
-                          onClick={() => openReturnModal(h)}
-                          title="Devolver / Anular Venta"
-                        >
-                          ↩ Devolver
-                        </button>
-                      ) : (
-                        <span style={{ fontSize: '11px', color: 'var(--text-3)', fontStyle: 'italic' }}>Devuelto</span>
-                      )}
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -475,67 +393,6 @@ export default function ReportesEstadisticasPage() {
           </div>
         )}
       </div>
-
-      {/* RETURN MODAL */}
-      {showReturnModal && selectedSaleForReturn && (
-        <div className="modal-overlay open">
-          <div className="modal-card" style={{ width: '480px' }}>
-            <span className="mc-icon">↩</span>
-            <div className="mc-title">Registrar Devolución</div>
-            <p className="mc-sub">Boleta #B-{selectedSaleForReturn.n} · Cajero: {selectedSaleForReturn.cajero}</p>
-
-            <form onSubmit={handleReturnSubmit}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', textAlign: 'left' }}>
-                <div className="inp-group">
-                  <label>Productos a Devolver (Especificar Cantidad)</label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
-                    {selectedSaleForReturn.items.map((item: any) => {
-                      const key = item.version ? `${item.id}-${item.version}` : `${item.id}`;
-                      const remaining = getRemainingQty(item);
-                      return (
-                        <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card2)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                          <div style={{ fontSize: '12.5px', color: 'var(--text)' }}>
-                            {item.name} <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>(Max: {remaining}u)</span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Cant:</span>
-                            <input 
-                              type="number" 
-                              min="0" 
-                              max={remaining}
-                              value={returnQuantities[key] || 0}
-                              onChange={e => setReturnQuantities({ ...returnQuantities, [key]: Math.min(remaining, Math.max(0, parseInt(e.target.value) || 0)) })}
-                              style={{ width: '60px', padding: '4px 6px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text)', textAlign: 'center', fontSize: '12.5px' }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="inp-group">
-                  <label>Motivo de la Devolución *</label>
-                  <input 
-                    type="text" 
-                    value={returnReason}
-                    onChange={e => setReturnReason(e.target.value)}
-                    placeholder="Ej: Producto en mal estado, error de digitación..."
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="mc-btns" style={{ marginTop: '20px' }}>
-                <button type="button" className="mc-sec" onClick={() => setShowReturnModal(false)}>Cancelar</button>
-                <button type="submit" className="mc-pri" style={{ background: 'linear-gradient(135deg, var(--red), #b91c1c)' }}>
-                  Confirmar Devolución
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -12,6 +12,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ============================================================
 -- 1. LIMPIEZA COMPLETA (DROP en orden inverso de dependencias)
 -- ============================================================
+DROP TABLE IF EXISTS public.detalle_devolucion   CASCADE;
+DROP TABLE IF EXISTS public.devoluciones         CASCADE;
+DROP TABLE IF EXISTS public.pedidos_reserva      CASCADE;
 DROP TABLE IF EXISTS public.detalle_receta       CASCADE;
 DROP TABLE IF EXISTS public.recetas              CASCADE;
 DROP TABLE IF EXISTS public.insumos              CASCADE;
@@ -644,7 +647,7 @@ ON CONFLICT (id) DO NOTHING;
 
 
 -- ============================================================
--- 7. PEDIDOS Y DEVOLUCIONES (NUEVAS MEJORAS)
+-- 7. PEDIDOS Y RESERVAS
 -- ============================================================
 
 -- 7.1 Pedidos y Reservas
@@ -661,27 +664,6 @@ CREATE TABLE public.pedidos_reserva (
     updated_at     TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 7.2 Devoluciones
-CREATE TABLE public.devoluciones (
-    id_devolucion  SERIAL PRIMARY KEY,
-    id_venta       INT NOT NULL REFERENCES public.ventas(id_venta) ON DELETE CASCADE,
-    id_cliente     INT REFERENCES public.clientes(id_cliente),
-    motivo         TEXT,
-    total_devuelto DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-    id_usuario     UUID REFERENCES public.profiles(id),
-    fec_devolucion TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- 7.3 Detalle de Devoluciones
-CREATE TABLE public.detalle_devolucion (
-    id_detalle_devolucion SERIAL PRIMARY KEY,
-    id_devolucion         INT NOT NULL REFERENCES public.devoluciones(id_devolucion) ON DELETE CASCADE,
-    id_producto           INT REFERENCES public.productos(id_producto),
-    id_version            INT REFERENCES public.producto_versiones(id_version),
-    num_cantidad          DECIMAL(10,3) NOT NULL CONSTRAINT chk_dev_qty CHECK (num_cantidad > 0),
-    precio_unitario       DECIMAL(10,2) NOT NULL
-);
-
 -- RLS y políticas consistentes con ventas (cajero/supervisor/admin inserta, contador/supervisor/admin consulta)
 ALTER TABLE public.pedidos_reserva ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "pedidos_reserva_select" ON public.pedidos_reserva;
@@ -690,18 +672,6 @@ DROP POLICY IF EXISTS "pedidos_reserva_update" ON public.pedidos_reserva;
 CREATE POLICY "pedidos_reserva_select" ON public.pedidos_reserva FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 4, 5)));
 CREATE POLICY "pedidos_reserva_insert" ON public.pedidos_reserva FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 2, 5)));
 CREATE POLICY "pedidos_reserva_update" ON public.pedidos_reserva FOR UPDATE TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 2, 5)));
-
-ALTER TABLE public.devoluciones ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "devoluciones_select" ON public.devoluciones;
-DROP POLICY IF EXISTS "devoluciones_insert" ON public.devoluciones;
-CREATE POLICY "devoluciones_select" ON public.devoluciones FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 4, 5)));
-CREATE POLICY "devoluciones_insert" ON public.devoluciones FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 2, 5)));
-
-ALTER TABLE public.detalle_devolucion ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "detalle_devolucion_select" ON public.detalle_devolucion;
-DROP POLICY IF EXISTS "detalle_devolucion_insert" ON public.detalle_devolucion;
-CREATE POLICY "detalle_devolucion_select" ON public.detalle_devolucion FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 4, 5)));
-CREATE POLICY "detalle_devolucion_insert" ON public.detalle_devolucion FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND id_rol IN (1, 2, 5)));
 
 -- recetas
 ALTER TABLE public.recetas ENABLE ROW LEVEL SECURITY;

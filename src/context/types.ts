@@ -170,25 +170,6 @@ export interface Pedido {
   updatedAt?: string;
 }
 
-export interface ReturnedItem {
-  productId: number;
-  version: string | null;
-  qty: number;
-  price: number;
-}
-
-export interface ReturnRecord {
-  id: number | string;
-  saleId: number;
-  clienteId?: number | string;
-  clienteNombre?: string;
-  motivo: string;
-  totalReturned: number;
-  cajero: string;
-  date: string;
-  items: ReturnedItem[];
-}
-
 export interface PurchaseItem {
   type: 'producto' | 'insumo';
   productId?: number;
@@ -257,7 +238,6 @@ export interface AppContextType {
   rolesList: CustomRole[];
   toastMsg: string;
   pedidos: Pedido[];
-  devoluciones: ReturnRecord[];
   insumos: Insumo[];
   recetas: Receta[];
   toast: (msg: string) => void;
@@ -293,7 +273,6 @@ export interface AppContextType {
   savePedido: (pedidoObj: any) => Promise<void>;
   updatePedidoStatus: (pedidoId: number | string, nuevoEstado: 'Pendiente' | 'Listo' | 'Entregado' | 'Cancelado') => Promise<void>;
   deliverPedido: (pedidoId: number | string, paymentMethodId: number, paymentMethodName: string, totalVal: number, adelantoVal: number, items: any[]) => Promise<void>;
-  processReturn: (saleId: number, items: ReturnedItem[], motivo: string) => Promise<void>;
   fractionateProduct: (parentVersionId: number, childVersionId: number, qtyToDeduct: number, qtyToAdd: number) => Promise<void>;
   // Insumos
   saveInsumo: (iObj: any) => Promise<any>;

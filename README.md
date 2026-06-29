@@ -10,8 +10,8 @@ Para facilitar la evaluación del proyecto bajo el criterio de **flexibilidad te
 
 | Criterio Rúbrica | Exigencia Formal UTP | Implementación en este Proyecto | Archivo / Carpeta de Evidencia |
 | :--- | :--- | :--- | :--- |
-| **Diseño de la Solución** *(3 pts)* | Construir la arquitectura inicial aplicando **MVC, TDD, DAO y SOLID**, y aspectos de seguridad. | **1. MVC**: Arquitectura web (V: React Pages, C: API Routes/Hooks, M: Supabase SQL/Types).<br>**2. TDD**: Pruebas automáticas de lógica empresarial.<br>**3. DAO**: Encapsulación en React Hooks.<br>**4. SOLID**: Hooks segregados por responsabilidad (SRP).<br>**5. Seguridad**: Supabase Auth + Roles (`isAdmin`). | 📂 [ARCHITECTURE.md](file:///c:/Users/huanc/Downloads/panaderia-prototipos/ARCHITECTURE.md) (Diagramas)<br>📂 [useOrderOperations.test.ts](file:///c:/Users/huanc/Downloads/panaderia-prototipos/src/hooks/useOrderOperations.test.ts) (TDD)<br>📂 [useOrderOperations.ts](file:///c:/Users/huanc/Downloads/panaderia-prototipos/src/hooks/useOrderOperations.ts) (DAO)<br>📂 [types.ts](file:///c:/Users/huanc/Downloads/panaderia-prototipos/src/context/types.ts) (Modelos) |
-| **Uso de Recursos** *(2 pts)* | Uso de librerías de apoyo a la codificación (Google Guava, Apache POI, Logback) y seguridad. | Se integraron homólogos modernos de alto rendimiento para Node.js:<br>• **Logback** $\rightarrow$ **`pino`** (logger veloz)<br>• **POI/Commons** $\rightarrow$ **`jimp`** (imágenes) y **`qrcode`** (códigos QR)<br>• **Guava** $\rightarrow$ Array Helpers ES6/TS<br>• **Seguridad** $\rightarrow$ **Supabase Auth** y variables en `.env`. | 📂 [package.json](file:///c:/Users/huanc/Downloads/panaderia-prototipos/package.json) (Dependencias)<br>📂 [vitest.config.ts](file:///c:/Users/huanc/Downloads/panaderia-prototipos/vitest.config.ts) (Config. Tests) |
+| **Diseño de la Solución** *(3 pts)* | Construir la arquitectura inicial aplicando **MVC, DAO y SOLID**, y aspectos de seguridad. | **1. MVC**: Arquitectura web (V: React Pages, C: API Routes/Hooks, M: Supabase SQL/Types).<br>**2. DAO**: Encapsulación en React Hooks + capa de mappers (`src/lib/supabase/`).<br>**3. SOLID**: Hooks segregados por responsabilidad (SRP).<br>**4. Seguridad**: Supabase Auth + Roles (`isAdmin`). | 📂 [ARCHITECTURE.md](file:///c:/Users/huanc/Downloads/panaderia-prototipos/ARCHITECTURE.md) (Diagramas)<br>📂 [useOrderOperations.ts](file:///c:/Users/huanc/Downloads/panaderia-prototipos/src/hooks/useOrderOperations.ts) (DAO)<br>📂 [types.ts](file:///c:/Users/huanc/Downloads/panaderia-prototipos/src/context/types.ts) (Modelos) |
+| **Uso de Recursos** *(2 pts)* | Uso de librerías de apoyo a la codificación (Google Guava, Apache POI, Logback) y seguridad. | Se integraron homólogos modernos de alto rendimiento para Node.js:<br>• **Logback** $\rightarrow$ **`pino`** (logger veloz)<br>• **POI/Commons** $\rightarrow$ **`jimp`** (imágenes) y **`qrcode`** (códigos QR)<br>• **Guava** $\rightarrow$ Array Helpers ES6/TS<br>• **Seguridad** $\rightarrow$ **Supabase Auth** y variables en `.env`. | 📂 [package.json](file:///c:/Users/huanc/Downloads/panaderia-prototipos/package.json) (Dependencias)<br>📂 [src/lib/supabase/](file:///c:/Users/huanc/Downloads/panaderia-prototipos/src/lib/supabase) (Mappers y queries) |
 | **Control de Versiones** *(3 pts)* | Integración con **Git** y **GitHub**, evidenciando el 100% de los avances y actualizaciones. | Repositorio activo en GitHub con un historial de más de 15 commits incrementales que evidencian el avance de cada integrante. | 📂 `.git/` (Carpeta del repositorio)<br>📂 [.gitignore](file:///c:/Users/huanc/Downloads/panaderia-prototipos/.gitignore) (Ignora VS Code y variables locales) |
 | **Interfaces Gráficas** *(6 pts)* | Implementación de interfaces gráficas **UX/UI** cuyo funcionamiento cubra el alcance comprometido. | UI premium con Tailwind CSS v4 para:<br>• POS/Ventas (Carrito + Comprobante)<br>• Caja (Apertura, Retiros, Cierre y Denominaciones)<br>• Reservas/Pedidos (Estados y Adelantos)<br>• Reportes, Clientes, Insumos, etc. | 📂 [src/app/dashboard/](file:///c:/Users/huanc/Downloads/panaderia-prototipos/src/app/dashboard) (Carpeta de pantallas de la UI) |
 | **Construcción Final** *(4 pts)* | Producto completo, coherente (código-documentación), buenas prácticas de software y autoría. | Proyecto modularizado, documentado técnicamente en HTML con **TypeDoc** y auto-documentado con comentarios JSDoc/TSDoc. | 📂 [docs/](file:///c:/Users/huanc/Downloads/panaderia-prototipos/docs) (Documentación técnica en HTML)<br>📂 [README.md](file:///c:/Users/huanc/Downloads/panaderia-prototipos/README.md) (Este archivo) |
@@ -82,13 +82,7 @@ Abre [http://localhost:3000](http://localhost:3000) en tu navegador para ver la 
 
 ## 🧪 Comandos Añadidos para la Evaluación
 
-### 1. Ejecutar Pruebas Unitarias (TDD)
-```bash
-npm run test
-```
-*Esto corre el suite de pruebas unitarias configurado en Vitest, el cual valida la lógica de negocio.*
-
-### 2. Generar Documentación Técnica (Javadoc equivalente)
+### Generar Documentación Técnica (Javadoc equivalente)
 ```bash
 npm run docs
 ```
