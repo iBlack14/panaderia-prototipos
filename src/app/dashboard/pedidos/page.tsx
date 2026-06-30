@@ -1,18 +1,105 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp, Pedido, PedidoItem } from '@/context/AppContext';
 import { MateriaPrimaPanel } from '@/components/MateriaPrimaPanel';
 
+type PedidoMeta = {
+  itemsList: PedidoItem[];
+  totalVal: number;
+  summary: string;
+  itemCount: number;
+};
+
+function getPedidoArrivalMs(p: Pedido): number {
+  if (p.createdAt) {
+    const ts = new Date(p.createdAt).getTime();
+    if (!isNaN(ts)) return ts;
+  }
+  const idStr = String(p.id);
+  if (idStr.startsWith('local_')) {
+    const ts = parseInt(idStr.replace('local_', ''), 10);
+    if (!isNaN(ts)) return ts;
+  }
+  const numId = typeof p.id === 'number' ? p.id : parseInt(idStr, 10);
+  return !isNaN(numId) ? numId : 0;
+}
+
+function formatArrivalDayLabel(ms: number): string {
+  const d = new Date(ms);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const day = new Date(d);
+  day.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((today.getTime() - day.getTime()) / 86400000);
+  if (diffDays === 0) return 'Hoy';
+  if (diffDays === 1) return 'Ayer';
+  return d.toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+function formatRelativeArrival(ms: number): string {
+  const diff = Date.now() - ms;
+  if (diff < 60_000) return 'ahora mismo';
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 60) return `hace ${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `hace ${hrs} h`;
+  return new Date(ms).toLocaleString('es-PE', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatPedidoId(id: Pedido['id']): string {
+  return String(id).startsWith('local_') ? 'Local' : `#RES-${id}`;
+}
+
+function parsePedidoMeta(p: Pedido): PedidoMeta {
+  let itemsList: PedidoItem[] = [];
+  let totalVal = p.adelanto;
+  let summary = p.productoTexto;
+
+  if (p.productoTexto.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(p.productoTexto);
+      itemsList = parsed.items || [];
+      totalVal = parsed.total || p.adelanto;
+      summary =
+        parsed.legacyText ||
+        itemsList.map(i => i.name).join(', ') ||
+        'Reserva';
+    } catch {
+      summary = p.productoTexto;
+    }
+  }
+
+  const trimmed = summary.replace(/\s+/g, ' ').trim();
+  return {
+    itemsList,
+    totalVal,
+    summary: trimmed.length > 100 ? `${trimmed.slice(0, 100)}…` : trimmed,
+    itemCount: itemsList.length,
+  };
+}
+
+function comparePedidosByArrival(a: Pedido, b: Pedido): number {
+  const arrivalDiff = getPedidoArrivalMs(b) - getPedidoArrivalMs(a);
+  if (arrivalDiff !== 0) return arrivalDiff;
+  return new Date(a.fecEntrega).getTime() - new Date(b.fecEntrega).getTime();
+}
+
 export default function PedidosPage() {
   const {
-    pedidos, clients, savePedido, updatePedidoStatus, user, products,
-    paymentMethods, deliverPedido, calcularInsumosParaPedido,
+    pedidos, clients, savePedido, saveClient, updatePedidoStatus, user, products,
+    paymentMethods, deliverPedido, calcularInsumosParaPedido, toast,
   } = useApp();
 
   const [nowTime] = useState(() => Date.now());
   const [activeTab, setActiveTab] = useState<'Todos' | 'Pendiente' | 'Listo' | 'Entregado' | 'Cancelado'>('Todos');
   const [search, setSearch] = useState('');
+  const [expandedPedidoId, setExpandedPedidoId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editingPedido, setEditingPedido] = useState<Pedido | null>(null);
 
@@ -23,9 +110,13 @@ export default function PedidosPage() {
   const [fAdelanto, setFAdelanto] = useState('0');
   const [fNotas, setFNotas] = useState('');
 
-  // Client search states
+  // Client search / inline creation states
   const [clientSearch, setClientSearch] = useState('');
   const [showClientDropdown, setShowClientDropdown] = useState(false);
+  const [isCreatingClient, setIsCreatingClient] = useState(false);
+  const [newClientData, setNewClientData] = useState({ nombre: '', dni: '', telefono: '' });
+  const [isDniLoading, setIsDniLoading] = useState(false);
+  const [dniOk, setDniOk] = useState(false);
 
   const minDateStr = useMemo(() => {
     const today = new Date();
@@ -263,11 +354,124 @@ export default function PedidosPage() {
   const filteredClients = useMemo(() => {
     if (!clientSearch.trim()) return clients;
     const query = clientSearch.toLowerCase();
-    return clients.filter(c => 
-      c.nombre.toLowerCase().includes(query) || 
+    return clients.filter(c =>
+      c.nombre.toLowerCase().includes(query) ||
       (c.dni && c.dni.includes(query))
     );
   }, [clients, clientSearch]);
+
+  const hasExactClientMatch = useMemo(() => {
+    const q = clientSearch.trim().toLowerCase();
+    if (!q) return false;
+    return clients.some(
+      c =>
+        c.nombre.trim().toLowerCase() === q ||
+        (c.dni && c.dni.trim() === clientSearch.trim())
+    );
+  }, [clients, clientSearch]);
+
+  const resetNewClientForm = () => {
+    setIsCreatingClient(false);
+    setNewClientData({ nombre: '', dni: '', telefono: '' });
+    setDniOk(false);
+    setIsDniLoading(false);
+  };
+
+  const startCreatingClient = (nombrePrefill = '') => {
+    const nombre = nombrePrefill.trim();
+    setIsCreatingClient(true);
+    setFClienteId('');
+    setNewClientData({ nombre, dni: '', telefono: '' });
+    setDniOk(false);
+    setShowClientDropdown(false);
+    if (nombre) setClientSearch(nombre);
+  };
+
+  const selectExistingClient = (c: (typeof clients)[number]) => {
+    setFClienteId(String(c.id));
+    setClientSearch(c.nombre);
+    setShowClientDropdown(false);
+    resetNewClientForm();
+  };
+
+  const handleNewClientDniChange = (rawDni: string) => {
+    const dni = rawDni.replace(/\D/g, '');
+    setNewClientData(prev => ({ ...prev, dni }));
+    setDniOk(false);
+
+    if (dni.length >= 8) {
+      const existing = clients.find(c => c.dni && c.dni.trim() === dni.trim());
+      if (existing) {
+        toast(`ℹ️ Cliente ya registrado: ${existing.nombre}. Se usarán sus datos.`);
+        selectExistingClient(existing);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!isCreatingClient || newClientData.dni.length !== 8 || newClientData.nombre) return;
+
+    const fetchDni = async () => {
+      setIsDniLoading(true);
+      try {
+        const res = await fetch('/api/consulta-dni', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dni: newClientData.dni }),
+        });
+        const json = await res.json();
+        if (res.ok && json.success) {
+          const d = json.data;
+          const fullName = `${d.nombres || ''} ${d.apellido_paterno || ''} ${d.apellido_materno || ''}`
+            .replace(/\s+/g, ' ')
+            .trim();
+          setNewClientData(prev => ({ ...prev, nombre: fullName }));
+          setClientSearch(fullName);
+          setDniOk(true);
+          toast('✅ Datos de DNI encontrados y completados');
+        } else {
+          toast('⚠️ ' + (json.message || 'DNI no encontrado en RENIEC'));
+        }
+      } catch (error) {
+        console.error('Error fetching DNI', error);
+      } finally {
+        setIsDniLoading(false);
+      }
+    };
+
+    void fetchDni();
+  }, [isCreatingClient, newClientData.dni, newClientData.nombre, toast]);
+
+  const resolveClienteId = async (): Promise<number | null> => {
+    if (fClienteId) return parseInt(fClienteId);
+
+    const nombre = isCreatingClient ? newClientData.nombre.trim() : clientSearch.trim();
+    if (!nombre) return null;
+
+    const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s'\-]+$/;
+    if (!nameRegex.test(nombre)) {
+      alert('El nombre del cliente solo debe contener letras.');
+      return null;
+    }
+
+    const telefono = (isCreatingClient ? newClientData.telefono : '').replace(/\D/g, '');
+    if (telefono.length > 9) {
+      alert('El celular no debe exceder los 9 dígitos.');
+      return null;
+    }
+
+    const saved = await saveClient({
+      nombre,
+      dni: isCreatingClient ? newClientData.dni : '',
+      telefono,
+    });
+    if (!saved) return null;
+
+    setFClienteId(String(saved.id));
+    setClientSearch(saved.nombre);
+    resetNewClientForm();
+    return typeof saved.id === 'number' ? saved.id : parseInt(String(saved.id));
+  };
 
   const isAdmin = user?.rs?.includes('Administrador');
   const isSupervisor = user?.rs?.includes('Supervisor');
@@ -294,14 +498,37 @@ export default function PedidosPage() {
           (p.notas || '').toLowerCase().includes(searchLower);
         return matchesTab && matchesSearch;
       })
-      .sort((a, b) => new Date(a.fecEntrega).getTime() - new Date(b.fecEntrega).getTime());
+      .sort(comparePedidosByArrival);
   }, [pedidos, activeTab, search]);
+
+  const groupedPedidos = useMemo(() => {
+    const buckets = new Map<string, { label: string; sortKey: number; items: Pedido[] }>();
+
+    for (const p of filteredPedidos) {
+      const arrivalMs = getPedidoArrivalMs(p);
+      const day = new Date(arrivalMs);
+      day.setHours(0, 0, 0, 0);
+      const key = day.toISOString();
+
+      if (!buckets.has(key)) {
+        buckets.set(key, {
+          label: formatArrivalDayLabel(arrivalMs),
+          sortKey: day.getTime(),
+          items: [],
+        });
+      }
+      buckets.get(key)!.items.push(p);
+    }
+
+    return [...buckets.values()].sort((a, b) => b.sortKey - a.sortKey);
+  }, [filteredPedidos]);
 
   const openNewPedido = () => {
     setEditingPedido(null);
     setFClienteId('');
     setClientSearch('');
     setShowClientDropdown(false);
+    resetNewClientForm();
     setFProductoTexto('');
     // Prefill with tomorrow's date at 08:00 AM as a helper
     const tomorrow = new Date();
@@ -330,6 +557,7 @@ export default function PedidosPage() {
     setFClienteId(String(p.clienteId || ''));
     setClientSearch(p.clienteNombre || '');
     setShowClientDropdown(false);
+    resetNewClientForm();
     
     // Parse JSON or keep it legacy
     let parsedItems: any[] = [];
@@ -428,8 +656,9 @@ export default function PedidosPage() {
       }
     }
 
-    if (!fClienteId) {
-      alert('Por favor selecciona un cliente válido de la lista sugerida.');
+    const resolvedClienteId = await resolveClienteId();
+    if (!resolvedClienteId) {
+      alert('Por favor busca un cliente existente o regístralo como nuevo.');
       return;
     }
     if (currentItems.length === 0 && !fProductoTexto.trim()) {
@@ -491,7 +720,7 @@ export default function PedidosPage() {
 
     const payload = {
       id: editingPedido?.id || undefined,
-      clienteId: parseInt(fClienteId),
+      clienteId: resolvedClienteId,
       productoTexto: serializedProductoTexto,
       fecEntrega: new Date(fFecEntrega).toISOString(),
       adelanto: adelantoVal,
@@ -521,6 +750,221 @@ export default function PedidosPage() {
           background: var(--bg-card2) !important;
           color: var(--accent) !important;
         }
+        .pedidos-feed {
+          display: flex;
+          flex-direction: column;
+          gap: 18px;
+        }
+        .pedidos-day-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 0 4px 6px;
+          border-bottom: 1px solid var(--border);
+          position: sticky;
+          top: 0;
+          z-index: 2;
+          background: var(--bg);
+        }
+        .pedidos-day-title {
+          font-size: 12px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.4px;
+          color: var(--text-2);
+        }
+        .pedidos-day-count {
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--text-3);
+          background: var(--bg-card2);
+          border: 1px solid var(--border);
+          border-radius: 999px;
+          padding: 3px 10px;
+        }
+        .pedidos-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .pedido-row {
+          background: var(--bg-card);
+          border: 1.5px solid var(--border);
+          border-radius: 14px;
+          overflow: hidden;
+          transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+        .pedido-row:hover {
+          border-color: var(--border2);
+          box-shadow: 0 6px 18px rgba(46, 26, 10, 0.06);
+        }
+        .pedido-row--overdue {
+          border-left: 4px solid var(--red);
+        }
+        .pedido-row--expanded {
+          border-color: var(--accent);
+          box-shadow: 0 8px 22px rgba(176, 125, 46, 0.1);
+        }
+        .pedido-row__main {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 10px 14px;
+          padding: 14px 16px;
+          cursor: pointer;
+          align-items: start;
+        }
+        .pedido-row__idline {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-bottom: 4px;
+        }
+        .pedido-row__code {
+          font-size: 11px;
+          font-weight: 800;
+          color: var(--text-3);
+          text-transform: uppercase;
+          letter-spacing: 0.3px;
+        }
+        .pedido-row__client {
+          font-size: 15px;
+          font-weight: 800;
+          color: var(--text);
+          margin: 0 0 4px;
+        }
+        .pedido-row__summary {
+          font-size: 12.5px;
+          color: var(--text-2);
+          line-height: 1.45;
+          margin: 0;
+        }
+        .pedido-row__meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px 14px;
+          margin-top: 8px;
+          font-size: 11.5px;
+          font-weight: 600;
+          color: var(--text-3);
+        }
+        .pedido-row__meta span {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .pedido-row__meta .is-overdue {
+          color: var(--red);
+          font-weight: 800;
+        }
+        .pedido-row__aside {
+          text-align: right;
+          min-width: 108px;
+        }
+        .pedido-row__total {
+          font-size: 16px;
+          font-weight: 900;
+          color: var(--text);
+          line-height: 1.1;
+        }
+        .pedido-row__advance {
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--green);
+          margin-top: 2px;
+        }
+        .pedido-row__balance {
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--red);
+          margin-top: 2px;
+        }
+        .pedido-row__balance--paid {
+          color: var(--green);
+        }
+        .pedido-row__toggle {
+          margin-top: 8px;
+          font-size: 10px;
+          font-weight: 800;
+          color: var(--accent);
+          text-transform: uppercase;
+          letter-spacing: 0.3px;
+        }
+        .pedido-row__actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          padding: 0 16px 14px;
+        }
+        .pedido-row__btn {
+          padding: 6px 10px;
+          font-size: 11px;
+          font-weight: 800;
+          border-radius: 8px;
+          border: none;
+          cursor: pointer;
+          font-family: inherit;
+          transition: opacity 0.15s ease;
+        }
+        .pedido-row__btn:hover { opacity: 0.9; }
+        .pedido-row__btn--pri { background: var(--accent); color: #fff; }
+        .pedido-row__btn--ok { background: linear-gradient(135deg, var(--green), #15803d); color: #fff; }
+        .pedido-row__btn--sec {
+          background: var(--bg-card2);
+          color: var(--text-2);
+          border: 1px solid var(--border);
+        }
+        .pedido-row__btn--danger {
+          background: rgba(220, 53, 69, 0.08);
+          color: var(--red);
+          border: 1px solid rgba(220, 53, 69, 0.3);
+        }
+        .pedido-row__details {
+          border-top: 1px dashed var(--border);
+          padding: 12px 16px 16px;
+          background: var(--bg-card2);
+        }
+        .pedido-row__details-pre {
+          background: var(--bg-card);
+          padding: 10px 12px;
+          border-radius: 10px;
+          font-size: 12.5px;
+          color: var(--text-2);
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          white-space: pre-wrap;
+          border: 1px solid var(--border);
+          margin-bottom: 8px;
+        }
+        .pedidos-sort-hint {
+          font-size: 11.5px;
+          font-weight: 700;
+          color: var(--text-3);
+          white-space: nowrap;
+        }
+        .pedidos-tab-count {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 18px;
+          height: 18px;
+          padding: 0 5px;
+          margin-left: 6px;
+          border-radius: 999px;
+          font-size: 10px;
+          font-weight: 800;
+          background: rgba(255, 255, 255, 0.22);
+        }
+        @media (min-width: 768px) {
+          .pedido-row__main {
+            grid-template-columns: minmax(0, 1.6fr) minmax(220px, 0.9fr) 120px;
+            align-items: center;
+          }
+          .pedido-row__aside {
+            grid-column: 3;
+            grid-row: 1 / span 2;
+          }
+        }
       `}</style>
       {/* KPI TILES */}
       <div className="stats-4" style={{ marginBottom: '22px' }}>
@@ -548,225 +992,229 @@ export default function PedidosPage() {
 
       {/* FILTER TABS */}
       <div style={{ display: 'flex', gap: '8px', background: 'var(--bg-2)', padding: '4px', borderRadius: '999px', border: '1px solid var(--border)', width: 'fit-content', marginBottom: '22px', overflowX: 'auto', maxWidth: '100%' }}>
-        {(['Todos', 'Pendiente', 'Listo', 'Entregado', 'Cancelado'] as const).map(t => (
-          <button 
-            key={t} 
-            onClick={() => setActiveTab(t)}
-            style={{ 
-              padding: '6px 18px', 
-              fontSize: '12px', 
-              fontWeight: '700', 
-              borderRadius: '999px', 
-              border: 'none', 
-              background: activeTab === t ? 'var(--accent)' : 'transparent', 
-              color: activeTab === t ? '#fff' : 'var(--text-3)', 
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {t === 'Todos' ? '📋 Todos' : t === 'Pendiente' ? '⏳ Pendientes' : t === 'Listo' ? '🥐 Listos' : t === 'Entregado' ? '✅ Entregados' : '🚫 Cancelados'}
-          </button>
-        ))}
+        {(['Todos', 'Pendiente', 'Listo', 'Entregado', 'Cancelado'] as const).map(t => {
+          const count =
+            t === 'Todos'
+              ? pedidos.length
+              : pedidos.filter(p => p.estado === t).length;
+          const label =
+            t === 'Todos'
+              ? '📋 Todos'
+              : t === 'Pendiente'
+                ? '⏳ Pendientes'
+                : t === 'Listo'
+                  ? '🥐 Listos'
+                  : t === 'Entregado'
+                    ? '✅ Entregados'
+                    : '🚫 Cancelados';
+
+          return (
+            <button
+              key={t}
+              onClick={() => setActiveTab(t)}
+              style={{
+                padding: '6px 18px',
+                fontSize: '12px',
+                fontWeight: '700',
+                borderRadius: '999px',
+                border: 'none',
+                background: activeTab === t ? 'var(--accent)' : 'transparent',
+                color: activeTab === t ? '#fff' : 'var(--text-3)',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                display: 'inline-flex',
+                alignItems: 'center',
+              }}
+            >
+              {label}
+              <span
+                className="pedidos-tab-count"
+                style={
+                  activeTab === t
+                    ? { background: 'rgba(255,255,255,0.22)', color: '#fff', border: 'none' }
+                    : undefined
+                }
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* SEARCH AND CREATE BUTTON */}
-      <div className="tb-bar" style={{ marginBottom: '20px' }}>
+      <div className="tb-bar" style={{ marginBottom: '16px' }}>
         <div className="inp-wrap" style={{ flex: 1, maxWidth: '360px' }}>
           <span className="inp-icon">🔍</span>
-          <input 
-            type="text" 
-            placeholder="Buscar por cliente, pedido..." 
-            value={search} 
-            onChange={e => setSearch(e.target.value)} 
+          <input
+            type="text"
+            placeholder="Buscar por cliente, pedido..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
           />
         </div>
+        <span className="pedidos-sort-hint">
+          {filteredPedidos.length} pedido{filteredPedidos.length === 1 ? '' : 's'} · más recientes arriba
+        </span>
         <button className="btn-new" onClick={openNewPedido}>
           ➕ Nueva Reserva / Pedido
         </button>
       </div>
 
-      {/* ORDERS LIST */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '16px' }}>
-        {filteredPedidos.map(p => {
-          const dateStr = new Date(p.fecEntrega).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-          const isOverdue = new Date(p.fecEntrega).getTime() < nowTime && (p.estado === 'Pendiente' || p.estado === 'Listo');
-          
-          let itemsList: any[] = [];
-          let totalVal = p.adelanto;
-          if (p.productoTexto.startsWith('{')) {
-            try {
-              const parsed = JSON.parse(p.productoTexto);
-              itemsList = parsed.items || [];
-              totalVal = parsed.total || p.adelanto;
-            } catch (e) {}
-          }
-          const saldoVal = Math.max(0, totalVal - p.adelanto);
-
-          return (
-            <div 
-              key={p.id} 
-              className="panel" 
-              style={{ 
-                padding: '18px 20px', 
-                border: isOverdue ? '2.5px solid rgba(220,53,69,0.5)' : '1.5px solid var(--border)',
-                borderRadius: '16px',
-                background: 'var(--bg-card)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                gap: '12px'
-              }}
-            >
-              {/* Card Header */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                  <div>
-                    <span style={{ fontSize: '10.5px', color: 'var(--text-3)', fontWeight: 700, textTransform: 'uppercase' }}>
-                      Reserva {String(p.id).startsWith('local_') ? '(Local)' : `#RES-${p.id}`}
-                    </span>
-                    <h4 style={{ fontSize: '14px', fontWeight: '800', margin: '2px 0 0 0', color: 'var(--text)' }}>
-                      👤 {p.clienteNombre}
-                    </h4>
-                  </div>
-                  <span className={`tag ${getStatusTagClass(p.estado)}`}>
-                    {p.estado}
-                  </span>
-                </div>
- 
-                {/* Delivery Date */}
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '6px', 
-                  fontSize: '12px', 
-                  color: isOverdue ? 'var(--red)' : 'var(--accent)', 
-                  fontWeight: 700,
-                  marginBottom: '10px'
-                }}>
-                  <span>📅</span>
-                  <span>Entrega: {dateStr} {isOverdue && '(Retrasado)'}</span>
-                </div>
- 
-                {/* Products text */}
-                <div style={{ 
-                  background: 'var(--bg-card2)', 
-                  padding: '10px 12px', 
-                  borderRadius: '10px', 
-                  fontSize: '12.5px', 
-                  color: 'var(--text-2)', 
-                  fontFamily: 'monospace',
-                  whiteSpace: 'pre-wrap',
-                  border: '1px solid var(--border)',
-                  marginBottom: '8px'
-                }}>
-                  {getPedidoDescription(p.productoTexto)}
-                </div>
-
-                {itemsList.length > 0 && (p.estado === 'Pendiente' || p.estado === 'Listo') && (
-                  <div style={{ marginBottom: '8px' }}>
-                    <MateriaPrimaPanel
-                      plan={calcularInsumosParaPedido(itemsList as PedidoItem[])}
-                      compact
-                    />
-                  </div>
-                )}
- 
-                {/* Notes */}
-                {p.notas && (
-                  <div style={{ fontSize: '11.5px', color: 'var(--text-3)', fontStyle: 'italic', marginBottom: '8px' }}>
-                    📌 Nota: {p.notas}
-                  </div>
-                )}
-              </div>
- 
-              {/* Card Footer Actions */}
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>Total Pedido:</span>
-                    <strong style={{ fontSize: '13px', color: 'var(--text)' }}>S/. {totalVal.toFixed(2)}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>Adelanto:</span>
-                    <strong style={{ fontSize: '13px', color: 'var(--green)' }}>S/. {p.adelanto.toFixed(2)}</strong>
-                  </div>
-                  {saldoVal > 0 ? (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>Saldo Restante:</span>
-                      <strong style={{ fontSize: '13px', color: 'var(--red)' }}>S/. {saldoVal.toFixed(2)}</strong>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>Saldo Restante:</span>
-                      <strong style={{ fontSize: '12px', color: 'var(--green)' }}>✅ Pagado</strong>
-                    </div>
-                  )}
-                </div>
- 
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {p.estado === 'Pendiente' && (
-                    <button 
-                      onClick={() => {
-                        const plan = calcularInsumosParaPedido(itemsList as PedidoItem[]);
-                        if (itemsList.length > 0 && !plan.todosDisponibles) {
-                          const ok = window.confirm(
-                            'Hay insumos insuficientes para este pedido. ¿Marcar como listo de todos modos?'
-                          );
-                          if (!ok) return;
-                        }
-                        updatePedidoStatus(p.id, 'Listo');
-                        if (editingPedido?.id === p.id) {
-                          setShowModal(false);
-                          setEditingPedido(null);
-                        }
-                      }}
-                      style={{ flex: 1, padding: '6px 8px', fontSize: '11px', fontWeight: '800', borderRadius: '8px', border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer' }}
-                    >
-                      🥐 Listo para Entregar
-                    </button>
-                  )}
-                  {p.estado === 'Listo' && (
-                    <button 
-                      onClick={() => {
-                        setDeliveringPedido(p);
-                        setDelPaymentMethodId('');
-                        setShowDeliveryModal(true);
-                      }}
-                      style={{ flex: 1, padding: '6px 8px', fontSize: '11px', fontWeight: '800', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, var(--green), #15803d)', color: '#fff', cursor: 'pointer' }}
-                    >
-                      ✅ Entregar Pedido
-                    </button>
-                  )}
-                  
-                  {/* Cancel button for non-finalized orders */}
-                  {(p.estado === 'Pendiente' || p.estado === 'Listo') && (
-                    <button 
-                      onClick={() => updatePedidoStatus(p.id, 'Cancelado')}
-                      style={{ padding: '6px 10px', fontSize: '11px', fontWeight: '700', borderRadius: '8px', border: '1px solid rgba(220,53,69,0.3)', background: 'rgba(220,53,69,0.08)', color: 'var(--red)', cursor: 'pointer' }}
-                      title="Cancelar Reserva"
-                    >
-                      🚫 Cancelar
-                    </button>
-                  )}
- 
-                  {/* Editar solo mientras está pendiente (no en Listo ni después de entregar) */}
-                  {p.estado === 'Pendiente' && (
-                    <button 
-                      onClick={() => openEditPedido(p)}
-                      style={{ padding: '6px 10px', fontSize: '11px', fontWeight: '700', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-card2)', color: 'var(--text-2)', cursor: 'pointer' }}
-                      title="Editar Reserva"
-                    >
-                      ✏️ Editar
-                    </button>
-                  )}
-                </div>
-              </div>
+      {/* ORDERS LIST — feed por día de llegada */}
+      <div className="pedidos-feed">
+        {groupedPedidos.map(group => (
+          <section key={group.label} className="pedidos-day-group">
+            <div className="pedidos-day-header">
+              <span className="pedidos-day-title">{group.label}</span>
+              <span className="pedidos-day-count">
+                {group.items.length} pedido{group.items.length === 1 ? '' : 's'}
+              </span>
             </div>
-          );
-        })}
+
+            <div className="pedidos-list">
+              {group.items.map(p => {
+                const meta = parsePedidoMeta(p);
+                const { itemsList, totalVal, summary, itemCount } = meta;
+                const arrivalMs = getPedidoArrivalMs(p);
+                const deliveryStr = new Date(p.fecEntrega).toLocaleString('es-PE', {
+                  day: '2-digit',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+                const isOverdue =
+                  new Date(p.fecEntrega).getTime() < nowTime &&
+                  (p.estado === 'Pendiente' || p.estado === 'Listo');
+                const saldoVal = Math.max(0, totalVal - p.adelanto);
+                const rowId = String(p.id);
+                const isExpanded = expandedPedidoId === rowId;
+
+                return (
+                  <article
+                    key={p.id}
+                    className={`pedido-row${isOverdue ? ' pedido-row--overdue' : ''}${isExpanded ? ' pedido-row--expanded' : ''}`}
+                  >
+                    <div
+                      className="pedido-row__main"
+                      onClick={() => setExpandedPedidoId(isExpanded ? null : rowId)}
+                    >
+                      <div>
+                        <div className="pedido-row__idline">
+                          <span className="pedido-row__code">Reserva {formatPedidoId(p.id)}</span>
+                          <span className={`tag ${getStatusTagClass(p.estado)}`}>{p.estado}</span>
+                        </div>
+                        <h4 className="pedido-row__client">👤 {p.clienteNombre}</h4>
+                        <p className="pedido-row__summary">
+                          {itemCount > 0 ? `${itemCount} ítem${itemCount === 1 ? '' : 's'} · ` : ''}
+                          {summary}
+                        </p>
+                        <div className="pedido-row__meta">
+                          <span>🕐 Llegó {formatRelativeArrival(arrivalMs)}</span>
+                          <span className={isOverdue ? 'is-overdue' : ''}>
+                            📅 Entrega {deliveryStr}
+                            {isOverdue ? ' · Retrasado' : ''}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pedido-row__aside">
+                        <div className="pedido-row__total">S/. {totalVal.toFixed(2)}</div>
+                        <div className="pedido-row__advance">Adelanto S/. {p.adelanto.toFixed(2)}</div>
+                        {saldoVal > 0 ? (
+                          <div className="pedido-row__balance">Saldo S/. {saldoVal.toFixed(2)}</div>
+                        ) : (
+                          <div className="pedido-row__balance pedido-row__balance--paid">✅ Pagado</div>
+                        )}
+                        <div className="pedido-row__toggle">{isExpanded ? '▲ Ocultar' : '▼ Ver detalle'}</div>
+                      </div>
+                    </div>
+
+                    <div className="pedido-row__actions" onClick={e => e.stopPropagation()}>
+                      {p.estado === 'Pendiente' && (
+                        <button
+                          type="button"
+                          className="pedido-row__btn pedido-row__btn--pri"
+                          onClick={() => {
+                            const plan = calcularInsumosParaPedido(itemsList);
+                            if (itemsList.length > 0 && !plan.todosDisponibles) {
+                              const ok = window.confirm(
+                                'Hay insumos insuficientes para este pedido. ¿Marcar como listo de todos modos?'
+                              );
+                              if (!ok) return;
+                            }
+                            updatePedidoStatus(p.id, 'Listo');
+                            if (editingPedido?.id === p.id) {
+                              setShowModal(false);
+                              setEditingPedido(null);
+                            }
+                          }}
+                        >
+                          🥐 Listo
+                        </button>
+                      )}
+                      {p.estado === 'Listo' && (
+                        <button
+                          type="button"
+                          className="pedido-row__btn pedido-row__btn--ok"
+                          onClick={() => {
+                            setDeliveringPedido(p);
+                            setDelPaymentMethodId('');
+                            setShowDeliveryModal(true);
+                          }}
+                        >
+                          ✅ Entregar
+                        </button>
+                      )}
+                      {p.estado === 'Pendiente' && (
+                        <button
+                          type="button"
+                          className="pedido-row__btn pedido-row__btn--sec"
+                          onClick={() => openEditPedido(p)}
+                          title="Editar Reserva"
+                        >
+                          ✏️ Editar
+                        </button>
+                      )}
+                      {(p.estado === 'Pendiente' || p.estado === 'Listo') && (
+                        <button
+                          type="button"
+                          className="pedido-row__btn pedido-row__btn--danger"
+                          onClick={() => updatePedidoStatus(p.id, 'Cancelado')}
+                          title="Cancelar Reserva"
+                        >
+                          🚫 Cancelar
+                        </button>
+                      )}
+                    </div>
+
+                    {isExpanded && (
+                      <div className="pedido-row__details">
+                        <pre className="pedido-row__details-pre">
+                          {getPedidoDescription(p.productoTexto)}
+                        </pre>
+                        {itemsList.length > 0 && (p.estado === 'Pendiente' || p.estado === 'Listo') && (
+                          <MateriaPrimaPanel
+                            plan={calcularInsumosParaPedido(itemsList)}
+                            compact
+                          />
+                        )}
+                        {p.notas && (
+                          <div style={{ fontSize: '11.5px', color: 'var(--text-3)', fontStyle: 'italic', marginTop: '8px' }}>
+                            📌 Nota: {p.notas}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        ))}
 
         {filteredPedidos.length === 0 && (
-          <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px', color: 'var(--text-3)' }}>
+          <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-3)' }}>
             <div style={{ fontSize: '48px', marginBottom: '12px' }}>📅</div>
             <p>No hay reservas en esta categoría. ¡Crea una nueva!</p>
           </div>
@@ -811,118 +1259,212 @@ export default function PedidosPage() {
                  
                 {/* Cliente Selector */}
                 <div className="inp-group">
-                  <label>Cliente Pactado *</label>
-                  <div className="inp-wrap" style={{ position: 'relative' }}>
-                    <span className="inp-icon">👤</span>
-                    <input 
-                      type="text"
-                      placeholder="Escribe el nombre o DNI del cliente..."
-                      value={clientSearch}
-                      onFocus={() => setShowClientDropdown(true)}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setClientSearch(val);
-                        const currentClient = clients.find(c => String(c.id) === String(fClienteId));
-                        if (!currentClient || currentClient.nombre !== val) {
-                          setFClienteId('');
-                        }
-                        setShowClientDropdown(true);
-                      }}
-                      required
-                      style={{
-                        paddingRight: fClienteId ? '35px' : '12px'
-                      }}
-                    />
-                    {fClienteId && (
-                      <button 
-                        type="button" 
-                        onClick={() => {
-                          setFClienteId('');
-                          setClientSearch('');
-                        }}
-                        style={{
-                          position: 'absolute',
-                          right: '12px',
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--text-3)',
-                          cursor: 'pointer',
-                          fontWeight: 'bold',
-                          fontSize: '14px',
-                          zIndex: 10,
-                          padding: '4px'
-                        }}
-                        title="Limpiar cliente"
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ margin: 0 }}>Cliente Pactado *</label>
+                    {!isCreatingClient ? (
+                      <button
+                        type="button"
+                        onClick={() => startCreatingClient(clientSearch)}
+                        style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: '11.5px', fontWeight: '800', cursor: 'pointer' }}
                       >
-                        ✕
+                        + Nuevo cliente
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          resetNewClientForm();
+                          setFClienteId('');
+                        }}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-3)', fontSize: '11.5px', fontWeight: '800', cursor: 'pointer' }}
+                      >
+                        Volver a buscar
                       </button>
                     )}
+                  </div>
 
-                    {showClientDropdown && (
-                      <>
-                        <div 
-                          onClick={() => setShowClientDropdown(false)} 
-                          style={{
-                            position: 'fixed',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            zIndex: 998
+                  {!isCreatingClient ? (
+                    <div className="inp-wrap" style={{ position: 'relative' }}>
+                      <span className="inp-icon">👤</span>
+                      <input
+                        type="text"
+                        placeholder="Busca por nombre o DNI del cliente..."
+                        value={clientSearch}
+                        onFocus={() => setShowClientDropdown(true)}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setClientSearch(val);
+                          const currentClient = clients.find(c => String(c.id) === String(fClienteId));
+                          if (!currentClient || currentClient.nombre !== val) {
+                            setFClienteId('');
+                          }
+                          setShowClientDropdown(true);
+                        }}
+                        style={{ paddingRight: fClienteId ? '35px' : '12px' }}
+                      />
+                      {fClienteId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFClienteId('');
+                            setClientSearch('');
                           }}
-                        />
-                        <div 
                           style={{
                             position: 'absolute',
-                            top: '100%',
-                            left: 0,
-                            right: 0,
-                            background: 'var(--bg-card)',
-                            border: '1px solid var(--border2)',
-                            borderRadius: '12px',
-                            boxShadow: '0 10px 25px -5px rgba(0,0,0,0.12), 0 8px 10px -6px rgba(0,0,0,0.12)',
-                            maxHeight: '180px',
-                            overflowY: 'auto',
-                            zIndex: 999,
-                            marginTop: '6px'
+                            right: '12px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--text-3)',
+                            cursor: 'pointer',
+                            fontWeight: 'bold',
+                            fontSize: '14px',
+                            zIndex: 10,
+                            padding: '4px',
                           }}
+                          title="Limpiar cliente"
                         >
-                          {filteredClients.length === 0 ? (
-                            <div style={{ padding: '10px 12px', fontSize: '12.5px', color: 'var(--text-3)', textAlign: 'center' }}>
-                              No se encontraron clientes
-                            </div>
-                          ) : (
-                            filteredClients.map(c => (
-                              <div 
-                                key={c.id}
-                                onClick={() => {
-                                  setFClienteId(String(c.id));
-                                  setClientSearch(c.nombre);
-                                  setShowClientDropdown(false);
-                                }}
-                                style={{
-                                  padding: '10px 12px',
-                                  fontSize: '13px',
-                                  color: 'var(--text)',
-                                  cursor: 'pointer',
-                                  borderBottom: '1px solid var(--border)',
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
-                                  background: fClienteId === String(c.id) ? 'var(--accent-bg)' : 'transparent'
-                                }}
-                                className="client-option"
-                              >
-                                <span>👤 {c.nombre}</span>
-                                {c.dni && <span style={{ color: 'var(--text-3)', fontSize: '11px' }}>DNI: {c.dni}</span>}
+                          ✕
+                        </button>
+                      )}
+
+                      {showClientDropdown && (
+                        <>
+                          <div
+                            onClick={() => setShowClientDropdown(false)}
+                            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }}
+                          />
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: '100%',
+                              left: 0,
+                              right: 0,
+                              background: 'var(--bg-card)',
+                              border: '1px solid var(--border2)',
+                              borderRadius: '12px',
+                              boxShadow: '0 10px 25px -5px rgba(0,0,0,0.12), 0 8px 10px -6px rgba(0,0,0,0.12)',
+                              maxHeight: '220px',
+                              overflowY: 'auto',
+                              zIndex: 999,
+                              marginTop: '6px',
+                            }}
+                          >
+                            {filteredClients.length === 0 && !clientSearch.trim() ? (
+                              <div style={{ padding: '10px 12px', fontSize: '12.5px', color: 'var(--text-3)', textAlign: 'center' }}>
+                                Escribe para buscar o crea un cliente nuevo
                               </div>
-                            ))
+                            ) : (
+                              <>
+                                {filteredClients.map(c => (
+                                  <div
+                                    key={c.id}
+                                    onClick={() => selectExistingClient(c)}
+                                    style={{
+                                      padding: '10px 12px',
+                                      fontSize: '13px',
+                                      color: 'var(--text)',
+                                      cursor: 'pointer',
+                                      borderBottom: '1px solid var(--border)',
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      background: fClienteId === String(c.id) ? 'var(--accent-bg)' : 'transparent',
+                                    }}
+                                    className="client-option"
+                                  >
+                                    <span>👤 {c.nombre}</span>
+                                    {c.dni && <span style={{ color: 'var(--text-3)', fontSize: '11px' }}>DNI: {c.dni}</span>}
+                                  </div>
+                                ))}
+                                {clientSearch.trim() && !hasExactClientMatch && (
+                                  <div
+                                    onClick={() => startCreatingClient(clientSearch)}
+                                    style={{
+                                      padding: '10px 12px',
+                                      fontSize: '12.5px',
+                                      color: 'var(--accent)',
+                                      cursor: 'pointer',
+                                      fontWeight: '700',
+                                      background: 'var(--accent-bg)',
+                                    }}
+                                    className="client-option"
+                                  >
+                                    ➕ Registrar &quot;{clientSearch.trim()}&quot; como cliente nuevo
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </>
+                      )}
+                      {!fClienteId && clientSearch.trim() && !hasExactClientMatch && (
+                        <p style={{ margin: '6px 0 0', fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>
+                          Si no está en la lista, usa <strong style={{ color: 'var(--accent)' }}>+ Nuevo cliente</strong> o el botón del desplegable.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr',
+                        gap: '8px',
+                        padding: '14px',
+                        background: 'var(--bg-card2)',
+                        borderRadius: '12px',
+                        border: '1.5px dashed var(--border)',
+                      }}
+                    >
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div style={{ position: 'relative' }}>
+                          <input
+                            placeholder="DNI (opcional)"
+                            value={newClientData.dni}
+                            onChange={e => handleNewClientDniChange(e.target.value)}
+                            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', fontSize: '13px', background: 'var(--bg-card)' }}
+                            maxLength={11}
+                          />
+                          {isDniLoading && (
+                            <span style={{ position: 'absolute', right: '10px', top: '10px', animation: 'spin 1.5s linear infinite', fontSize: '14px' }}>
+                              🥐
+                            </span>
                           )}
                         </div>
-                      </>
-                    )}
-                  </div>
+                        <input
+                          placeholder="Celular (máx. 9 dígitos)"
+                          value={newClientData.telefono}
+                          onChange={e =>
+                            setNewClientData({ ...newClientData, telefono: e.target.value.replace(/\D/g, '') })
+                          }
+                          style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', fontSize: '13px', background: 'var(--bg-card)' }}
+                          maxLength={9}
+                        />
+                      </div>
+                      <input
+                        placeholder="Nombre completo *"
+                        value={newClientData.nombre}
+                        onChange={e => {
+                          const nombre = e.target.value;
+                          setNewClientData({ ...newClientData, nombre });
+                          setClientSearch(nombre);
+                        }}
+                        readOnly={dniOk}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          borderRadius: '8px',
+                          border: '1.5px solid var(--border)',
+                          fontSize: '13px',
+                          background: dniOk ? 'var(--bg-hover)' : 'var(--bg-card)',
+                          cursor: dniOk ? 'not-allowed' : undefined,
+                        }}
+                      />
+                      <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>
+                        Se registrará al guardar la reserva si no existe en tu lista de clientes.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Unified Items Picker Section */}

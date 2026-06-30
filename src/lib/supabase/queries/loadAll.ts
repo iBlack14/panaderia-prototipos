@@ -78,7 +78,7 @@ export async function loadAllFromSupabase(supabase: SupabaseClient): Promise<Loa
       .eq('estado', 1)
       .order('fec_compra', { ascending: false })
       .limit(200),
-    supabase.from('pedidos_reserva').select('*, clientes(nombre)').order('fec_entrega', { ascending: true }),
+    supabase.from('pedidos_reserva').select('*, clientes(nombre)').order('created_at', { ascending: false }),
     supabase.from('insumos').select('*').order('id_insumo', { ascending: true }),
     supabase
       .from('recetas')

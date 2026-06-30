@@ -168,7 +168,7 @@ export async function fetchPedidos(supabase: SupabaseClient) {
   const { data, error } = await supabase
     .from('pedidos_reserva')
     .select('*, clientes(nombre)')
-    .order('fec_entrega', { ascending: true });
+    .order('created_at', { ascending: false });
   if (error) throw error;
   return mapPedidosFromDb(data as Record<string, unknown>[]);
 }
