@@ -14,6 +14,7 @@ const STATUS_CONFIG: Record<
 > = {
   synced: { icon: '🟢', label: 'Sincronizado', className: 'sync-chip--synced' },
   syncing: { icon: '🟡', label: 'Sincronizando…', className: 'sync-chip--syncing' },
+  polling: { icon: '🔵', label: 'Sync automático', className: 'sync-chip--polling' },
   offline: { icon: '🔴', label: 'Sin conexión', className: 'sync-chip--offline' },
   error: { icon: '🔴', label: 'Error de sync', className: 'sync-chip--error' },
 };

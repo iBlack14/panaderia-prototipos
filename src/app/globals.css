@@ -680,6 +680,11 @@ button {
   border-color: rgba(234, 179, 8, 0.3);
   animation: syncPulse 1.4s ease-in-out infinite;
 }
+.sync-chip--polling {
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+  border-color: rgba(59, 130, 246, 0.25);
+}
 .sync-chip--offline,
 .sync-chip--error {
   background: rgba(239, 68, 68, 0.1);

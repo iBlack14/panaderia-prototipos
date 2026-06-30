@@ -229,7 +229,7 @@ export interface Receta {
   margenDeseado: number;
 }
 
-export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error';
+export type SyncStatus = 'synced' | 'syncing' | 'polling' | 'offline' | 'error';
 
 export interface AppContextType {
   user: User | null;

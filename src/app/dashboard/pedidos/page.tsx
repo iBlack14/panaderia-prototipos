@@ -7,7 +7,7 @@ import { MateriaPrimaPanel } from '@/components/MateriaPrimaPanel';
 export default function PedidosPage() {
   const {
     pedidos, clients, savePedido, updatePedidoStatus, user, products,
-    paymentMethods, deliverPedido, insumos, calcularInsumosParaPedido,
+    paymentMethods, deliverPedido, calcularInsumosParaPedido,
   } = useApp();
 
   const [nowTime] = useState(() => Date.now());
@@ -43,11 +43,87 @@ export default function PedidosPage() {
     [reservationItems, calcularInsumosParaPedido]
   );
 
-  // Product/Insumo/Custom picker states
-  const [itemType, setItemType] = useState<'producto' | 'insumo' | 'personalizado'>('producto');
+  const MAX_MONTO_DIGITOS = 8;
+  const MAX_MONTO_VALOR = 99_999_999.99;
+
+  const calcItemsTotal = (items: PedidoItem[]) =>
+    items.reduce((sum, item) => sum + item.price * item.qty, 0);
+
+  const capMontoValor = (raw: string) => {
+    if (raw === '' || raw === '-') return raw;
+    const normalized = raw.replace(',', '.');
+    if (!/^\d*\.?\d*$/.test(normalized)) return null;
+
+    let [enteroPart = '', decimalPart = ''] = normalized.split('.');
+    const hasDot = normalized.includes('.');
+
+    if (enteroPart.length > MAX_MONTO_DIGITOS) {
+      enteroPart = enteroPart.slice(0, MAX_MONTO_DIGITOS);
+    }
+    if (decimalPart.length > 2) {
+      decimalPart = decimalPart.slice(0, 2);
+    }
+
+    const assembled = hasDot ? `${enteroPart}${decimalPart !== '' || normalized.endsWith('.') ? `.${decimalPart}` : ''}` : enteroPart;
+    if (assembled === '' || assembled === '.') return assembled;
+
+    const num = parseFloat(assembled);
+    if (isNaN(num)) return assembled;
+    if (num > MAX_MONTO_VALOR) return MAX_MONTO_VALOR.toFixed(2);
+    if (num < 0) return '0';
+    return assembled;
+  };
+
+  const formatMontoFromNumber = (value: number) => {
+    const capped = Math.min(Math.max(value, 0), MAX_MONTO_VALOR);
+    return capped.toFixed(2);
+  };
+
+  const effectiveFormTotal = useMemo(() => {
+    if (reservationItems.length > 0 && !isTotalManual) {
+      return calcItemsTotal(reservationItems);
+    }
+    return parseFloat(fTotal) || 0;
+  }, [reservationItems, isTotalManual, fTotal]);
+
+  const adelantoNum = parseFloat(fAdelanto) || 0;
+  const adelantoExcedeTotal =
+    effectiveFormTotal > 0 && adelantoNum > effectiveFormTotal + 0.001;
+  const adelantoIgualTotal =
+    effectiveFormTotal > 0 && Math.abs(adelantoNum - effectiveFormTotal) < 0.01;
+
+  const clampAdelantoToTotal = (raw: string, total: number) => {
+    if (raw === '' || raw === '-') return raw;
+    const num = parseFloat(raw);
+    if (isNaN(num)) return raw;
+    if (num < 0) return '0';
+    if (total > 0 && num > total) return total.toFixed(2);
+    return raw;
+  };
+
+  const handleTotalChange = (raw: string) => {
+    const capped = capMontoValor(raw);
+    if (capped === null) return;
+    setFTotal(capped);
+    setIsTotalManual(true);
+    const newTotal = parseFloat(capped) || 0;
+    setFAdelanto(prev => clampAdelantoToTotal(prev, newTotal));
+  };
+
+  const handleAdelantoChange = (raw: string) => {
+    const capped = capMontoValor(raw);
+    if (capped === null) return;
+    setFAdelanto(clampAdelantoToTotal(capped, effectiveFormTotal));
+  };
+
+  const totalDigitosEnteros = (fTotal.split('.')[0] || '').replace(/\D/g, '').length;
+  const totalExcedeDigitos = totalDigitosEnteros > MAX_MONTO_DIGITOS;
+  const totalExcedeMaximo = effectiveFormTotal > MAX_MONTO_VALOR + 0.001;
+
+  // Product / custom picker states
+  const [itemType, setItemType] = useState<'producto' | 'personalizado'>('producto');
   const [selectedProdId, setSelectedProdId] = useState('');
   const [selectedVersionId, setSelectedVersionId] = useState('');
-  const [selectedInsumoId, setSelectedInsumoId] = useState('');
   const [customItemName, setCustomItemName] = useState('');
   const [itemPrice, setItemPrice] = useState('');
   const [selectedQty, setSelectedQty] = useState('1');
@@ -86,16 +162,6 @@ export default function PedidosPage() {
     }
   };
 
-  const handleInsumoChange = (insumoId: string) => {
-    setSelectedInsumoId(insumoId);
-    const ins = insumos.find(i => String(i.id) === insumoId);
-    if (ins) {
-      setItemPrice(String(ins.costoUnitario));
-    } else {
-      setItemPrice('');
-    }
-  };
-
   const handleAddItemToReservation = () => {
     let name = '';
     let price = parseFloat(itemPrice) || 0;
@@ -103,7 +169,6 @@ export default function PedidosPage() {
     let versionName: string | null = null;
     let unidadMedida = 'und';
     let productId: number | null = null;
-    let insumoId: number | null = null;
 
     if (qty <= 0 || isNaN(qty)) {
       alert('Por favor ingresa una cantidad válida mayor a 0.');
@@ -130,17 +195,6 @@ export default function PedidosPage() {
       } else {
         price = isNaN(price) || price === 0 ? prod.price : price;
       }
-    } else if (itemType === 'insumo') {
-      if (!selectedInsumoId) {
-        alert('Por favor selecciona un insumo.');
-        return;
-      }
-      const ins = insumos.find(i => String(i.id) === selectedInsumoId);
-      if (!ins) return;
-      insumoId = ins.id;
-      name = ins.nombre;
-      unidadMedida = ins.unidadMedida || 'kg';
-      price = isNaN(price) || price === 0 ? ins.costoUnitario : price;
     } else {
       // Personalizado
       if (!customItemName.trim()) {
@@ -155,7 +209,7 @@ export default function PedidosPage() {
     const newItem = {
       type: itemType,
       productId,
-      insumoId,
+      insumoId: null,
       name,
       price,
       qty,
@@ -167,14 +221,14 @@ export default function PedidosPage() {
     setReservationItems(newItems);
 
     if (!isTotalManual) {
-      const newTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
-      setFTotal(newTotal.toFixed(2));
+      const newTotal = calcItemsTotal(newItems);
+      setFTotal(formatMontoFromNumber(newTotal));
+      setFAdelanto(prev => clampAdelantoToTotal(prev, Math.min(newTotal, MAX_MONTO_VALOR)));
     }
 
     // Reset picker states
     setSelectedProdId('');
     setSelectedVersionId('');
-    setSelectedInsumoId('');
     setCustomItemName('');
     setItemPrice('');
     setSelectedQty('1');
@@ -185,8 +239,9 @@ export default function PedidosPage() {
     setReservationItems(newItems);
 
     if (!isTotalManual) {
-      const newTotal = newItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
-      setFTotal(newTotal.toFixed(2));
+      const newTotal = calcItemsTotal(newItems);
+      setFTotal(formatMontoFromNumber(newTotal));
+      setFAdelanto(prev => clampAdelantoToTotal(prev, Math.min(newTotal, MAX_MONTO_VALOR)));
     }
   };
 
@@ -263,7 +318,6 @@ export default function PedidosPage() {
     setItemType('producto');
     setSelectedProdId('');
     setSelectedVersionId('');
-    setSelectedInsumoId('');
     setCustomItemName('');
     setItemPrice('');
     setSelectedQty('1');
@@ -308,7 +362,6 @@ export default function PedidosPage() {
     setItemType('producto');
     setSelectedProdId('');
     setSelectedVersionId('');
-    setSelectedInsumoId('');
     setCustomItemName('');
     setItemPrice('');
     setSelectedQty('1');
@@ -324,7 +377,6 @@ export default function PedidosPage() {
     // Si el usuario seleccionó/escribió algo pero olvidó presionar "Añadir", lo agregamos automáticamente
     if (
       (itemType === 'producto' && selectedProdId) ||
-      (itemType === 'insumo' && selectedInsumoId) ||
       (itemType === 'personalizado' && customItemName.trim())
     ) {
       const qty = parseFloat(selectedQty);
@@ -334,7 +386,6 @@ export default function PedidosPage() {
         let versionName: string | null = null;
         let unidadMedida = 'und';
         let productId: number | null = null;
-        let insumoId: number | null = null;
 
         if (itemType === 'producto') {
           const prod = products.find(p => String(p.id) === selectedProdId);
@@ -352,14 +403,6 @@ export default function PedidosPage() {
               price = isNaN(price) || price === 0 ? prod.price : price;
             }
           }
-        } else if (itemType === 'insumo') {
-          const ins = insumos.find(i => String(i.id) === selectedInsumoId);
-          if (ins) {
-            insumoId = ins.id;
-            name = ins.nombre;
-            unidadMedida = ins.unidadMedida || 'kg';
-            price = isNaN(price) || price === 0 ? ins.costoUnitario : price;
-          }
         } else {
           name = customItemName.trim();
           unidadMedida = 'und';
@@ -370,7 +413,7 @@ export default function PedidosPage() {
           const newItem = {
             type: itemType,
             productId,
-            insumoId,
+            insumoId: null,
             name,
             price,
             qty,
@@ -390,7 +433,7 @@ export default function PedidosPage() {
       return;
     }
     if (currentItems.length === 0 && !fProductoTexto.trim()) {
-      alert('Por favor agrega al menos un producto del inventario, insumo o describe el pedido.');
+      alert('Por favor agrega al menos un producto del catálogo o describe el pedido.');
       return;
     }
     if (!fFecEntrega) {
@@ -405,11 +448,28 @@ export default function PedidosPage() {
       return;
     }
 
-    const totalVal = isTotalManual ? (parseFloat(fTotal) || 0) : currentTotal;
+    const totalVal =
+      currentItems.length > 0 && !isTotalManual
+        ? calcItemsTotal(currentItems)
+        : parseFloat(fTotal) || currentTotal;
     const adelantoVal = parseFloat(fAdelanto) || 0;
 
-    if (adelantoVal > totalVal) {
-      alert('El adelanto no puede ser mayor al monto total de la reserva.');
+    if (totalVal <= 0) {
+      alert('El monto total del pedido debe ser mayor a S/. 0.00');
+      return;
+    }
+    if (totalVal > MAX_MONTO_VALOR) {
+      alert(`El monto total no puede superar S/. ${MAX_MONTO_VALOR.toLocaleString('es-PE', { minimumFractionDigits: 2 })} (máx. ${MAX_MONTO_DIGITOS} dígitos).`);
+      return;
+    }
+    if (adelantoVal < 0) {
+      alert('El adelanto no puede ser negativo.');
+      return;
+    }
+    if (adelantoVal > totalVal + 0.001) {
+      alert(
+        `El adelanto (S/. ${adelantoVal.toFixed(2)}) no puede ser mayor al monto total (S/. ${totalVal.toFixed(2)}).`
+      );
       return;
     }
 
@@ -873,7 +933,7 @@ export default function PedidosPage() {
 
                   {/* Tab Selector */}
                   <div style={{ display: 'flex', gap: '6px', background: 'var(--bg)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border)', marginBottom: '12px' }}>
-                    {(['producto', 'insumo', 'personalizado'] as const).map(type => (
+                    {(['producto', 'personalizado'] as const).map(type => (
                       <button
                         key={type}
                         type="button"
@@ -881,7 +941,6 @@ export default function PedidosPage() {
                           setItemType(type);
                           setSelectedProdId('');
                           setSelectedVersionId('');
-                          setSelectedInsumoId('');
                           setCustomItemName('');
                           setItemPrice('');
                           setSelectedQty('1');
@@ -900,7 +959,7 @@ export default function PedidosPage() {
                           textTransform: 'uppercase'
                         }}
                       >
-                        {type === 'producto' ? '🍞 Producto' : type === 'insumo' ? '🌾 Insumo' : '✍️ Personalizado'}
+                        {type === 'producto' ? '🍞 Producto' : '✍️ Personalizado'}
                       </button>
                     ))}
                   </div>
@@ -919,21 +978,6 @@ export default function PedidosPage() {
                             {products.filter(p => p.cat !== 'Insumos').map(p => (
                               <option key={p.id} value={p.id}>
                                 {p.name} (S/. {p.price.toFixed(2)})
-                              </option>
-                            ))}
-                          </select>
-                        )}
-
-                        {itemType === 'insumo' && (
-                          <select
-                            value={selectedInsumoId}
-                            onChange={e => handleInsumoChange(e.target.value)}
-                            style={{ width: '100%', fontSize: '13px' }}
-                          >
-                            <option value="">-- Seleccionar insumo / ingrediente --</option>
-                            {insumos.map(i => (
-                              <option key={i.id} value={i.id}>
-                                {i.nombre} (Costo ref: S/. {i.costoUnitario.toFixed(2)} / {i.unidadMedida})
                               </option>
                             ))}
                           </select>
@@ -997,9 +1041,7 @@ export default function PedidosPage() {
                             style={{ padding: '8px 10px', paddingRight: '40px', width: '100%', fontSize: '13px' }}
                           />
                           <span style={{ position: 'absolute', right: '10px', fontSize: '10px', fontWeight: 'bold', color: 'var(--text-3)', pointerEvents: 'none' }}>
-                            {itemType === 'producto' && selectedProdObj ? (selectedProdObj.unidad_medida || 'und') :
-                             itemType === 'insumo' && selectedInsumoId ? (insumos.find(i => String(i.id) === selectedInsumoId)?.unidadMedida || 'kg') :
-                             'und'}
+                            {itemType === 'producto' && selectedProdObj ? (selectedProdObj.unidad_medida || 'und') : 'und'}
                           </span>
                         </div>
                       </div>
@@ -1023,7 +1065,6 @@ export default function PedidosPage() {
                           <span>
                             <strong>{item.qty} {item.unidadMedida || 'und'}</strong> x {item.name} {item.versionName ? `(${item.versionName})` : ''}
                             <span style={{ color: 'var(--text-3)', fontSize: '11px', marginLeft: '6px' }}>(S/. {item.price.toFixed(2)})</span>
-                            {item.type === 'insumo' && <span style={{ fontSize: '10px', color: 'var(--accent)', marginLeft: '6px', background: 'var(--accent-bg)', padding: '1px 5px', borderRadius: '8px', fontWeight: 'bold' }}>Insumo</span>}
                             {item.type === 'personalizado' && <span style={{ fontSize: '10px', color: '#0d9488', marginLeft: '6px', background: 'rgba(20,184,166,0.1)', padding: '1px 5px', borderRadius: '8px', fontWeight: 'bold' }}>Personalizado</span>}
                           </span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1061,36 +1102,41 @@ export default function PedidosPage() {
 
                 {/* Monto Total del Pedido */}
                 <div className="inp-group">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <label style={{ margin: 0 }}>Monto Total del Pedido (S/.) *</label>
                     <span style={{ fontSize: '11px', color: isTotalManual ? '#d97706' : '#16a34a', fontWeight: '700' }}>
                       {isTotalManual ? '✏️ Ajustado manualmente' : '⚡ Calculado del inventario'}
                     </span>
                   </div>
+                  <p style={{ margin: '0 0 8px', fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>
+                    Máximo {MAX_MONTO_DIGITOS} dígitos (hasta S/. 99,999,999.99)
+                  </p>
                   <div className="inp-wrap">
                     <span className="inp-icon">💵</span>
                     <input 
                       type="number" 
-                      min="0" 
-                      step="0.5" 
+                      min="0.01" 
+                      max={MAX_MONTO_VALOR}
+                      step="0.01" 
                       value={fTotal}
-                      onChange={e => {
-                        setFTotal(e.target.value);
-                        setIsTotalManual(true);
-                      }}
+                      onChange={e => handleTotalChange(e.target.value)}
                       placeholder="0.00"
                       required
+                      inputMode="decimal"
                       style={{
-                        paddingRight: isTotalManual && reservationItems.length > 0 ? '100px' : '16px'
+                        paddingRight: isTotalManual && reservationItems.length > 0 ? '100px' : '16px',
+                        borderColor: totalExcedeDigitos || totalExcedeMaximo ? '#ef4444' : undefined,
                       }}
                     />
                     {isTotalManual && reservationItems.length > 0 && (
                       <button
                         type="button"
                         onClick={() => {
-                          const autoTotal = reservationItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
-                          setFTotal(autoTotal.toFixed(2));
+                          const autoTotal = calcItemsTotal(reservationItems);
+                          const capped = Math.min(autoTotal, MAX_MONTO_VALOR);
+                          setFTotal(formatMontoFromNumber(autoTotal));
                           setIsTotalManual(false);
+                          setFAdelanto(prev => clampAdelantoToTotal(prev, capped));
                         }}
                         style={{
                           position: 'absolute',
@@ -1112,6 +1158,11 @@ export default function PedidosPage() {
                       </button>
                     )}
                   </div>
+                  {(totalExcedeDigitos || totalExcedeMaximo) && (
+                    <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#ef4444', fontWeight: 600 }}>
+                      El monto total no puede superar {MAX_MONTO_DIGITOS} dígitos (máx. S/. 99,999,999.99).
+                    </p>
+                  )}
                 </div>
 
                 {/* Producto/Texto Pedido libre (Opcional) */}
@@ -1149,19 +1200,50 @@ export default function PedidosPage() {
 
                 {/* Adelanto */}
                 <div className="inp-group">
-                  <label>Monto de Adelanto / Garantía (S/.)</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={{ margin: 0 }}>Monto de Adelanto / Garantía (S/.)</label>
+                    {effectiveFormTotal > 0 && (
+                      <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>
+                        Máx: S/. {effectiveFormTotal.toFixed(2)}
+                      </span>
+                    )}
+                  </div>
                   <div className="inp-wrap">
                     <span className="inp-icon">💵</span>
                     <input 
                       type="number" 
                       min="0" 
-                      step="0.5" 
+                      max={effectiveFormTotal > 0 ? Math.min(effectiveFormTotal, MAX_MONTO_VALOR) : MAX_MONTO_VALOR}
+                      step="0.01" 
                       value={fAdelanto}
-                      onChange={e => setFAdelanto(e.target.value)}
+                      onChange={e => handleAdelantoChange(e.target.value)}
+                      inputMode="decimal"
+                      onBlur={() => {
+                        if (fAdelanto === '' || isNaN(parseFloat(fAdelanto))) {
+                          setFAdelanto('0');
+                        }
+                      }}
                       placeholder="0.00"
                       required
+                      style={{
+                        borderColor: adelantoExcedeTotal
+                          ? '#ef4444'
+                          : adelantoIgualTotal
+                            ? '#16a34a'
+                            : undefined,
+                      }}
                     />
                   </div>
+                  {adelantoExcedeTotal && (
+                    <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#ef4444', fontWeight: 600 }}>
+                      El adelanto no puede superar el total del pedido (S/. {effectiveFormTotal.toFixed(2)}).
+                    </p>
+                  )}
+                  {adelantoIgualTotal && !adelantoExcedeTotal && (
+                    <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#16a34a', fontWeight: 600 }}>
+                      Pago total adelantado — al entregar no habrá saldo pendiente.
+                    </p>
+                  )}
                 </div>
 
                 {/* Notas / Observaciones */}
@@ -1178,7 +1260,11 @@ export default function PedidosPage() {
 
               <div className="mc-btns" style={{ marginTop: '20px' }}>
                 <button type="button" className="mc-sec" onClick={() => setShowModal(false)}>Cancelar</button>
-                <button type="submit" className="mc-pri">
+                <button
+                  type="submit"
+                  className="mc-pri"
+                  disabled={adelantoExcedeTotal || effectiveFormTotal <= 0 || totalExcedeDigitos || totalExcedeMaximo}
+                >
                   {editingPedido ? 'Guardar Cambios' : 'Registrar Reserva'}
                 </button>
               </div>

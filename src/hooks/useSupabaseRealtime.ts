@@ -17,6 +17,8 @@ import {
   Sale,
   User,
 } from '@/context/types';
+import { isRealtimeEnabled } from '@/lib/supabase';
+import { loadAllFromSupabase } from '@/lib/supabase/queries/loadAll';
 import {
   fetchCashDrops,
   fetchCashHistory,
@@ -37,9 +39,11 @@ import {
   refetchAfterPurchase,
 } from '@/lib/supabase/queries/reloadEntity';
 
-export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error';
+export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error' | 'polling';
 
 const DEBOUNCE_MS = 600;
+const POLL_INTERVAL_MS = 30_000;
+const REALTIME_FAIL_GRACE_MS = 12_000;
 
 const REALTIME_TABLES = [
   'productos',
@@ -121,6 +125,14 @@ interface UseSupabaseRealtimeOptions {
   setCashSession: React.Dispatch<React.SetStateAction<CashSession | null>>;
 }
 
+function disconnectRealtime(supabase: SupabaseClient) {
+  try {
+    supabase.realtime.disconnect();
+  } catch {
+    // ignore — evita reintentos de WebSocket cuando Realtime no está disponible
+  }
+}
+
 export function useSupabaseRealtime({
   supabase,
   enabled,
@@ -128,7 +140,8 @@ export function useSupabaseRealtime({
   setters,
   setCashSession,
 }: UseSupabaseRealtimeOptions) {
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>(enabled ? 'syncing' : 'offline');
+  const isActive = enabled && !!supabase;
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(isActive ? 'syncing' : 'offline');
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
   const cashSessionIdRef = useRef(cashSessionId);
@@ -137,6 +150,10 @@ export function useSupabaseRealtime({
   const debounceTimers = useRef<Partial<Record<RefetchGroup, ReturnType<typeof setTimeout>>>>({});
   const syncInFlight = useRef(0);
   const hasErrorRef = useRef(false);
+  const usePollingRef = useRef(!isRealtimeEnabled);
+  const realtimeWarnedRef = useRef(false);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const realtimeFailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     cashSessionIdRef.current = cashSessionId;
@@ -148,14 +165,36 @@ export function useSupabaseRealtime({
   }, [setters, setCashSession]);
 
   useEffect(() => {
-    if (!enabled || !supabase) {
-      setSyncStatus('offline');
-      return;
-    }
+    if (!isActive || !supabase) return;
+
+    const applyLoadedData = (data: Awaited<ReturnType<typeof loadAllFromSupabase>>) => {
+      const s = settersRef.current;
+      s.setProducts(data.products);
+      s.setCategories(data.categories);
+      s.setRolesList(data.rolesList);
+      s.setPaymentMethods(data.paymentMethods);
+      s.setUsersList(data.usersList);
+      s.setClients(data.clients);
+      s.setProviders(data.providers);
+      setCashSessionRef.current(prev => {
+        if (!data.cashSession) return null;
+        return prev
+          ? { ...data.cashSession, cajero: prev.cajero, turno: prev.turno }
+          : data.cashSession;
+      });
+      s.setCashHistory(data.cashHistory);
+      s.setCashDrops(data.cashDrops);
+      s.setBreadLogs(data.breadLogs);
+      s.setSales(data.sales);
+      s.setPurchases(data.purchases);
+      s.setPedidos(data.pedidos);
+      s.setInsumos(data.insumos);
+      s.setRecetas(data.recetas);
+    };
 
     const runGroupRefetch = async (group: RefetchGroup) => {
       syncInFlight.current += 1;
-      setSyncStatus('syncing');
+      setSyncStatus(usePollingRef.current ? 'polling' : 'syncing');
       try {
         const s = settersRef.current;
         const sessionId = cashSessionIdRef.current;
@@ -231,7 +270,7 @@ export function useSupabaseRealtime({
       } finally {
         syncInFlight.current = Math.max(0, syncInFlight.current - 1);
         if (syncInFlight.current === 0 && !hasErrorRef.current) {
-          setSyncStatus('synced');
+          setSyncStatus(usePollingRef.current ? 'polling' : 'synced');
         }
       }
     };
@@ -244,34 +283,128 @@ export function useSupabaseRealtime({
       }, DEBOUNCE_MS);
     };
 
-    const channel = supabase.channel('snack-roque-sync');
+    const runFullPoll = async () => {
+      syncInFlight.current += 1;
+      setSyncStatus('polling');
+      try {
+        applyLoadedData(await loadAllFromSupabase(supabase));
+        hasErrorRef.current = false;
+        setLastSyncedAt(new Date());
+      } catch (err) {
+        console.error('Polling sync error', err);
+        hasErrorRef.current = true;
+        setSyncStatus('error');
+      } finally {
+        syncInFlight.current = Math.max(0, syncInFlight.current - 1);
+        if (syncInFlight.current === 0 && !hasErrorRef.current) {
+          setSyncStatus('polling');
+        }
+      }
+    };
 
-    for (const table of REALTIME_TABLES) {
-      channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
-        scheduleRefetch(TABLE_TO_GROUP[table]);
+    const startPolling = (reason: 'disabled' | 'fallback') => {
+      if (usePollingRef.current && pollTimerRef.current) return;
+
+      usePollingRef.current = true;
+      disconnectRealtime(supabase);
+
+      if (!realtimeWarnedRef.current) {
+        realtimeWarnedRef.current = true;
+        if (reason === 'disabled') {
+          console.info(
+            '[Sync] Realtime desactivado (NEXT_PUBLIC_SUPABASE_REALTIME_ENABLED=false). Usando sincronización periódica.'
+          );
+        } else {
+          console.warn(
+            '[Sync] WebSocket Realtime no disponible. Cambiando a sincronización periódica cada 30s.'
+          );
+        }
+      }
+
+      void runFullPoll();
+      pollTimerRef.current = setInterval(() => {
+        void runFullPoll();
+      }, POLL_INTERVAL_MS);
+    };
+
+    const stopPolling = () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+
+    const switchToPolling = (reason: 'disabled' | 'fallback') => {
+      if (realtimeFailTimerRef.current) {
+        clearTimeout(realtimeFailTimerRef.current);
+        realtimeFailTimerRef.current = null;
+      }
+      startPolling(reason);
+    };
+
+    let channel: ReturnType<SupabaseClient['channel']> | null = null;
+
+    if (usePollingRef.current) {
+      startPolling('disabled');
+    } else {
+      channel = supabase.channel('snack-roque-sync');
+
+      for (const table of REALTIME_TABLES) {
+        channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+          scheduleRefetch(TABLE_TO_GROUP[table]);
+        });
+      }
+
+      realtimeFailTimerRef.current = setTimeout(() => {
+        if (!usePollingRef.current) {
+          void supabase.removeChannel(channel!);
+          channel = null;
+          switchToPolling('fallback');
+        }
+      }, REALTIME_FAIL_GRACE_MS);
+
+      channel.subscribe(status => {
+        if (status === 'SUBSCRIBED') {
+          if (realtimeFailTimerRef.current) {
+            clearTimeout(realtimeFailTimerRef.current);
+            realtimeFailTimerRef.current = null;
+          }
+          if (syncInFlight.current === 0 && !hasErrorRef.current) setSyncStatus('synced');
+          setLastSyncedAt(prev => prev ?? new Date());
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          if (channel) void supabase.removeChannel(channel);
+          channel = null;
+          switchToPolling('fallback');
+        } else if (status === 'CLOSED' && !usePollingRef.current) {
+          setSyncStatus('offline');
+        }
       });
     }
 
-    channel.subscribe(status => {
-      if (status === 'SUBSCRIBED') {
-        if (syncInFlight.current === 0 && !hasErrorRef.current) setSyncStatus('synced');
-        setLastSyncedAt(prev => prev ?? new Date());
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        hasErrorRef.current = true;
-        setSyncStatus('error');
-      } else if (status === 'CLOSED') {
-        setSyncStatus('offline');
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && usePollingRef.current) {
+        void runFullPoll();
       }
-    });
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      stopPolling();
+      if (realtimeFailTimerRef.current) {
+        clearTimeout(realtimeFailTimerRef.current);
+        realtimeFailTimerRef.current = null;
+      }
       Object.values(debounceTimers.current).forEach(timer => {
         if (timer) clearTimeout(timer);
       });
       debounceTimers.current = {};
-      void supabase.removeChannel(channel);
+      if (channel) void supabase.removeChannel(channel);
+      disconnectRealtime(supabase);
     };
-  }, [enabled, supabase]);
+  }, [isActive, supabase]);
 
-  return { syncStatus, lastSyncedAt };
+  const effectiveStatus: SyncStatus = isActive ? syncStatus : 'offline';
+
+  return { syncStatus: effectiveStatus, lastSyncedAt };
 }
