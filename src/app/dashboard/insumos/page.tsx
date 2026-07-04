@@ -51,8 +51,8 @@ export default function InsumosPage() {
     saveInsumo({
       id: editingId,
       nombre: nombre.trim(),
-      stock: parseFloat(stock) || 0,
-      costoUnitario: parseFloat(costo) || 0,
+      stock: editingId ? (parseFloat(stock) || 0) : 0,
+      costoUnitario: editingId ? (parseFloat(costo) || 0) : 0,
       unidadMedida: unidad,
       stockMinimo: parseFloat(minStock) || 0,
     });
@@ -234,30 +234,32 @@ export default function InsumosPage() {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div className="inp-group">
-                  <label>Stock Inicial / Actual</label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    value={stock}
-                    onChange={(e) => setStock(e.target.value)}
-                    placeholder="0"
-                  />
+              {editingId && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="inp-group">
+                    <label>Stock Actual</label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      value={stock}
+                      onChange={(e) => setStock(e.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="inp-group">
+                    <label>Costo Unitario (S/.)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={costo}
+                      onChange={(e) => setCosto(e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </div>
                 </div>
-                <div className="inp-group">
-                  <label>Costo Unitario (S/.)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={costo}
-                    onChange={(e) => setCosto(e.target.value)}
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div className="inp-group">
