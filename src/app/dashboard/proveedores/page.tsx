@@ -126,9 +126,14 @@ export default function ProveedoresPage() {
       }
     }
 
-    // Phone Validation (only digits)
-    if (phone && !/^\d+$/.test(phone)) {
+    // Phone Validation (only digits, max 9)
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone && !/^\d+$/.test(cleanPhone)) {
       setValidationError('⚠️ El número de teléfono solo debe contener números.');
+      return;
+    }
+    if (cleanPhone.length > 9) {
+      setValidationError('⚠️ El número de teléfono no debe exceder los 9 dígitos.');
       return;
     }
 
@@ -136,7 +141,7 @@ export default function ProveedoresPage() {
       id: editingId,
       ruc,
       name,
-      phone: phone || '-',
+      phone: cleanPhone || '-',
       address: address || '-'
     };
 
@@ -264,10 +269,11 @@ export default function ProveedoresPage() {
                 <label>Número de Teléfono</label>
                 <div className="inp-wrap">
                   <input 
-                    type="text" 
+                    type="tel" 
                     placeholder="Ej: 987654321" 
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 15))}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 9))}
+                    maxLength={9}
                   />
                 </div>
               </div>
