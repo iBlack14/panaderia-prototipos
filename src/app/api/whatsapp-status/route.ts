@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
-import {
-  disconnectWhatsAppGateway,
-  getWhatsAppStatus,
-  startWhatsAppGateway
-} from '@/lib/baileys';
+import { getWhatsAppStatus } from '@/lib/baileys-state';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/**
+ * GET solo lee estado ligero (sin cargar Baileys/WAProto).
+ * POST start/disconnect importa Baileys de forma diferida.
+ */
 export async function GET() {
   return NextResponse.json({ success: true, ...getWhatsAppStatus() });
 }
@@ -16,6 +16,9 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const action = body.action || (body.connected === false ? 'disconnect' : 'start');
+
+    // Carga pesada solo cuando se inicia/desconecta el gateway
+    const { disconnectWhatsAppGateway, startWhatsAppGateway } = await import('@/lib/baileys');
 
     if (action === 'disconnect') {
       const status = await disconnectWhatsAppGateway();

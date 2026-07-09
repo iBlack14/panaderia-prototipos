@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getWhatsAppStatus, sendWhatsAppMessage } from '@/lib/baileys';
+import { getWhatsAppStatus } from '@/lib/baileys-state';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,6 +25,8 @@ export async function POST(req: Request) {
       );
     }
 
+    // Solo carga Baileys si ya hay gateway conectado y hay que enviar
+    const { sendWhatsAppMessage } = await import('@/lib/baileys');
     const result = await sendWhatsAppMessage(phone, message, pdfBase64, fileName);
 
     return NextResponse.json({

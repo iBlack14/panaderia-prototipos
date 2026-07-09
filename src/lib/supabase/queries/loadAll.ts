@@ -62,7 +62,13 @@ export async function loadAllFromSupabase(supabase: SupabaseClient): Promise<Loa
     supabase.from('clientes').select('*').order('id_cliente', { ascending: true }),
     supabase.from('proveedores').select('*'),
     supabase.from('cierres_caja').select('*').eq('estado', 'abierto').limit(1),
-    supabase.from('cierres_caja').select('*, profiles(nombre, apellido_paterno)').eq('estado', 'cerrado').order('fec_cierre', { ascending: false }),
+    // Límites: evita crecer sin tope en memoria (polling cada 30s recarga todo).
+    supabase
+      .from('cierres_caja')
+      .select('*, profiles(nombre, apellido_paterno)')
+      .eq('estado', 'cerrado')
+      .order('fec_cierre', { ascending: false })
+      .limit(100),
     supabase
       .from('ventas')
       .select(
@@ -78,7 +84,11 @@ export async function loadAllFromSupabase(supabase: SupabaseClient): Promise<Loa
       .eq('estado', 1)
       .order('fec_compra', { ascending: false })
       .limit(200),
-    supabase.from('pedidos_reserva').select('*, clientes(nombre)').order('created_at', { ascending: false }),
+    supabase
+      .from('pedidos_reserva')
+      .select('*, clientes(nombre)')
+      .order('created_at', { ascending: false })
+      .limit(200),
     supabase.from('insumos').select('*').order('id_insumo', { ascending: true }),
     supabase
       .from('recetas')
@@ -87,7 +97,8 @@ export async function loadAllFromSupabase(supabase: SupabaseClient): Promise<Loa
     supabase
       .from('retiros_caja')
       .select('*, profiles(nombre, apellido_paterno)')
-      .order('fec_retiro', { ascending: false }),
+      .order('fec_retiro', { ascending: false })
+      .limit(200),
     supabase
       .from('produccion_descarte')
       .select('*, productos(nombre), producto_versiones(nombre_version), profiles(nombre, apellido_paterno)')

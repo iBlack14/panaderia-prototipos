@@ -131,21 +131,23 @@ const CASH_DROPS_SELECT = '*, profiles(nombre, apellido_paterno)';
 const BREAD_LOGS_SELECT =
   '*, productos(nombre), producto_versiones(nombre_version), profiles(nombre, apellido_paterno)';
 
-export async function fetchCashHistory(supabase: SupabaseClient) {
+export async function fetchCashHistory(supabase: SupabaseClient, limit = 100) {
   const { data, error } = await supabase
     .from('cierres_caja')
     .select(CASH_HISTORY_SELECT)
     .eq('estado', 'cerrado')
-    .order('fec_cierre', { ascending: false });
+    .order('fec_cierre', { ascending: false })
+    .limit(limit);
   if (error) throw error;
   return mapCashHistoryListFromDb(data as Record<string, unknown>[]);
 }
 
-export async function fetchCashDrops(supabase: SupabaseClient, sessionId?: number | string) {
+export async function fetchCashDrops(supabase: SupabaseClient, sessionId?: number | string, limit = 200) {
   let query = supabase
     .from('retiros_caja')
     .select(CASH_DROPS_SELECT)
-    .order('fec_retiro', { ascending: false });
+    .order('fec_retiro', { ascending: false })
+    .limit(limit);
   if (sessionId != null) {
     query = query.eq('id_cierre_caja', sessionId);
   }
@@ -164,11 +166,12 @@ export async function fetchBreadLogs(supabase: SupabaseClient, limit = 500) {
   return mapBreadLogsFromDb(data as Record<string, unknown>[]);
 }
 
-export async function fetchPedidos(supabase: SupabaseClient) {
+export async function fetchPedidos(supabase: SupabaseClient, limit = 200) {
   const { data, error } = await supabase
     .from('pedidos_reserva')
     .select('*, clientes(nombre)')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(limit);
   if (error) throw error;
   return mapPedidosFromDb(data as Record<string, unknown>[]);
 }

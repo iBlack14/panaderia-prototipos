@@ -10,50 +10,21 @@ import makeWASocket, {
 import { createClient } from '@supabase/supabase-js';
 import qrcode from 'qrcode';
 import pino from 'pino';
+import { addBaileysLog, baileysState, getWhatsAppStatus } from './baileys-state';
 
-type GatewayStatus = 'disconnected' | 'initializing' | 'qr_ready' | 'connecting' | 'connected';
-
-type GatewayState = {
-  socket: WASocket | null;
-  status: GatewayStatus;
-  qr: string;
-  qrDataUrl: string;
-  phone: string;
-  device: string;
-  logs: string[];
-  starting: boolean;
-  reconnecting: boolean;
-};
+export { getWhatsAppStatus } from './baileys-state';
 
 const logger = pino({ level: 'silent' });
 const AUTH_TABLE = 'whatsapp_baileys_auth';
 
-const globalForBaileys = globalThis as typeof globalThis & {
-  snackRoqueBaileys?: GatewayState;
-};
-
-const state: GatewayState = globalForBaileys.snackRoqueBaileys ?? {
-  socket: null,
-  status: 'disconnected',
-  qr: '',
-  qrDataUrl: '',
-  phone: '',
-  device: '',
-  logs: [],
-  starting: false,
-  reconnecting: false
-};
-
-globalForBaileys.snackRoqueBaileys = state;
+const state = baileysState;
 
 function addLog(message: string) {
-  const timestamp = new Date().toLocaleTimeString('es-PE', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  });
+  addBaileysLog(message);
+}
 
-  state.logs = [...state.logs.slice(-120), `[${timestamp}] ${message}`];
+function asSocket(value: unknown): WASocket | null {
+  return (value as WASocket | null) ?? null;
 }
 
 function normalizePhone(phone: string) {
@@ -206,7 +177,7 @@ async function getBaileysVersion(): Promise<[number, number, number]> {
       return version;
     })();
     return await Promise.race([fetchPromise, timeoutPromise]);
-  } catch (error) {
+  } catch {
     return fallbackVersion;
   }
 }
@@ -227,13 +198,13 @@ export async function startWhatsAppGateway() {
 
   // Safe cleanup of the old socket to prevent connection loops
   if (state.socket) {
-    const oldSocket = state.socket;
-    state.socket = null; // Set to null before closing so that events are ignored
+    const oldSocket = asSocket(state.socket);
+    state.socket = null;
     try {
-      oldSocket.ev.removeAllListeners('connection.update');
-      oldSocket.ev.removeAllListeners('creds.update');
-      oldSocket.end(undefined);
-    } catch (e) {
+      oldSocket?.ev.removeAllListeners('connection.update');
+      oldSocket?.ev.removeAllListeners('creds.update');
+      oldSocket?.end(undefined);
+    } catch {
       // Ignore cleanup errors
     }
   }
@@ -269,7 +240,6 @@ export async function startWhatsAppGateway() {
     });
 
     socket.ev.on('connection.update', async (update) => {
-      // Ignore updates if this socket is no longer the active gateway socket
       if (state.socket !== socket) {
         return;
       }
@@ -309,9 +279,9 @@ export async function startWhatsAppGateway() {
         state.qrDataUrl = '';
         addLog(`🔴 [Baileys-Core] Conexión cerrada por WhatsApp. Código: ${statusCode || 'sin código'}`);
 
-        const isLoggedOut = statusCode === DisconnectReason.loggedOut || 
-                            statusCode === 401 || 
-                            statusCode === 400 || 
+        const isLoggedOut = statusCode === DisconnectReason.loggedOut ||
+                            statusCode === 401 ||
+                            statusCode === 400 ||
                             statusCode === 403;
 
         if (isLoggedOut) {
@@ -343,14 +313,14 @@ export async function startWhatsAppGateway() {
 export async function disconnectWhatsAppGateway() {
   try {
     if (state.socket) {
-      const oldSocket = state.socket;
-      state.socket = null; // Set to null first so connection updates are ignored
+      const oldSocket = asSocket(state.socket);
+      state.socket = null;
       try {
-        oldSocket.ev.removeAllListeners('connection.update');
-        oldSocket.ev.removeAllListeners('creds.update');
-        await oldSocket.logout();
-        oldSocket.end(undefined);
-      } catch (err) {
+        oldSocket?.ev.removeAllListeners('connection.update');
+        oldSocket?.ev.removeAllListeners('creds.update');
+        await oldSocket?.logout();
+        oldSocket?.end(undefined);
+      } catch {
         // ignore
       }
     }
@@ -371,7 +341,8 @@ export async function disconnectWhatsAppGateway() {
 }
 
 export async function sendWhatsAppMessage(phone: string, message: string, documentBase64?: string, fileName?: string) {
-  if (!state.socket || state.status !== 'connected') {
+  const socket = asSocket(state.socket);
+  if (!socket || state.status !== 'connected') {
     throw new Error('WhatsApp no está conectado. Vincula el gateway antes de enviar.');
   }
 
@@ -380,28 +351,17 @@ export async function sendWhatsAppMessage(phone: string, message: string, docume
 
   if (documentBase64 && fileName) {
     const buffer = Buffer.from(documentBase64, 'base64');
-    result = await state.socket.sendMessage(jid, { 
-      document: buffer, 
-      mimetype: 'application/pdf', 
+    result = await socket.sendMessage(jid, {
+      document: buffer,
+      mimetype: 'application/pdf',
       fileName: fileName,
-      caption: message 
+      caption: message
     });
     addLog(`📤 [Baileys-Out] Mensaje con PDF enviado a ${phone}`);
   } else {
-    result = await state.socket.sendMessage(jid, { text: message });
+    result = await socket.sendMessage(jid, { text: message });
     addLog(`📤 [Baileys-Out] Mensaje de texto enviado a ${phone}`);
   }
 
   return result;
-}
-
-export function getWhatsAppStatus() {
-  return {
-    connected: state.status === 'connected',
-    status: state.status,
-    qrDataUrl: state.qrDataUrl,
-    phone: state.phone,
-    device: state.device,
-    logs: state.logs
-  };
 }

@@ -20,6 +20,7 @@ export default function RecetasPage() {
   // Add ingredient form
   const [ingInsumoId, setIngInsumoId] = useState('');
   const [ingCantidad, setIngCantidad] = useState('');
+  const [ingUnidadSeleccionada, setIngUnidadSeleccionada] = useState('');
 
   // Products without a recipe (available for new recipes)
   const productosDisponibles = products.filter(p =>
@@ -46,9 +47,17 @@ export default function RecetasPage() {
     setShowModal(true);
   };
 
+  const formatQuantity = (cant: number, unit: string) => {
+    if (!unit) return `${cant}`;
+    const u = unit.toLowerCase();
+    if (cant > 0 && cant < 1 && u === 'kg') return `${+(cant * 1000).toFixed(2)} g`;
+    if (cant > 0 && cant < 1 && (u === 'l' || u === 'litros')) return `${+(cant * 1000).toFixed(2)} ml`;
+    return `${cant} ${unit}`;
+  };
+
   const handleAddIngredient = () => {
     const iId = parseInt(ingInsumoId);
-    const cant = parseFloat(ingCantidad);
+    let cant = parseFloat(ingCantidad);
     if (isNaN(iId)) {
       alert('Por favor, selecciona un insumo.');
       return;
@@ -65,14 +74,23 @@ export default function RecetasPage() {
     }
 
     const insumo = insumos.find(i => i.id === iId);
+    const baseUnit = insumo?.unidadMedida || 'kg';
+    
+    if (baseUnit.toLowerCase() === 'kg' && ingUnidadSeleccionada === 'g') {
+      cant = cant / 1000;
+    } else if ((baseUnit.toLowerCase() === 'l' || baseUnit.toLowerCase() === 'litros') && ingUnidadSeleccionada === 'ml') {
+      cant = cant / 1000;
+    }
+
     setIngredientes([...ingredientes, {
       insumoId: iId,
       insumoNombre: insumo?.nombre || `Insumo #${iId}`,
       cantidadRequerida: cant,
-      unidadMedida: insumo?.unidadMedida || 'kg',
+      unidadMedida: baseUnit,
     }]);
     setIngInsumoId('');
     setIngCantidad('');
+    setIngUnidadSeleccionada('');
   };
 
   const handleRemoveIngredient = (insumoId: number) => {
@@ -195,7 +213,7 @@ export default function RecetasPage() {
                         </div>
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                           <span style={{ color: 'var(--text-2)' }}>
-                            {ing.cantidadRequerida} {ing.unidadMedida || 'kg'}
+                            {formatQuantity(ing.cantidadRequerida, ing.unidadMedida || 'kg')}
                           </span>
                           <span style={{ fontWeight: '700', color: 'var(--accent)', minWidth: '70px', textAlign: 'right' }}>
                             S/. {costoLinea.toFixed(2)}
@@ -303,7 +321,7 @@ export default function RecetasPage() {
                   <select value={productoId} onChange={(e) => setProductoId(e.target.value)} required>
                     <option value="">-- Elegir producto --</option>
                     {productosDisponibles?.map(p => (
-                      <option key={p?.id} value={String(p?.id)}>{p?.name} — {p?.cat} (S/. {p?.price?.toFixed(2) || '0.00'})</option>
+                      <option key={p?.id} value={String(p?.id)}>{p?.name} — {p?.cat}</option>
                     ))}
                     {/* If editing, also show the current product */}
                     {editingId && productoId && !productosDisponibles?.some(p => String(p?.id) === productoId) && (
@@ -312,42 +330,6 @@ export default function RecetasPage() {
                       </option>
                     )}
                   </select>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="inp-group">
-                    <label>Rendimiento (unidades)</label>
-                    <input
-                      type="number"
-                      step="0.001"
-                      min="0.001"
-                      value={rendimiento}
-                      onChange={(e) => setRendimiento(e.target.value)}
-                      placeholder="1"
-                    />
-                  </div>
-                  <div className="inp-group">
-                    <label>Ganancia Deseada (%) (&gt; 10%)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="10.01"
-                      value={margenDeseado}
-                      onChange={(e) => setMargenDeseado(e.target.value)}
-                      placeholder="30"
-                      required
-                    />
-                  </div>
-                </div>
-                
-                <div className="inp-group">
-                  <label>Instrucciones de Preparación (opcional)</label>
-                  <input
-                    type="text"
-                    value={instrucciones}
-                    onChange={(e) => setInstrucciones(e.target.value)}
-                    placeholder="Ej: Hornear 180C por 45 min"
-                  />
                 </div>
 
                 {/* Ingredients Section */}
@@ -359,7 +341,11 @@ export default function RecetasPage() {
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: '10px', alignItems: 'end' }}>
                     <div className="inp-group" style={{ margin: 0 }}>
                       <label style={{ fontSize: '9px' }}>Insumo</label>
-                      <select value={ingInsumoId} onChange={(e) => setIngInsumoId(e.target.value)}>
+                      <select value={ingInsumoId} onChange={(e) => {
+                        setIngInsumoId(e.target.value);
+                        const ins = insumos?.find(i => String(i.id) === e.target.value);
+                        setIngUnidadSeleccionada(ins?.unidadMedida || '');
+                      }}>
                         <option value="">-- Elegir insumo --</option>
                         {insumos?.filter(i => i?.active && !ingredientes?.some(ing => ing?.insumoId === i?.id))?.map(i => (
                           <option key={i?.id} value={String(i?.id)}>
@@ -379,20 +365,53 @@ export default function RecetasPage() {
                           value={ingCantidad}
                           onChange={(e) => setIngCantidad(e.target.value)}
                           placeholder="0.000"
-                          style={{ paddingRight: '45px' }}
+                          style={{ paddingRight: ingInsumoId && (insumos.find(i => String(i.id) === ingInsumoId)?.unidadMedida?.toLowerCase() === 'kg' || insumos.find(i => String(i.id) === ingInsumoId)?.unidadMedida?.toLowerCase() === 'l' || insumos.find(i => String(i.id) === ingInsumoId)?.unidadMedida?.toLowerCase() === 'litros') ? '60px' : '45px' }}
                         />
-                        {ingInsumoId && (
-                          <span style={{
-                            position: 'absolute',
-                            right: '12px',
-                            fontSize: '11px',
-                            fontWeight: 'bold',
-                            color: 'var(--text-3)',
-                            pointerEvents: 'none'
-                          }}>
-                            {insumos.find(i => String(i.id) === ingInsumoId)?.unidadMedida || 'und'}
-                          </span>
-                        )}
+                        {ingInsumoId && (() => {
+                          const baseU = insumos.find(i => String(i.id) === ingInsumoId)?.unidadMedida || 'und';
+                          const isKg = baseU.toLowerCase() === 'kg';
+                          const isL = baseU.toLowerCase() === 'l' || baseU.toLowerCase() === 'litros';
+                          
+                          if (isKg || isL) {
+                            return (
+                              <select
+                                value={ingUnidadSeleccionada}
+                                onChange={(e) => setIngUnidadSeleccionada(e.target.value)}
+                                style={{
+                                  position: 'absolute',
+                                  right: '2px',
+                                  height: 'calc(100% - 4px)',
+                                  border: 'none',
+                                  borderLeft: '1px solid var(--border)',
+                                  background: 'transparent',
+                                  fontSize: '11px',
+                                  fontWeight: 'bold',
+                                  color: 'var(--text-2)',
+                                  padding: '0 4px',
+                                  cursor: 'pointer',
+                                  outline: 'none'
+                                }}
+                              >
+                                <option value={baseU}>{baseU}</option>
+                                {isKg && <option value="g">g</option>}
+                                {isL && <option value="ml">ml</option>}
+                              </select>
+                            );
+                          } else {
+                            return (
+                              <span style={{
+                                position: 'absolute',
+                                right: '12px',
+                                fontSize: '11px',
+                                fontWeight: 'bold',
+                                color: 'var(--text-3)',
+                                pointerEvents: 'none'
+                              }}>
+                                {baseU}
+                              </span>
+                            );
+                          }
+                        })()}
                       </div>
                     </div>
 
@@ -436,7 +455,7 @@ export default function RecetasPage() {
                               {ing.insumoNombre}
                             </div>
                             <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>
-                              {ing.cantidadRequerida} {ing.unidadMedida} · S/. {insumo?.costoUnitario?.toFixed(2) || '0.00'} / {ing.unidadMedida}
+                              {formatQuantity(ing.cantidadRequerida, ing.unidadMedida || 'kg')} · S/. {insumo?.costoUnitario?.toFixed(2) || '0.00'} / {ing.unidadMedida}
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
@@ -466,8 +485,48 @@ export default function RecetasPage() {
                         </div>
                       );
                     })}
+                  </div>
+                )}
 
-                    {/* Dynamic Cost and Margin Summary Box */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="inp-group">
+                    <label>Rendimiento (unidades)</label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0.001"
+                      value={rendimiento}
+                      onChange={(e) => setRendimiento(e.target.value)}
+                      placeholder="1"
+                    />
+                  </div>
+                  <div className="inp-group">
+                    <label>Ganancia Deseada (%) (&gt; 10%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="10.01"
+                      value={margenDeseado}
+                      onChange={(e) => setMargenDeseado(e.target.value)}
+                      placeholder="30"
+                      required
+                    />
+                  </div>
+                </div>
+                
+                <div className="inp-group">
+                  <label>Instrucciones de Preparación (opcional)</label>
+                  <input
+                    type="text"
+                    value={instrucciones}
+                    onChange={(e) => setInstrucciones(e.target.value)}
+                    placeholder="Ej: Hornear 180C por 45 min"
+                  />
+                </div>
+
+                {/* Dynamic Cost and Margin Summary Box */}
+                {ingredientes.length > 0 && (
+                  <div style={{ marginBottom: '14px' }}>
                     {selectedProduct ? (
                       <div style={{
                         marginTop: '16px',
