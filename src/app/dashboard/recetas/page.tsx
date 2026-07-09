@@ -314,7 +314,7 @@ export default function RecetasPage() {
                   </select>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <div className="inp-group">
                     <label>Rendimiento (unidades)</label>
                     <input
@@ -338,15 +338,16 @@ export default function RecetasPage() {
                       required
                     />
                   </div>
-                  <div className="inp-group">
-                    <label>Instrucciones de Preparación (opcional)</label>
-                    <input
-                      type="text"
-                      value={instrucciones}
-                      onChange={(e) => setInstrucciones(e.target.value)}
-                      placeholder="Ej: Hornear 180C por 45 min"
-                    />
-                  </div>
+                </div>
+                
+                <div className="inp-group">
+                  <label>Instrucciones de Preparación (opcional)</label>
+                  <input
+                    type="text"
+                    value={instrucciones}
+                    onChange={(e) => setInstrucciones(e.target.value)}
+                    placeholder="Ej: Hornear 180C por 45 min"
+                  />
                 </div>
 
                 {/* Ingredients Section */}
