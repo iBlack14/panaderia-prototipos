@@ -5,7 +5,7 @@ import { useApp, Receta, RecetaIngrediente } from '@/context/AppContext';
 import { getFIFOCost } from '@/lib/fifo';
 
 export default function RecetasPage() {
-  const { recetas, products, insumos, saveReceta, deleteReceta } = useApp();
+  const { recetas, products, insumos, saveReceta, deleteReceta, saveProduct } = useApp();
 
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -16,6 +16,7 @@ export default function RecetasPage() {
   const [instrucciones, setInstrucciones] = useState('');
   const [ingredientes, setIngredientes] = useState<RecetaIngrediente[]>([]);
   const [margenDeseado, setMargenDeseado] = useState('30');
+  const [precioVentaEdit, setPrecioVentaEdit] = useState('');
 
   // Add ingredient form
   const [ingInsumoId, setIngInsumoId] = useState('');
@@ -34,6 +35,7 @@ export default function RecetasPage() {
     setInstrucciones('');
     setIngredientes([]);
     setMargenDeseado('30');
+    setPrecioVentaEdit('');
     setShowModal(true);
   };
 
@@ -44,6 +46,10 @@ export default function RecetasPage() {
     setInstrucciones(r.instrucciones || '');
     setIngredientes([...r.ingredientes]);
     setMargenDeseado(String(r.margenDeseado || 30));
+    
+    const prod = products.find(p => p.id === r.productoId);
+    setPrecioVentaEdit(prod ? String(prod.price) : '');
+    
     setShowModal(true);
   };
 
@@ -115,6 +121,12 @@ export default function RecetasPage() {
     if (isNaN(marg) || marg <= 10) {
       alert('El margen de ganancia deseado debe ser mayor a 10%.');
       return;
+    }
+
+    const prod = products.find(p => p.id === pId);
+    const newPrice = parseFloat(precioVentaEdit);
+    if (prod && !isNaN(newPrice) && newPrice !== prod.price) {
+      await saveProduct({ ...prod, price: newPrice });
     }
 
     const res = await saveReceta({
@@ -279,28 +291,28 @@ export default function RecetasPage() {
         const costoTotalReceta = calcCost(ingredientes);
         const cantRendimiento = parseFloat(rendimiento) || 1;
         const costoPorUnidad = costoTotalReceta / cantRendimiento;
-        const precioVenta = selectedProduct?.price || 0;
+        const precioVenta = parseFloat(precioVentaEdit) || 0;
         const utilidadPorUnidad = precioVenta - costoPorUnidad;
         const margenPorcentaje = precioVenta > 0 ? (utilidadPorUnidad / precioVenta) * 100 : 0;
 
         return (
           <div className="modal-overlay open" onClick={() => setShowModal(false)}>
-            <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ width: '580px', maxHeight: '90vh' }}>
-              {/* Header inside modal */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <div className="mc-title" style={{ margin: 0, textAlign: 'left' }}>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ width: '640px', maxHeight: '90vh', padding: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <div className="mc-title" style={{ margin: 0, textAlign: 'left', fontSize: '22px' }}>
                   {editingId ? '✏️ Editar Receta' : '🍞 Nueva Receta'}
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
                   style={{
-                    background: 'none',
-                    border: 'none',
-                    fontSize: '20px',
+                    background: 'var(--bg)',
+                    border: '1px solid var(--border)',
+                    fontSize: '16px',
                     color: 'var(--text-3)',
                     cursor: 'pointer',
-                    padding: '4px 8px',
+                    width: '32px',
+                    height: '32px',
                     borderRadius: '50%',
                     display: 'flex',
                     alignItems: 'center',
@@ -308,293 +320,285 @@ export default function RecetasPage() {
                     transition: 'all 0.2s',
                   }}
                   onMouseOver={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text)'; }}
-                  onMouseOut={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-3)'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.background = 'var(--bg)'; e.currentTarget.style.color = 'var(--text-3)'; }}
                 >
                   ✕
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit}>
-                {/* Product Selection */}
-                <div className="inp-group">
-                  <label>Producto (lo que se fabrica)</label>
-                  <select value={productoId} onChange={(e) => setProductoId(e.target.value)} required>
-                    <option value="">-- Elegir producto --</option>
-                    {productosDisponibles?.map(p => (
-                      <option key={p?.id} value={String(p?.id)}>{p?.name} — {p?.cat}</option>
-                    ))}
-                    {/* If editing, also show the current product */}
-                    {editingId && productoId && !productosDisponibles?.some(p => String(p?.id) === productoId) && (
-                      <option value={productoId}>
-                        {products?.find(p => String(p?.id) === productoId)?.name || `Producto #${productoId}`}
-                      </option>
-                    )}
-                  </select>
-                </div>
-
-                {/* Ingredients Section */}
-                <div style={{ border: '1.5px dashed var(--border)', padding: '14px', borderRadius: '12px', background: 'var(--bg-card2)', margin: '14px 0' }}>
-                  <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.5px', marginBottom: '10px' }}>
-                    Agregar Ingrediente (Insumo)
+              <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* SECCIÓN 1: DATOS DE PRODUCCIÓN */}
+                <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '14px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-2)', marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    1. Datos de Producción
+                  </div>
+                  
+                  <div className="inp-group">
+                    <label>Producto (lo que se fabrica)</label>
+                    <select value={productoId} onChange={(e) => {
+                      setProductoId(e.target.value);
+                      const p = products.find(prod => String(prod.id) === e.target.value);
+                      if (p) setPrecioVentaEdit(String(p.price));
+                    }} required>
+                      <option value="">-- Elegir producto --</option>
+                      {productosDisponibles?.map(p => (
+                        <option key={p?.id} value={String(p?.id)}>{p?.name} — {p?.cat}</option>
+                      ))}
+                      {editingId && productoId && !productosDisponibles?.some(p => String(p?.id) === productoId) && (
+                        <option value={productoId}>
+                          {products?.find(p => String(p?.id) === productoId)?.name || `Producto #${productoId}`}
+                        </option>
+                      )}
+                    </select>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: '10px', alignItems: 'end' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                     <div className="inp-group" style={{ margin: 0 }}>
-                      <label style={{ fontSize: '9px' }}>Insumo</label>
-                      <select value={ingInsumoId} onChange={(e) => {
-                        setIngInsumoId(e.target.value);
-                        const ins = insumos?.find(i => String(i.id) === e.target.value);
-                        setIngUnidadSeleccionada(ins?.unidadMedida || '');
-                      }}>
-                        <option value="">-- Elegir insumo --</option>
-                        {insumos?.filter(i => i?.active && !ingredientes?.some(ing => ing?.insumoId === i?.id))?.map(i => (
-                          <option key={i?.id} value={String(i?.id)}>
-                            {i?.nombre} (S/. {i?.costoUnitario?.toFixed(2)} / {i?.unidadMedida}) — Stock: {i?.stock?.toFixed(1)} {i?.unidadMedida}
-                          </option>
-                        ))}
-                      </select>
+                      <label>Rendimiento (unidades)</label>
+                      <input
+                        type="number"
+                        step="0.001"
+                        min="0.001"
+                        value={rendimiento}
+                        onChange={(e) => setRendimiento(e.target.value)}
+                        placeholder="Ej: 50"
+                        style={{ padding: '10px 12px' }}
+                      />
                     </div>
-
                     <div className="inp-group" style={{ margin: 0 }}>
-                      <label style={{ fontSize: '9px' }}>Cantidad</label>
-                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                        <input
-                          type="number"
-                          step="0.001"
-                          min="0.001"
-                          value={ingCantidad}
-                          onChange={(e) => setIngCantidad(e.target.value)}
-                          placeholder="0.000"
-                          style={{ paddingRight: ingInsumoId && (insumos.find(i => String(i.id) === ingInsumoId)?.unidadMedida?.toLowerCase() === 'kg' || insumos.find(i => String(i.id) === ingInsumoId)?.unidadMedida?.toLowerCase() === 'l' || insumos.find(i => String(i.id) === ingInsumoId)?.unidadMedida?.toLowerCase() === 'litros') ? '60px' : '45px' }}
-                        />
-                        {ingInsumoId && (() => {
-                          const baseU = insumos.find(i => String(i.id) === ingInsumoId)?.unidadMedida || 'und';
-                          const isKg = baseU.toLowerCase() === 'kg';
-                          const isL = baseU.toLowerCase() === 'l' || baseU.toLowerCase() === 'litros';
-                          
-                          if (isKg || isL) {
-                            return (
-                              <select
-                                value={ingUnidadSeleccionada}
-                                onChange={(e) => setIngUnidadSeleccionada(e.target.value)}
-                                style={{
-                                  position: 'absolute',
-                                  right: '2px',
-                                  height: 'calc(100% - 4px)',
-                                  border: 'none',
-                                  borderLeft: '1px solid var(--border)',
-                                  background: 'transparent',
+                      <label>Ganancia Deseada (%) (&gt; 10%)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="10.01"
+                        value={margenDeseado}
+                        onChange={(e) => setMargenDeseado(e.target.value)}
+                        placeholder="Ej: 30"
+                        style={{ padding: '10px 12px' }}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* SECCIÓN 2: FÓRMULA E INSUMOS */}
+                <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '14px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-2)', marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    2. Fórmula e Insumos
+                  </div>
+
+                  <div style={{ border: '1.5px dashed var(--border)', padding: '16px', borderRadius: '10px', background: 'var(--bg-card2)', marginBottom: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: '12px', alignItems: 'end' }}>
+                      <div className="inp-group" style={{ margin: 0 }}>
+                        <label style={{ fontSize: '10px' }}>Insumo</label>
+                        <select value={ingInsumoId} onChange={(e) => {
+                          setIngInsumoId(e.target.value);
+                          const ins = insumos?.find(i => String(i.id) === e.target.value);
+                          setIngUnidadSeleccionada(ins?.unidadMedida || '');
+                        }}>
+                          <option value="">-- Elegir insumo --</option>
+                          {insumos?.filter(i => i?.active && !ingredientes?.some(ing => ing?.insumoId === i?.id))?.map(i => (
+                            <option key={i?.id} value={String(i?.id)}>
+                              {i?.nombre} (S/. {i?.costoUnitario?.toFixed(2)} / {i?.unidadMedida}) — Stock: {i?.stock?.toFixed(1)} {i?.unidadMedida}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="inp-group" style={{ margin: 0 }}>
+                        <label style={{ fontSize: '10px' }}>Cantidad</label>
+                        <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                          <input
+                            type="number"
+                            step="0.001"
+                            min="0.001"
+                            value={ingCantidad}
+                            onChange={(e) => setIngCantidad(e.target.value)}
+                            placeholder="0.000"
+                            style={{ 
+                              flex: 1, 
+                              minWidth: 0, 
+                              borderTopRightRadius: ingInsumoId ? 0 : undefined, 
+                              borderBottomRightRadius: ingInsumoId ? 0 : undefined 
+                            }}
+                          />
+                          {ingInsumoId && (() => {
+                            const baseU = insumos.find(i => String(i.id) === ingInsumoId)?.unidadMedida || 'und';
+                            const isKg = baseU.toLowerCase() === 'kg';
+                            const isL = baseU.toLowerCase() === 'l' || baseU.toLowerCase() === 'litros';
+                            
+                            if (isKg || isL) {
+                              return (
+                                <select
+                                  value={ingUnidadSeleccionada}
+                                  onChange={(e) => setIngUnidadSeleccionada(e.target.value)}
+                                  style={{
+                                    width: '55px',
+                                    border: '1px solid var(--border)',
+                                    borderLeft: 'none',
+                                    borderTopRightRadius: '6px',
+                                    borderBottomRightRadius: '6px',
+                                    background: 'var(--bg)',
+                                    fontSize: '11px',
+                                    fontWeight: 'bold',
+                                    color: 'var(--text-2)',
+                                    padding: '0 4px',
+                                    cursor: 'pointer',
+                                    outline: 'none'
+                                  }}
+                                >
+                                  <option value={baseU}>{baseU}</option>
+                                  {isKg && <option value="g">g</option>}
+                                  {isL && <option value="ml">ml</option>}
+                                </select>
+                              );
+                            } else {
+                              return (
+                                <span style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  padding: '0 12px',
                                   fontSize: '11px',
                                   fontWeight: 'bold',
-                                  color: 'var(--text-2)',
-                                  padding: '0 4px',
-                                  cursor: 'pointer',
-                                  outline: 'none'
-                                }}
-                              >
-                                <option value={baseU}>{baseU}</option>
-                                {isKg && <option value="g">g</option>}
-                                {isL && <option value="ml">ml</option>}
-                              </select>
-                            );
-                          } else {
-                            return (
-                              <span style={{
-                                position: 'absolute',
-                                right: '12px',
-                                fontSize: '11px',
-                                fontWeight: 'bold',
-                                color: 'var(--text-3)',
-                                pointerEvents: 'none'
-                              }}>
-                                {baseU}
-                              </span>
-                            );
-                          }
-                        })()}
+                                  color: 'var(--text-3)',
+                                  border: '1px solid var(--border)',
+                                  borderLeft: 'none',
+                                  borderTopRightRadius: '6px',
+                                  borderBottomRightRadius: '6px',
+                                  background: 'var(--bg)'
+                                }}>
+                                  {baseU}
+                                </span>
+                              );
+                            }
+                          })()}
+                        </div>
                       </div>
-                    </div>
 
-                    <button
-                      type="button"
-                      className="btn-new"
-                      onClick={handleAddIngredient}
-                      style={{ padding: '10px 16px', fontSize: '13px', whiteSpace: 'nowrap' }}
-                    >
-                      + Agregar
-                    </button>
+                      <button
+                        type="button"
+                        className="btn-new"
+                        onClick={handleAddIngredient}
+                        style={{ padding: '10px 16px', fontSize: '13px', whiteSpace: 'nowrap' }}
+                      >
+                        + Agregar
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                {/* Ingredients List */}
-                {ingredientes.length > 0 && (
-                  <div style={{ marginBottom: '14px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-2)', marginBottom: '6px' }}>
-                      Ingredientes de la Receta ({ingredientes.length})
-                    </div>
-                    {ingredientes.map((ing, idx) => {
-                      const insumo = insumos.find(i => i.id === ing.insumoId);
-                      const costoLinea = ing.cantidadRequerida * (insumo?.costoUnitario || 0);
-                      return (
-                        <div
-                          key={idx}
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: '10px 14px',
-                            background: 'var(--bg-card2)',
-                            borderRadius: '10px',
-                            border: '1px solid var(--border)',
-                            marginBottom: '6px',
-                            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.02)'
-                          }}
-                        >
-                          <div>
-                            <div style={{ fontWeight: '700', fontSize: '13px', color: 'var(--text)' }}>
-                              {ing.insumoNombre}
-                            </div>
-                            <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>
-                              {formatQuantity(ing.cantidadRequerida, ing.unidadMedida || 'kg')} · S/. {insumo?.costoUnitario?.toFixed(2) || '0.00'} / {ing.unidadMedida}
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
-                            <span style={{ fontWeight: '800', color: 'var(--accent)', fontSize: '13px' }}>
-                              S/. {costoLinea.toFixed(2)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveIngredient(ing.insumoId)}
+                  {ingredientes.length > 0 && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-2)', marginBottom: '8px' }}>
+                        Ingredientes de la Receta ({ingredientes.length})
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {ingredientes.map((ing, idx) => {
+                          const insumo = insumos.find(i => i.id === ing.insumoId);
+                          const costoLinea = ing.cantidadRequerida * (insumo?.costoUnitario || 0);
+                          return (
+                            <div
+                              key={idx}
                               style={{
-                                background: 'none',
-                                border: 'none',
-                                color: 'var(--red)',
-                                cursor: 'pointer',
-                                fontSize: '14px',
-                                padding: '4px 8px',
-                                borderRadius: '6px',
-                                transition: 'background 0.2s'
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '12px 16px',
+                                background: 'var(--bg)',
+                                borderRadius: '10px',
+                                border: '1px solid var(--border)'
                               }}
-                              onMouseOver={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'}
-                              onMouseOut={(e) => e.currentTarget.style.background = 'none'}
-                              title="Quitar ingrediente"
                             >
-                              🗑
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                              <div>
+                                <div style={{ fontWeight: '700', fontSize: '13px', color: 'var(--text)' }}>
+                                  {ing.insumoNombre}
+                                </div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>
+                                  {formatQuantity(ing.cantidadRequerida, ing.unidadMedida || 'kg')} · S/. {insumo?.costoUnitario?.toFixed(2) || '0.00'} / {ing.unidadMedida}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                                <span style={{ fontWeight: '800', color: 'var(--accent)', fontSize: '13px' }}>
+                                  S/. {costoLinea.toFixed(2)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveIngredient(ing.insumoId)}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--red)',
+                                    cursor: 'pointer',
+                                    fontSize: '14px',
+                                    padding: '6px',
+                                    borderRadius: '6px',
+                                    transition: 'background 0.2s'
+                                  }}
+                                  onMouseOver={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'}
+                                  onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+                                  title="Quitar ingrediente"
+                                >
+                                  🗑
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="inp-group">
-                    <label>Rendimiento (unidades)</label>
+                  <div className="inp-group" style={{ margin: 0 }}>
+                    <label>Instrucciones de Preparación (opcional)</label>
                     <input
-                      type="number"
-                      step="0.001"
-                      min="0.001"
-                      value={rendimiento}
-                      onChange={(e) => setRendimiento(e.target.value)}
-                      placeholder="1"
-                    />
-                  </div>
-                  <div className="inp-group">
-                    <label>Ganancia Deseada (%) (&gt; 10%)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="10.01"
-                      value={margenDeseado}
-                      onChange={(e) => setMargenDeseado(e.target.value)}
-                      placeholder="30"
-                      required
+                      type="text"
+                      value={instrucciones}
+                      onChange={(e) => setInstrucciones(e.target.value)}
+                      placeholder="Ej: Hornear a 180°C por 45 minutos..."
+                      style={{ padding: '10px 12px' }}
                     />
                   </div>
                 </div>
-                
-                <div className="inp-group">
-                  <label>Instrucciones de Preparación (opcional)</label>
-                  <input
-                    type="text"
-                    value={instrucciones}
-                    onChange={(e) => setInstrucciones(e.target.value)}
-                    placeholder="Ej: Hornear 180C por 45 min"
-                  />
-                </div>
 
-                {/* Dynamic Cost and Margin Summary Box */}
+                {/* SECCIÓN 3: RESUMEN FINANCIERO */}
                 {ingredientes.length > 0 && (
-                  <div style={{ marginBottom: '14px' }}>
-                    {selectedProduct ? (
-                      <div style={{
-                        marginTop: '16px',
-                        padding: '14px 16px',
-                        background: 'linear-gradient(135deg, rgba(254, 246, 232, 0.9) 0%, rgba(255, 253, 248, 0.9) 100%)',
-                        borderRadius: '16px',
-                        border: '1px solid rgba(176, 125, 46, 0.25)',
-                        boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.6)'
-                      }}>
-                        <div style={{ fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.5px', marginBottom: '10px' }}>
-                          Análisis de Costos y Margen
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.2fr', gap: '12px' }}>
-                          <div style={{ background: 'var(--bg-card2)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)' }}>
-                            <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--text-3)', textTransform: 'uppercase' }}>Costo Receta</div>
-                            <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text)' }}>S/. {costoTotalReceta.toFixed(2)}</div>
-                            <div style={{ fontSize: '9.5px', color: 'var(--text-2)', marginTop: '2px' }}>
-                              S/. {costoPorUnidad.toFixed(2)} / ud
-                            </div>
-                          </div>
-                          <div style={{ background: 'var(--bg-card2)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)' }}>
-                            <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--text-3)', textTransform: 'uppercase' }}>Precio Venta</div>
-                            <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text)' }}>S/. {precioVenta.toFixed(2)}</div>
-                            <div style={{ fontSize: '9.5px', color: 'var(--text-2)', marginTop: '2px' }}>S/. {precioVenta.toFixed(2)} / ud</div>
-                          </div>
-                          <div style={{
-                            background: margenPorcentaje >= (parseFloat(margenDeseado) || 30) ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
-                            padding: '10px',
-                            borderRadius: '10px',
-                            border: `1px solid ${margenPorcentaje >= (parseFloat(margenDeseado) || 30) ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
-                          }}>
-                            <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--text-3)', textTransform: 'uppercase' }}>Margen Est.</div>
-                            <div style={{
-                              fontSize: '14px',
-                              fontWeight: '800',
-                              color: margenPorcentaje >= (parseFloat(margenDeseado) || 30) ? 'var(--green)' : 'var(--red)'
-                            }}>
-                              {margenPorcentaje.toFixed(1)}%
-                            </div>
-                            <div style={{ fontSize: '9.5px', color: 'var(--text-2)', marginTop: '2px' }}>
-                              Deseado: {margenDeseado}%
-                            </div>
-                          </div>
-                          <div style={{ background: 'var(--bg-card2)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)' }}>
-                            <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--text-3)', textTransform: 'uppercase' }}>Precio Sugerido</div>
-                            <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--accent)' }}>
-                              S/. {(costoPorUnidad * (1 + (parseFloat(margenDeseado) || 30) / 100)).toFixed(2)}
-                            </div>
-                            <div style={{ fontSize: '9.5px', color: 'var(--text-2)', marginTop: '2px' }}>Con +{margenDeseado}% margen</div>
-                          </div>
+                  <div style={{
+                    padding: '20px',
+                    background: 'var(--bg-card)',
+                    borderRadius: '14px',
+                    border: '1px solid var(--border)',
+                  }}>
+                    <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-2)', marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      3. Resumen Financiero
+                    </div>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      {/* Costo por Unidad */}
+                      <div style={{ padding: '16px', borderRadius: '12px', background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-3)', textTransform: 'uppercase', marginBottom: '8px' }}>Costo por Unidad</div>
+                        <div style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text)' }}>S/. {costoPorUnidad.toFixed(2)}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-2)', marginTop: '4px' }}>
+                          Costo total receta: S/. {costoTotalReceta.toFixed(2)}
                         </div>
                       </div>
-                    ) : (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: 'var(--accent-bg)', borderRadius: '8px', marginTop: '6px' }}>
-                        <span style={{ fontWeight: '700', color: 'var(--accent)', fontSize: '13px' }}>
-                          Costo total de produccion:
-                        </span>
-                        <span style={{ fontWeight: '800', color: 'var(--accent)', fontSize: '14px' }}>
-                          S/. {costoTotalReceta.toFixed(2)}
-                        </span>
+                      
+                      {/* Precio Sugerido */}
+                      <div style={{ padding: '16px', borderRadius: '12px', background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-3)', textTransform: 'uppercase', marginBottom: '8px' }}>Precio Sugerido</div>
+                        <div style={{ fontSize: '20px', fontWeight: '800', color: 'var(--accent)' }}>
+                          S/. {(costoPorUnidad * (1 + (parseFloat(margenDeseado) || 30) / 100)).toFixed(2)}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-2)', marginTop: '4px' }}>
+                          Para ganar el {margenDeseado}% deseado
+                        </div>
                       </div>
-                    )}
+                    </div>
                   </div>
                 )}
 
-                <div className="mc-btns" style={{ marginTop: '24px' }}>
-                  <button type="button" className="mc-sec" onClick={() => setShowModal(false)}>Cancelar</button>
-                  <button type="submit" className="mc-pri">
+                <div className="mc-btns" style={{ marginTop: '10px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
+                  <button type="button" className="mc-sec" onClick={() => setShowModal(false)} style={{ padding: '12px 24px', fontSize: '14px' }}>Cancelar</button>
+                  <button type="submit" className="mc-pri" style={{ padding: '12px 24px', fontSize: '14px' }}>
                     {editingId ? 'Actualizar Receta' : 'Guardar Receta'}
                   </button>
                 </div>
