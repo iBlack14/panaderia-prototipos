@@ -1158,6 +1158,10 @@ export default function PedidosPage() {
                           type="button"
                           className="pedido-row__btn pedido-row__btn--ok"
                           onClick={() => {
+                            if (new Date(p.fecEntrega).getTime() > nowTime) {
+                              alert('No se puede entregar el pedido antes de la fecha y hora pactada.');
+                              return;
+                            }
                             setDeliveringPedido(p);
                             setDelPaymentMethodId('');
                             setShowDeliveryModal(true);
@@ -1190,9 +1194,31 @@ export default function PedidosPage() {
 
                     {isExpanded && (
                       <div className="pedido-row__details">
-                        <pre className="pedido-row__details-pre">
-                          {getPedidoDescription(p.productoTexto)}
-                        </pre>
+                        {itemsList.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' }}>
+                            {itemsList.map((item, idx) => {
+                              const plan = calcularInsumosParaPedido(itemsList);
+                              const isMissingRecipe = plan.sinReceta.includes(item.name);
+                              return (
+                                <div key={idx} style={{ padding: '8px 10px', background: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '12.5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span>
+                                    <strong>{item.qty} {item.unidadMedida || 'und'}</strong> x {item.name} {item.versionName ? `(${item.versionName})` : ''}
+                                    {isMissingRecipe && (
+                                      <span style={{ color: 'var(--amber)', fontSize: '10px', marginLeft: '8px', background: 'rgba(245,158,11,0.1)', padding: '2px 6px', borderRadius: '6px', fontWeight: 'bold' }}>
+                                        ⚠️ Falta receta
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span style={{ color: 'var(--text-2)', fontWeight: 'bold' }}>S/. {(item.price * item.qty).toFixed(2)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <pre className="pedido-row__details-pre">
+                            {getPedidoDescription(p.productoTexto)}
+                          </pre>
+                        )}
                         {itemsList.length > 0 && (p.estado === 'Pendiente' || p.estado === 'Listo') && (
                           <MateriaPrimaPanel
                             plan={calcularInsumosParaPedido(itemsList)}
@@ -1608,6 +1634,9 @@ export default function PedidosPage() {
                             <strong>{item.qty} {item.unidadMedida || 'und'}</strong> x {item.name} {item.versionName ? `(${item.versionName})` : ''}
                             <span style={{ color: 'var(--text-3)', fontSize: '11px', marginLeft: '6px' }}>(S/. {item.price.toFixed(2)})</span>
                             {item.type === 'personalizado' && <span style={{ fontSize: '10px', color: '#0d9488', marginLeft: '6px', background: 'rgba(20,184,166,0.1)', padding: '1px 5px', borderRadius: '8px', fontWeight: 'bold' }}>Personalizado</span>}
+                            {reservationPlan.sinReceta.includes(item.name) && (
+                              <span style={{ color: 'var(--amber)', fontSize: '10px', marginLeft: '6px', background: 'rgba(245,158,11,0.1)', padding: '1px 5px', borderRadius: '8px', fontWeight: 'bold' }}>Falta receta</span>
+                            )}
                           </span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <strong style={{ color: 'var(--text-2)', fontSize: '12.5px' }}>S/. {(item.price * item.qty).toFixed(2)}</strong>
