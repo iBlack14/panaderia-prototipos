@@ -1158,8 +1158,10 @@ export default function PedidosPage() {
                           type="button"
                           className="pedido-row__btn pedido-row__btn--ok"
                           onClick={() => {
-                            if (new Date(p.fecEntrega).getTime() > nowTime) {
-                              alert('No se puede entregar el pedido antes de la fecha y hora pactada.');
+                            const nowTime = Date.now();
+                            const deliveryTime = new Date(p.fecEntrega).getTime();
+                            if (nowTime < deliveryTime) {
+                              alert('No se puede entregar la reserva antes de la fecha y hora pactada de entrega.');
                               return;
                             }
                             setDeliveringPedido(p);
