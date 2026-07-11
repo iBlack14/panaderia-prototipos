@@ -25,6 +25,10 @@ const nextConfig = {
     webpackMemoryOptimizations: true,
   },
 
+  // Agregamos configuración vacía de turbopack para solucionar error en despliegue
+  turbopack: {},
+
+
   webpack: (config, { dev }) => {
     if (dev) {
       // Menos presión de watchers/filesystem en Windows.
