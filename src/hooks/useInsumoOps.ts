@@ -28,9 +28,17 @@ export function useInsumoOps({
     const oldStock = existing ? existing.stock : 0;
     let newLotes = existing && existing.lotes ? [...existing.lotes] : [];
     
+    const initialCost = parseFloat(String(iObj.costoUnitario ?? 0)) || 0;
+    
     if (iObj.id) {
-      // Edit mode: check if stock has changed
-      if (iObj.stock !== oldStock) {
+      // Edit mode: check if cost was manually changed
+      const costManuallyChanged = initialCost !== (existing ? existing.costoUnitario : 0);
+
+      if (costManuallyChanged) {
+        // User forced a new cost, update all current stock to this new cost
+        newLotes = iObj.stock > 0 ? [{ qty: iObj.stock, cost: initialCost }] : [];
+      } else if (iObj.stock !== oldStock) {
+        // Stock changed but cost didn't change manually
         const diff = iObj.stock - oldStock;
         if (diff > 0) {
           // Increased: append batch with last known cost
@@ -42,12 +50,12 @@ export function useInsumoOps({
         }
       }
     } else {
-      const initialCost = parseFloat(String(iObj.costoUnitario ?? 0)) || 0;
       newLotes = iObj.stock > 0 ? [{ qty: iObj.stock, cost: initialCost }] : [];
     }
 
-    const calculatedCost =
-      newLotes.length > 0 ? getLotesUnitCost(newLotes) : parseFloat(String(iObj.costoUnitario ?? 0)) || 0;
+    const calculatedCost = (iObj.id && initialCost !== (existing ? existing.costoUnitario : 0))
+      ? initialCost
+      : (newLotes.length > 0 ? getLotesUnitCost(newLotes) : initialCost);
 
     if (isSupabaseConfigured && supabase) {
       try {

@@ -1137,6 +1137,10 @@ export default function PedidosPage() {
                           className="pedido-row__btn pedido-row__btn--pri"
                           onClick={() => {
                             const plan = calcularInsumosParaPedido(itemsList);
+                            if (plan.sinReceta.length > 0) {
+                              alert('No se puede marcar como Listo. Faltan las recetas de: ' + plan.sinReceta.join(', '));
+                              return;
+                            }
                             if (itemsList.length > 0 && !plan.todosDisponibles) {
                               const ok = window.confirm(
                                 'Hay insumos insuficientes para este pedido. ¿Marcar como listo de todos modos?'
