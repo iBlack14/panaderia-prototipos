@@ -95,6 +95,10 @@ function money(n: number) {
   return `S/. ${n.toFixed(2)}`;
 }
 
+function round2(n: number) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
 function effectiveStock(p: Product) {
   if (p.versions?.length > 0) return p.versions.reduce((a, v) => a + (v.stock || 0), 0);
   return p.stock || 0;
@@ -763,103 +767,444 @@ export default function ReportesEstadisticasPage() {
     return p > 0 ? '▲' : '▼';
   };
 
-  // ─── EXPORT ─────────────────────────────────────────────
+  // ─── EXPORT (solo pestaña + filtros activos) ────────────
+  const tabLabel =
+    tab === 'ventas' ? 'Ventas' :
+    tab === 'productos' ? 'Productos' :
+    tab === 'insumos' ? 'Insumos' : 'Pedidos';
+
+  const filterSummaryLines = (): string[] => {
+    const lines = [
+      `Periodo: ${dateRange.label}`,
+      `Generado: ${new Date().toLocaleString('es-PE')}`,
+      `Módulo: ${tabLabel}`,
+    ];
+    if (tab === 'ventas') {
+      lines.push(`Método: ${filterMethod === 'todos' ? 'Todos' : filterMethod}`);
+      lines.push(`Cajero: ${filterCajero === 'todos' ? 'Todos' : filterCajero}`);
+      lines.push(`Estado venta: ${filterEstado === 'todos' ? 'Todos' : filterEstado === 'pagado' ? 'Pagado' : 'Anulado'}`);
+    }
+    if (tab === 'pedidos') {
+      lines.push(`Estado pedido: ${pedidoEstado === 'todos' ? 'Todos' : pedidoEstado}`);
+    }
+    if (txSearch.trim()) lines.push(`Búsqueda: "${txSearch.trim()}"`);
+    lines.push(`Registros exportados: ${listForPage.length}`);
+    return lines;
+  };
+
+  const safeFileSlug = (s: string) =>
+    s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, 40) || 'Reporte';
+
+  const exportFileBase = () => {
+    const datePart = new Date().toISOString().split('T')[0];
+    const periodPart = safeFileSlug(periodBadge);
+    return `SnackRoque_${safeFileSlug(tabLabel)}_${periodPart}_${datePart}`;
+  };
+
+  /** Construye hoja Excel profesional: cabecera + filtros + tabla con anchos y autofilter */
+  const buildExcelSheet = (
+    XLSX: any,
+    opts: {
+      title: string;
+      meta: string[];
+      headers: string[];
+      rows: (string | number | null | undefined)[][];
+      colWidths?: number[];
+      moneyCols?: number[]; // índices 0-based en la tabla (no en meta)
+      totalsRow?: (string | number | null | undefined)[];
+    }
+  ) => {
+    const aoa: (string | number | null | undefined)[][] = [];
+    aoa.push([opts.title]);
+    aoa.push(['Snack Roque — Sistema POS / Gestión']);
+    aoa.push([]);
+    aoa.push(['CRITERIOS DE FILTRO APLICADOS']);
+    opts.meta.forEach(m => aoa.push([m]));
+    aoa.push([]);
+    const headerRowIndex = aoa.length; // 0-based in aoa
+    aoa.push(opts.headers);
+    opts.rows.forEach(r => aoa.push(r));
+    if (opts.totalsRow) {
+      aoa.push([]);
+      aoa.push(opts.totalsRow);
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // Anchos de columna
+    const widths = opts.colWidths || opts.headers.map((h, i) => {
+      const maxCell = Math.max(
+        h.length,
+        ...opts.rows.map(r => String(r[i] ?? '').length)
+      );
+      return Math.min(42, Math.max(10, maxCell + 2));
+    });
+    ws['!cols'] = widths.map(w => ({ wch: w }));
+
+    // Merge título
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(opts.headers.length - 1, 0) } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: Math.max(opts.headers.length - 1, 0) } },
+    ];
+
+    // Congelar cabecera de tabla
+    ws['!freeze'] = { xSplit: 0, ySplit: headerRowIndex + 1 };
+    // Algunos visores usan esta forma:
+    if (!ws['!views']) ws['!views'] = [{ state: 'frozen', ySplit: headerRowIndex + 1, topLeftCell: `A${headerRowIndex + 2}`, activeCell: `A${headerRowIndex + 2}` }];
+
+    // AutoFilter sobre la tabla de datos
+    const lastCol = colLetter(opts.headers.length - 1);
+    const firstDataRow = headerRowIndex + 1; // 1-based excel
+    const lastDataRow = headerRowIndex + 1 + opts.rows.length;
+    if (opts.rows.length > 0) {
+      ws['!autofilter'] = { ref: `A${firstDataRow}:${lastCol}${lastDataRow}` };
+    }
+
+    // Formato numérico en columnas de dinero (best-effort SheetJS community)
+    if (opts.moneyCols?.length) {
+      for (let r = 0; r < opts.rows.length; r++) {
+        for (const c of opts.moneyCols) {
+          const addr = `${colLetter(c)}${headerRowIndex + 2 + r}`;
+          const cell = ws[addr];
+          if (cell && typeof cell.v === 'number') {
+            cell.t = 'n';
+            cell.z = '"S/." #,##0.00';
+          }
+        }
+      }
+    }
+
+    return ws;
+  };
+
+  const colLetter = (idx: number) => {
+    let n = idx;
+    let s = '';
+    while (n >= 0) {
+      s = String.fromCharCode((n % 26) + 65) + s;
+      n = Math.floor(n / 26) - 1;
+    }
+    return s;
+  };
+
+  const appendSheet = (XLSX: any, wb: any, name: string, ws: any) => {
+    const safe = name.slice(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, safe);
+  };
+
   const exportToExcel = async () => {
     try {
       const XLSX = await loadSheetJS();
       const wb = XLSX.utils.book_new();
+      const meta = filterSummaryLines();
+      const rowsCount = listForPage.length;
 
-      // Resumen
-      const kpisData = [
-        ['REPORTE INTEGRAL — SNACK ROQUE'],
-        [`Generado: ${new Date().toLocaleString()}`],
-        [`Periodo: ${dateRange.label}`],
-        [`Sección activa: ${tab}`],
-        [],
-        ['=== VENTAS ==='],
-        ['KPI', 'Valor'],
-        ['Ventas netas (S/.)', salesMetrics.tv],
-        ['Transacciones', salesMetrics.tr],
-        ['Unidades vendidas', salesMetrics.un],
-        ['Ticket promedio', salesMetrics.av],
-        ['Anuladas', salesMetrics.annulledCount],
-        [],
-        ['=== PRODUCTOS ==='],
-        ['SKUs', productReport.totalSKUs],
-        ['Stock bajo', productReport.lowStock],
-        ['Agotados', productReport.agotados],
-        ['Valor inventario (S/.)', productReport.valorInventario],
-        ['Unidades vendidas (periodo)', productReport.totalSoldUnits],
-        [],
-        ['=== INSUMOS ==='],
-        ['Total insumos', insumoReport.total],
-        ['Activos', insumoReport.activos],
-        ['Stock bajo', insumoReport.bajos],
-        ['Agotados', insumoReport.agotados],
-        ['Valor inventario (S/.)', insumoReport.valorTotal],
-        ['Compras periodo (S/.)', insumoReport.comprasPeriodo],
-        [],
-        ['=== PEDIDOS / RESERVAS ==='],
-        ['Total en periodo', pedidoReport.totalReservas],
-        ['Activas (Pend./Listo)', pedidoReport.activas],
-        ['Entregadas', pedidoReport.entregadas],
-        ['Canceladas', pedidoReport.canceladas],
-        ['Adelantos (S/.)', pedidoReport.montoaAdelantos],
-        ['Monto total reservas (S/.)', pedidoReport.montoTotal],
-        ['Saldo por cobrar (S/.)', pedidoReport.montoPendiente],
-      ];
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(kpisData), 'Resumen');
+      if (rowsCount === 0) {
+        toast('⚠️ No hay datos con los filtros actuales para exportar');
+        return;
+      }
 
-      // Ventas detalle
-      const txRows = [
-        ['Boleta', 'Fecha', 'Hora', 'Productos', 'Cajero', 'Método', 'Total', 'Estado', 'Cliente'],
-        ...filteredHistory.map(h => [
-          `B-${h.n}`, h.d, h.t || '',
-          h.items.map(i => `${i.name} x${i.qty}`).join(', '),
-          h.cajero, h.method, h.total,
-          h.estado === 0 ? 'Anulado' : 'Pagado',
+      if (tab === 'ventas') {
+        // Hoja 1: Resumen KPIs (solo ventas filtradas)
+        const resumenWs = buildExcelSheet(XLSX, {
+          title: 'REPORTE DE VENTAS — RESUMEN',
+          meta,
+          headers: ['Indicador', 'Valor', 'Periodo anterior', 'Variación %'],
+          rows: [
+            ['Ventas netas (S/.)', round2(salesMetrics.tv), round2(salesMetrics.prevTv), formatPct(pctChange(salesMetrics.tv, salesMetrics.prevTv))],
+            ['Transacciones', salesMetrics.tr, salesMetrics.prevTr, formatPct(pctChange(salesMetrics.tr, salesMetrics.prevTr))],
+            ['Unidades vendidas', salesMetrics.un, salesMetrics.prevUn, formatPct(pctChange(salesMetrics.un, salesMetrics.prevUn))],
+            ['Ticket promedio (S/.)', round2(salesMetrics.av), round2(salesMetrics.prevAv), formatPct(pctChange(salesMetrics.av, salesMetrics.prevAv))],
+            ['Anuladas (en filtro)', salesMetrics.annulledCount, '', ''],
+            ['Mejor producto', salesMetrics.bestProduct, '', ''],
+            ['Método dominante', salesMetrics.bestMethod, '', ''],
+            ['Cajero top', salesMetrics.bestCajero, '', ''],
+            ['Pico de ventas', `${salesMetrics.peakLabel} = ${money(salesMetrics.peakVal)}`, '', ''],
+          ],
+          colWidths: [28, 18, 18, 14],
+          moneyCols: [1, 2],
+        });
+        appendSheet(XLSX, wb, '1. Resumen', resumenWs);
+
+        // Hoja 2: Detalle transacciones (filtradas + búsqueda)
+        const detRows = filteredHistory.map(h => [
+          `B-${h.n}`,
+          h.d,
+          h.t || '',
+          h.items.map(i => `${i.name} x${i.qty}`).join('; '),
           h.clienteNombre || '',
-        ]),
-      ];
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(txRows), 'Ventas');
+          h.cajero,
+          h.method,
+          round2(h.total),
+          h.estado === 0 ? 'Anulado' : 'Pagado',
+        ]);
+        const detWs = buildExcelSheet(XLSX, {
+          title: 'REPORTE DE VENTAS — DETALLE',
+          meta,
+          headers: ['Boleta', 'Fecha', 'Hora', 'Productos', 'Cliente', 'Cajero', 'Método', 'Total (S/.)', 'Estado'],
+          rows: detRows,
+          colWidths: [12, 14, 10, 40, 18, 16, 14, 12, 10],
+          moneyCols: [7],
+          totalsRow: ['TOTAL', '', '', '', '', '', '', round2(filteredHistory.filter(h => h.estado !== 0).reduce((a, h) => a + h.total, 0)), `${filteredHistory.length} filas`],
+        });
+        appendSheet(XLSX, wb, '2. Transacciones', detWs);
 
-      // Productos
-      const prodRows = [
-        ['Producto', 'Categoría', 'Stock', 'Precio', 'Valor inv.', 'Vendidos', 'Ingresos', 'Producción', 'Descarte', 'Estado'],
-        ...productReport.rows.map(r => [
-          r.name, r.cat, r.stock, r.price, r.valor, r.qtySold, r.revenue, r.produccion, r.descarte, r.status,
-        ]),
-      ];
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(prodRows), 'Productos');
+        // Hoja 3: Serie temporal
+        if (salesMetrics.barLabels.length) {
+          const serieWs = buildExcelSheet(XLSX, {
+            title: 'REPORTE DE VENTAS — SERIE',
+            meta: [...meta, `Gráfico: ${salesMetrics.chartTitle}`],
+            headers: ['Periodo / Etiqueta', 'Total (S/.)'],
+            rows: salesMetrics.barLabels.map((lbl, i) => [lbl, round2(salesMetrics.barTotals[i])]),
+            colWidths: [22, 14],
+            moneyCols: [1],
+          });
+          appendSheet(XLSX, wb, '3. Serie temporal', serieWs);
+        }
 
-      // Insumos
-      const insRows = [
-        ['Insumo', 'Stock', 'Mínimo', 'Unidad', 'Costo unit.', 'Valor', 'Comprado', 'Costo compras', 'En pedidos', 'Estado', 'Activo'],
-        ...insumoReport.rows.map(r => [
-          r.nombre, r.stock, r.stockMinimo, r.unidad, r.costoUnitario, r.valor,
-          r.qtyComprada, r.costoCompras, r.qtyEnPedidos, r.status, r.active ? 'Sí' : 'No',
-        ]),
-      ];
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(insRows), 'Insumos');
+        // Hoja 4: Top productos del filtro
+        if (salesMetrics.topProducts.length) {
+          const topWs = buildExcelSheet(XLSX, {
+            title: 'REPORTE DE VENTAS — TOP PRODUCTOS',
+            meta,
+            headers: ['#', 'Producto', 'Unidades', 'Ingresos (S/.)'],
+            rows: salesMetrics.topProducts.map((p, i) => [i + 1, p.name, p.qty, round2(p.revenue)]),
+            colWidths: [6, 32, 12, 14],
+            moneyCols: [3],
+          });
+          appendSheet(XLSX, wb, '4. Top productos', topWs);
+        }
 
-      // Pedidos
-      const pedRows = [
-        ['ID', 'Cliente', 'Detalle', 'Entrega', 'Estado', 'Total', 'Adelanto', 'Saldo'],
-        ...pedidoReport.list.map(p => [
-          p.id,
-          p.clienteNombre || '',
-          p.summary,
-          p.fecEntrega,
-          p.estado,
-          p.totalVal,
-          p.adelanto,
-          p.saldo,
-        ]),
-      ];
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pedRows), 'Pedidos');
+        // Hoja 5: Métodos
+        if (salesMetrics.byMethod.length) {
+          const mWs = buildExcelSheet(XLSX, {
+            title: 'REPORTE DE VENTAS — MÉTODOS DE PAGO',
+            meta,
+            headers: ['Método', 'Operaciones', 'Total (S/.)', '% del total'],
+            rows: salesMetrics.byMethod.map(m => [
+              m.name,
+              m.count,
+              round2(m.total),
+              salesMetrics.tv > 0 ? round2((m.total / salesMetrics.tv) * 100) : 0,
+            ]),
+            colWidths: [22, 14, 14, 12],
+            moneyCols: [2],
+          });
+          appendSheet(XLSX, wb, '5. Metodos de pago', mWs);
+        }
 
-      XLSX.writeFile(wb, `Reporte_Integral_Snack_Roque_${new Date().toISOString().split('T')[0]}.xlsx`);
-      toast('📥 Excel integral descargado (Ventas + Productos + Insumos + Pedidos)');
+        // Hoja 6: Cajeros
+        if (salesMetrics.byCajero.length) {
+          const cWs = buildExcelSheet(XLSX, {
+            title: 'REPORTE DE VENTAS — POR CAJERO',
+            meta,
+            headers: ['Cajero', 'Operaciones', 'Total (S/.)', 'Ticket prom. (S/.)'],
+            rows: salesMetrics.byCajero.map(c => [
+              c.name,
+              c.count,
+              round2(c.total),
+              round2(c.count > 0 ? c.total / c.count : 0),
+            ]),
+            colWidths: [22, 14, 14, 16],
+            moneyCols: [2, 3],
+          });
+          appendSheet(XLSX, wb, '6. Por cajero', cWs);
+        }
+      }
+
+      if (tab === 'productos') {
+        const resWs = buildExcelSheet(XLSX, {
+          title: 'REPORTE DE PRODUCTOS — RESUMEN',
+          meta,
+          headers: ['Indicador', 'Valor'],
+          rows: [
+            ['SKUs en catálogo', productReport.totalSKUs],
+            ['Valor inventario (S/.)', round2(productReport.valorInventario)],
+            ['Unidades vendidas (periodo)', productReport.totalSoldUnits],
+            ['Ingresos por productos (S/.)', round2(productReport.totalRevenue)],
+            ['Stock bajo', productReport.lowStock],
+            ['Agotados', productReport.agotados],
+            ['Filas exportadas (búsqueda)', filteredProductRows.length],
+          ],
+          colWidths: [32, 18],
+          moneyCols: [1],
+        });
+        appendSheet(XLSX, wb, '1. Resumen', resWs);
+
+        const detWs = buildExcelSheet(XLSX, {
+          title: 'REPORTE DE PRODUCTOS — DETALLE',
+          meta,
+          headers: [
+            'Producto', 'Categoría', 'Stock', 'Precio (S/.)', 'Valor inv. (S/.)',
+            'Vendidos', 'Ingresos (S/.)', 'Producción', 'Descarte', 'Estado stock',
+          ],
+          rows: filteredProductRows.map(r => [
+            r.name, r.cat, r.stock, round2(r.price), round2(r.valor),
+            r.qtySold, round2(r.revenue), r.produccion, r.descarte,
+            r.status === 'ok' ? 'OK' : r.status === 'bajo' ? 'Bajo' : 'Agotado',
+          ]),
+          colWidths: [28, 14, 10, 12, 14, 10, 14, 12, 10, 12],
+          moneyCols: [3, 4, 6],
+          totalsRow: [
+            'TOTALES', '',
+            filteredProductRows.reduce((a, r) => a + r.stock, 0),
+            '',
+            round2(filteredProductRows.reduce((a, r) => a + r.valor, 0)),
+            filteredProductRows.reduce((a, r) => a + r.qtySold, 0),
+            round2(filteredProductRows.reduce((a, r) => a + r.revenue, 0)),
+            filteredProductRows.reduce((a, r) => a + r.produccion, 0),
+            filteredProductRows.reduce((a, r) => a + r.descarte, 0),
+            '',
+          ],
+        });
+        appendSheet(XLSX, wb, '2. Inventario y ventas', detWs);
+
+        if (productReport.categories.length) {
+          const catWs = buildExcelSheet(XLSX, {
+            title: 'REPORTE DE PRODUCTOS — POR CATEGORÍA',
+            meta,
+            headers: ['Categoría', 'SKUs', 'Stock total', 'Ingresos (S/.)'],
+            rows: productReport.categories.map(c => [c.name, c.count, c.stock, round2(c.revenue)]),
+            colWidths: [22, 10, 12, 14],
+            moneyCols: [3],
+          });
+          appendSheet(XLSX, wb, '3. Por categoria', catWs);
+        }
+      }
+
+      if (tab === 'insumos') {
+        const resWs = buildExcelSheet(XLSX, {
+          title: 'REPORTE DE INSUMOS — RESUMEN',
+          meta,
+          headers: ['Indicador', 'Valor'],
+          rows: [
+            ['Total insumos', insumoReport.total],
+            ['Activos', insumoReport.activos],
+            ['Valor inventario (S/.)', round2(insumoReport.valorTotal)],
+            ['Compras del periodo (S/.)', round2(insumoReport.comprasPeriodo)],
+            ['Cantidad comprada (und.)', round2(insumoReport.qtyCompradaPeriodo)],
+            ['Stock bajo (≤ mínimo)', insumoReport.bajos],
+            ['Agotados', insumoReport.agotados],
+            ['Filas exportadas (búsqueda)', filteredInsumoRows.length],
+          ],
+          colWidths: [32, 18],
+          moneyCols: [1],
+        });
+        appendSheet(XLSX, wb, '1. Resumen', resWs);
+
+        const detWs = buildExcelSheet(XLSX, {
+          title: 'REPORTE DE INSUMOS — DETALLE',
+          meta,
+          headers: [
+            'Insumo', 'Stock', 'Mínimo', 'Unidad', 'Costo unit. (S/.)', 'Valor (S/.)',
+            'Comprado (periodo)', 'Costo compras (S/.)', 'Usado en pedidos', 'Estado', 'Activo',
+          ],
+          rows: filteredInsumoRows.map(r => [
+            r.nombre, r.stock, r.stockMinimo, r.unidad, round2(r.costoUnitario), round2(r.valor),
+            r.qtyComprada, round2(r.costoCompras), r.qtyEnPedidos,
+            r.status === 'ok' ? 'OK' : r.status === 'bajo' ? 'Bajo' : 'Agotado',
+            r.active ? 'Sí' : 'No',
+          ]),
+          colWidths: [26, 10, 10, 10, 14, 12, 14, 16, 14, 10, 8],
+          moneyCols: [4, 5, 7],
+          totalsRow: [
+            'TOTALES', '', '', '', '',
+            round2(filteredInsumoRows.reduce((a, r) => a + r.valor, 0)),
+            round2(filteredInsumoRows.reduce((a, r) => a + r.qtyComprada, 0)),
+            round2(filteredInsumoRows.reduce((a, r) => a + r.costoCompras, 0)),
+            round2(filteredInsumoRows.reduce((a, r) => a + r.qtyEnPedidos, 0)),
+            '', '',
+          ],
+        });
+        appendSheet(XLSX, wb, '2. Inventario insumos', detWs);
+
+        if (insumoReport.alerts.length) {
+          const alWs = buildExcelSheet(XLSX, {
+            title: 'REPORTE DE INSUMOS — ALERTAS',
+            meta: [...meta, 'Solo stock bajo o agotado'],
+            headers: ['Insumo', 'Stock', 'Mínimo', 'Unidad', 'Estado', 'Valor (S/.)'],
+            rows: insumoReport.alerts.map(r => [
+              r.nombre, r.stock, r.stockMinimo, r.unidad,
+              r.status === 'bajo' ? 'Bajo' : 'Agotado', round2(r.valor),
+            ]),
+            colWidths: [26, 10, 10, 10, 10, 12],
+            moneyCols: [5],
+          });
+          appendSheet(XLSX, wb, '3. Alertas', alWs);
+        }
+      }
+
+      if (tab === 'pedidos') {
+        const resWs = buildExcelSheet(XLSX, {
+          title: 'REPORTE DE PEDIDOS / RESERVAS — RESUMEN',
+          meta,
+          headers: ['Indicador', 'Valor'],
+          rows: [
+            ['Total en periodo', pedidoReport.totalReservas],
+            ['Activas (Pendiente + Listo)', pedidoReport.activas],
+            ['Entregadas', pedidoReport.entregadas],
+            ['Canceladas', pedidoReport.canceladas],
+            ['Pendientes', pedidoReport.byEstado.Pendiente || 0],
+            ['Listos', pedidoReport.byEstado.Listo || 0],
+            ['Adelantos cobrados (S/.)', round2(pedidoReport.montoaAdelantos)],
+            ['Monto total reservas (S/.)', round2(pedidoReport.montoTotal)],
+            ['Saldo por cobrar (S/.)', round2(pedidoReport.montoPendiente)],
+            ['Filas exportadas (filtros + búsqueda)', filteredPedidoList.length],
+          ],
+          colWidths: [36, 18],
+          moneyCols: [1],
+        });
+        appendSheet(XLSX, wb, '1. Resumen', resWs);
+
+        const detWs = buildExcelSheet(XLSX, {
+          title: 'REPORTE DE PEDIDOS / RESERVAS — DETALLE',
+          meta,
+          headers: [
+            'ID', 'Cliente', 'Detalle', 'Fecha entrega', 'Estado',
+            'Total (S/.)', 'Adelanto (S/.)', 'Saldo (S/.)', 'Ítems',
+          ],
+          rows: filteredPedidoList.map(p => [
+            String(p.id).startsWith('local_') ? 'Local' : String(p.id),
+            p.clienteNombre || '',
+            p.summary,
+            p.fecEntrega || '',
+            p.estado,
+            round2(p.totalVal),
+            round2(p.adelanto || 0),
+            round2(p.saldo),
+            p.itemsList.length,
+          ]),
+          colWidths: [12, 20, 40, 14, 12, 12, 12, 12, 8],
+          moneyCols: [5, 6, 7],
+          totalsRow: [
+            'TOTALES', '', '', '', `${filteredPedidoList.length} pedidos`,
+            round2(filteredPedidoList.reduce((a, p) => a + p.totalVal, 0)),
+            round2(filteredPedidoList.reduce((a, p) => a + (p.adelanto || 0), 0)),
+            round2(filteredPedidoList.reduce((a, p) => a + p.saldo, 0)),
+            '',
+          ],
+        });
+        appendSheet(XLSX, wb, '2. Listado pedidos', detWs);
+
+        if (pedidoReport.topItems.length) {
+          const topWs = buildExcelSheet(XLSX, {
+            title: 'REPORTE DE PEDIDOS — ÍTEMS MÁS RESERVADOS',
+            meta,
+            headers: ['#', 'Ítem', 'Cantidad', 'Ingresos est. (S/.)'],
+            rows: pedidoReport.topItems.map((it, i) => [i + 1, it.name, it.qty, round2(it.revenue)]),
+            colWidths: [6, 32, 12, 16],
+            moneyCols: [3],
+          });
+          appendSheet(XLSX, wb, '3. Items reservados', topWs);
+        }
+      }
+
+      const fileName = `${exportFileBase()}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      toast(`📥 Excel de ${tabLabel} descargado (${rowsCount} registros · filtros aplicados)`);
     } catch (err: any) {
       console.error(err);
       alert('Error al exportar Excel: ' + err.message);
@@ -868,104 +1213,167 @@ export default function ReportesEstadisticasPage() {
 
   const exportToPdf = async () => {
     try {
+      if (listForPage.length === 0) {
+        toast('⚠️ No hay datos con los filtros actuales para exportar');
+        return;
+      }
+
       const jspdfModule = await loadJsPDFAutoTable();
       const { jsPDF } = jspdfModule;
-      const doc = new jsPDF();
-      let y = 16;
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const meta = filterSummaryLines();
+      const brand: [number, number, number] = [176, 125, 46];
 
-      doc.setFontSize(15);
-      doc.text('Reporte Integral POS — Snack Roque', 14, y);
-      y += 6;
-      doc.setFontSize(9);
-      doc.setTextColor(100);
-      doc.text(`Generado: ${new Date().toLocaleString()}  ·  Periodo: ${dateRange.label}`, 14, y);
-      y += 10;
+      // Cabecera
+      doc.setFillColor(250, 246, 238);
+      doc.rect(0, 0, 297, 28, 'F');
+      doc.setTextColor(40, 40, 40);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text(`Snack Roque — Reporte de ${tabLabel}`, 14, 12);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(90);
+      doc.text(meta.join('  ·  '), 14, 19, { maxWidth: 270 });
+      doc.setDrawColor(...brand);
+      doc.setLineWidth(0.6);
+      doc.line(14, 26, 283, 26);
+
+      let startY = 32;
+
+      // Bloque KPIs según tab
       doc.setTextColor(40);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text('Indicadores (con filtros aplicados)', 14, startY);
+      startY += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
 
-      const addSection = (title: string, lines: string[]) => {
-        if (y > 260) { doc.addPage(); y = 16; }
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
-        doc.text(title, 14, y);
-        y += 6;
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        lines.forEach(l => {
-          if (y > 280) { doc.addPage(); y = 16; }
-          doc.text(l, 18, y);
-          y += 5;
-        });
-        y += 4;
+      let kpiLines: string[] = [];
+      if (tab === 'ventas') {
+        kpiLines = [
+          `Ventas netas: ${money(salesMetrics.tv)}   ·   Transacciones: ${salesMetrics.tr}   ·   Unidades: ${salesMetrics.un}   ·   Ticket prom.: ${money(salesMetrics.av)}`,
+          `Anuladas: ${salesMetrics.annulledCount}   ·   Mejor producto: ${salesMetrics.bestProduct}   ·   Método: ${salesMetrics.bestMethod}   ·   Cajero top: ${salesMetrics.bestCajero}`,
+        ];
+      } else if (tab === 'productos') {
+        kpiLines = [
+          `SKUs: ${productReport.totalSKUs}   ·   Valor inventario: ${money(productReport.valorInventario)}   ·   Vendidos periodo: ${productReport.totalSoldUnits}`,
+          `Ingresos: ${money(productReport.totalRevenue)}   ·   Stock bajo: ${productReport.lowStock}   ·   Agotados: ${productReport.agotados}   ·   Filas: ${filteredProductRows.length}`,
+        ];
+      } else if (tab === 'insumos') {
+        kpiLines = [
+          `Insumos: ${insumoReport.total} (${insumoReport.activos} activos)   ·   Valor inv.: ${money(insumoReport.valorTotal)}   ·   Compras periodo: ${money(insumoReport.comprasPeriodo)}`,
+          `Bajos: ${insumoReport.bajos}   ·   Agotados: ${insumoReport.agotados}   ·   Filas exportadas: ${filteredInsumoRows.length}`,
+        ];
+      } else {
+        kpiLines = [
+          `Reservas periodo: ${pedidoReport.totalReservas}   ·   Activas: ${pedidoReport.activas}   ·   Entregadas: ${pedidoReport.entregadas}   ·   Canceladas: ${pedidoReport.canceladas}`,
+          `Adelantos: ${money(pedidoReport.montoaAdelantos)}   ·   Total: ${money(pedidoReport.montoTotal)}   ·   Por cobrar: ${money(pedidoReport.montoPendiente)}   ·   Filas: ${filteredPedidoList.length}`,
+        ];
+      }
+      kpiLines.forEach(l => {
+        doc.text(l, 14, startY, { maxWidth: 270 });
+        startY += 5;
+      });
+      startY += 3;
+
+      const tableOpts = {
+        startY,
+        theme: 'striped' as const,
+        headStyles: { fillColor: brand, textColor: 255, fontSize: 8, fontStyle: 'bold' as const },
+        styles: { fontSize: 7.5, cellPadding: 1.8, overflow: 'linebreak' as const },
+        alternateRowStyles: { fillColor: [252, 249, 244] as [number, number, number] },
+        margin: { left: 14, right: 14 },
       };
 
-      addSection('1. Ventas', [
-        `Netas: ${money(salesMetrics.tv)}  ·  Ops: ${salesMetrics.tr}  ·  Und: ${salesMetrics.un}  ·  Ticket: ${money(salesMetrics.av)}`,
-        `Anuladas: ${salesMetrics.annulledCount}  ·  Mejor producto: ${salesMetrics.bestProduct}`,
-      ]);
-      addSection('2. Productos', [
-        `SKUs: ${productReport.totalSKUs}  ·  Valor inv.: ${money(productReport.valorInventario)}`,
-        `Stock bajo: ${productReport.lowStock}  ·  Agotados: ${productReport.agotados}  ·  Vendidos periodo: ${productReport.totalSoldUnits}`,
-      ]);
-      addSection('3. Insumos', [
-        `Total: ${insumoReport.total}  ·  Valor inv.: ${money(insumoReport.valorTotal)}`,
-        `Bajos: ${insumoReport.bajos}  ·  Agotados: ${insumoReport.agotados}  ·  Compras periodo: ${money(insumoReport.comprasPeriodo)}`,
-      ]);
-      addSection('4. Pedidos / Reservas', [
-        `Total: ${pedidoReport.totalReservas}  ·  Activas: ${pedidoReport.activas}  ·  Entregadas: ${pedidoReport.entregadas}  ·  Canceladas: ${pedidoReport.canceladas}`,
-        `Adelantos: ${money(pedidoReport.montoaAdelantos)}  ·  Total reservas: ${money(pedidoReport.montoTotal)}  ·  Por cobrar: ${money(pedidoReport.montoPendiente)}`,
-      ]);
-
-      // Tabla según tab
-      if (tab === 'ventas' && filteredHistory.length) {
+      if (tab === 'ventas') {
         (doc as any).autoTable({
-          startY: y,
-          head: [['Boleta', 'Fecha', 'Cajero', 'Método', 'Total', 'Est.']],
-          body: filteredHistory.slice(0, 40).map(h => [
-            `B-${h.n}`, `${h.d} ${h.t || ''}`, h.cajero.slice(0, 14), h.method.slice(0, 12),
-            money(h.total), h.estado === 0 ? 'Anul.' : 'OK',
+          ...tableOpts,
+          head: [['Boleta', 'Fecha', 'Hora', 'Productos', 'Cliente', 'Cajero', 'Método', 'Total', 'Estado']],
+          body: filteredHistory.map(h => [
+            `B-${h.n}`,
+            h.d,
+            h.t || '',
+            h.items.map(i => `${i.name}×${i.qty}`).join(', ').slice(0, 60),
+            (h.clienteNombre || '—').slice(0, 18),
+            h.cajero.slice(0, 16),
+            h.method.slice(0, 14),
+            money(h.total),
+            h.estado === 0 ? 'Anulado' : 'Pagado',
           ]),
-          headStyles: { fillColor: [176, 125, 46], fontSize: 8 },
-          styles: { fontSize: 7.5 },
+          columnStyles: { 3: { cellWidth: 55 }, 7: { halign: 'right' } },
         });
       } else if (tab === 'productos') {
         (doc as any).autoTable({
-          startY: y,
-          head: [['Producto', 'Cat.', 'Stock', 'Vend.', 'Ingresos', 'Est.']],
-          body: productReport.rows.slice(0, 40).map(r => [
-            r.name.slice(0, 22), r.cat.slice(0, 12), r.stock, r.qtySold, money(r.revenue), r.status,
+          ...tableOpts,
+          head: [['Producto', 'Categoría', 'Stock', 'Precio', 'Valor inv.', 'Vendidos', 'Ingresos', 'Prod.', 'Desc.', 'Estado']],
+          body: filteredProductRows.map(r => [
+            r.name.slice(0, 24),
+            r.cat.slice(0, 14),
+            r.stock,
+            money(r.price),
+            money(r.valor),
+            r.qtySold,
+            money(r.revenue),
+            r.produccion,
+            r.descarte,
+            r.status === 'ok' ? 'OK' : r.status === 'bajo' ? 'Bajo' : 'Agotado',
           ]),
-          headStyles: { fillColor: [176, 125, 46], fontSize: 8 },
-          styles: { fontSize: 7.5 },
+          columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 6: { halign: 'right' } },
         });
       } else if (tab === 'insumos') {
         (doc as any).autoTable({
-          startY: y,
-          head: [['Insumo', 'Stock', 'Mín', 'Costo', 'Valor', 'Est.']],
-          body: insumoReport.rows.slice(0, 40).map(r => [
-            r.nombre.slice(0, 22), `${r.stock} ${r.unidad}`, r.stockMinimo, money(r.costoUnitario), money(r.valor), r.status,
+          ...tableOpts,
+          head: [['Insumo', 'Stock', 'Mín', 'Unidad', 'Costo', 'Valor', 'Comprado', '$ Compras', 'Pedidos', 'Estado']],
+          body: filteredInsumoRows.map(r => [
+            r.nombre.slice(0, 24),
+            r.stock,
+            r.stockMinimo,
+            r.unidad,
+            money(r.costoUnitario),
+            money(r.valor),
+            r.qtyComprada || '—',
+            r.costoCompras > 0 ? money(r.costoCompras) : '—',
+            r.qtyEnPedidos || '—',
+            r.status === 'ok' ? 'OK' : r.status === 'bajo' ? 'Bajo' : 'Agotado',
           ]),
-          headStyles: { fillColor: [176, 125, 46], fontSize: 8 },
-          styles: { fontSize: 7.5 },
+          columnStyles: { 4: {halign: 'right' }, 5: {halign: 'right' }, 7: {halign: 'right' } },
         });
-      } else if (tab === 'pedidos') {
+      } else {
         (doc as any).autoTable({
-          startY: y,
-          head: [['ID', 'Cliente', 'Entrega', 'Estado', 'Total', 'Adelanto']],
-          body: pedidoReport.list.slice(0, 40).map(p => [
-            String(p.id).slice(0, 10),
-            (p.clienteNombre || '—').slice(0, 16),
-            p.fecEntrega?.slice(0, 12) || '—',
+          ...tableOpts,
+          head: [['ID', 'Cliente', 'Detalle', 'Entrega', 'Estado', 'Total', 'Adelanto', 'Saldo']],
+          body: filteredPedidoList.map(p => [
+            String(p.id).startsWith('local_') ? 'Local' : String(p.id).slice(0, 12),
+            (p.clienteNombre || '—').slice(0, 18),
+            p.summary.slice(0, 50),
+            p.fecEntrega || '—',
             p.estado,
             money(p.totalVal),
             money(p.adelanto || 0),
+            money(p.saldo),
           ]),
-          headStyles: { fillColor: [176, 125, 46], fontSize: 8 },
-          styles: { fontSize: 7.5 },
+          columnStyles: { 2: { cellWidth: 60 }, 5: {halign: 'right' }, 6: {halign: 'right' }, 7: {halign: 'right' } },
         });
       }
 
-      doc.save(`Reporte_Integral_Snack_Roque_${new Date().toISOString().split('T')[0]}.pdf`);
-      toast('📥 PDF integral descargado');
+      // Pie de página
+      const pageCount = doc.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7);
+        doc.setTextColor(140);
+        doc.text(
+          `Snack Roque · ${tabLabel} · ${dateRange.label} · Página ${i} de ${pageCount}`,
+          14,
+          200
+        );
+        doc.text('Documento generado con los filtros activos en pantalla', 200, 200);
+      }
+
+      doc.save(`${exportFileBase()}.pdf`);
+      toast(`📥 PDF de ${tabLabel} descargado (${listForPage.length} registros · filtros aplicados)`);
     } catch (err: any) {
       console.error(err);
       alert('Error al exportar PDF: ' + err.message);
@@ -999,8 +1407,12 @@ export default function ReportesEstadisticasPage() {
           <span className="rep-meta-chip">📅 <strong>{dateRange.label}</strong></span>
           <span className="rep-meta-chip">💰 <strong>{money(salesMetrics.tv)}</strong></span>
           <span className="rep-meta-chip">📋 <strong>{pedidoReport.totalReservas}</strong> reservas</span>
-          <button type="button" className="rep-btn-export" onClick={exportToPdf}>📄 PDF</button>
-          <button type="button" className="rep-btn-export primary" onClick={exportToExcel}>📊 Excel integral</button>
+          <button type="button" className="rep-btn-export" onClick={exportToPdf} title={`Exporta solo ${tabLabel} con filtros actuales`}>
+            📄 PDF · {tabLabel}
+          </button>
+          <button type="button" className="rep-btn-export primary" onClick={exportToExcel} title={`Exporta solo ${tabLabel} con filtros actuales`}>
+            📊 Excel · {tabLabel}
+          </button>
         </div>
       </div>
 
