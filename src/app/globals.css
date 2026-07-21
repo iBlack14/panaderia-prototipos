@@ -1299,7 +1299,9 @@ tr:last-child td { border-bottom: none; }
 }
 
 .rep-field select,
-.rep-field input[type="date"] {
+.rep-field input[type="date"],
+.rep-field input[type="text"],
+.rep-field input[type="search"] {
   padding: 8px 12px;
   font-size: 12.5px;
   font-weight: 600;
@@ -1314,8 +1316,16 @@ tr:last-child td { border-bottom: none; }
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+.rep-field input[type="text"],
+.rep-field input[type="search"] {
+  cursor: text;
+  width: 100%;
+}
+
 .rep-field select:focus,
-.rep-field input[type="date"]:focus {
+.rep-field input[type="date"]:focus,
+.rep-field input[type="text"]:focus,
+.rep-field input[type="search"]:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-glow);
 }

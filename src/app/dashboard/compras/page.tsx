@@ -1,9 +1,100 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
+import type { Purchase } from '@/context/types';
 import { loadExcelJS } from '@/lib/cdn';
+
+type PeriodKey = 'hoy' | 'semana' | 'mes' | 'todo' | 'custom';
+
+const PERIOD_OPTIONS: { key: PeriodKey; label: string }[] = [
+  { key: 'hoy', label: 'Hoy' },
+  { key: 'semana', label: 'Semana' },
+  { key: 'mes', label: 'Mes' },
+  { key: 'todo', label: 'Todo' },
+  { key: 'custom', label: 'Rango' },
+];
+
+function startOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function parsePurchaseDate(d: string): Date | null {
+  if (!d) return null;
+  if (d.includes('T') || /^\d{4}-\d{2}-\d{2}/.test(d)) {
+    const parsed = new Date(d);
+    return Number.isNaN(parsed.getTime()) ? null : startOfDay(parsed);
+  }
+  const parts = d.trim().split(/[\/\-.]/).map(p => p.trim());
+  if (parts.length === 3) {
+    const a = parseInt(parts[0], 10);
+    const b = parseInt(parts[1], 10);
+    const c = parseInt(parts[2], 10);
+    if (Number.isNaN(a) || Number.isNaN(b) || Number.isNaN(c)) return null;
+    // YYYY-MM-DD
+    if (parts[0].length === 4) return startOfDay(new Date(a, b - 1, c));
+    // DD/MM/YYYY (locale es-PE)
+    return startOfDay(new Date(c, b - 1, a));
+  }
+  const parsed = new Date(d);
+  return Number.isNaN(parsed.getTime()) ? null : startOfDay(parsed);
+}
+
+function toInputDate(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function fromInputDate(s: string): Date | null {
+  if (!s) return null;
+  const [y, m, d] = s.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return startOfDay(new Date(y, m - 1, d));
+}
+
+function moneyNum(value: string | number) {
+  return parseFloat(String(value).replace(/[^0-9.-]+/g, '')) || 0;
+}
+
+function resolveDateRange(
+  period: PeriodKey,
+  customFrom: string,
+  customTo: string
+): { from: Date | null; to: Date | null; label: string } {
+  const today = startOfDay(new Date());
+  if (period === 'todo') return { from: null, to: null, label: 'Todo el historial' };
+  if (period === 'hoy') return { from: today, to: today, label: 'Hoy' };
+  if (period === 'semana') {
+    const from = new Date(today);
+    from.setDate(today.getDate() - ((today.getDay() + 6) % 7)); // lunes
+    return { from: startOfDay(from), to: today, label: 'Semana actual' };
+  }
+  if (period === 'mes') {
+    const from = startOfDay(new Date(today.getFullYear(), today.getMonth(), 1));
+    return { from, to: today, label: 'Mes actual' };
+  }
+  const from = fromInputDate(customFrom);
+  const to = fromInputDate(customTo) || today;
+  const label =
+    from && to
+      ? `${toInputDate(from)} → ${toInputDate(to)}`
+      : 'Rango personalizado';
+  return { from, to, label };
+}
+
+function inDateRange(dateStr: string, from: Date | null, to: Date | null) {
+  if (!from && !to) return true;
+  const d = parsePurchaseDate(dateStr);
+  if (!d) return false;
+  if (from && d < from) return false;
+  if (to && d > to) return false;
+  return true;
+}
 
 export default function ComprasPage() {
   const router = useRouter();
@@ -14,6 +105,13 @@ export default function ComprasPage() {
 
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState<any>(null);
+
+  // Filtros de listado / exportación
+  const [period, setPeriod] = useState<PeriodKey>('todo');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [filterProvider, setFilterProvider] = useState('todos');
+  const [searchTerm, setSearchTerm] = useState('');
 
   const handleOpenDetails = (purchase: any) => {
     setSelectedPurchase(purchase);
@@ -118,6 +216,81 @@ export default function ComprasPage() {
 
   const activeProviders = providers.filter(p => p.active);
 
+  const dateRange = useMemo(
+    () => resolveDateRange(period, customFrom, customTo),
+    [period, customFrom, customTo]
+  );
+
+  const providerOptions = useMemo(() => {
+    const names = new Set<string>();
+    purchases.forEach(p => {
+      if (p.prov) names.add(p.prov);
+    });
+    providers.forEach(p => {
+      if (p.name) names.add(p.name);
+    });
+    return Array.from(names).sort((a, b) => a.localeCompare(b, 'es'));
+  }, [purchases, providers]);
+
+  const getItemsLabel = (p: Purchase) => {
+    if (!p.items?.length) return 'Artículos varios';
+    return p.items.map(i => {
+      if (i.type === 'insumo') {
+        const insRef = insumos.find(ins => ins.id === i.insumoId);
+        return `${insRef?.nombre || 'Insumo'} x${i.qty}`;
+      }
+      const prodRef = products.find(prod => prod.id === i.productId);
+      const displayName = prodRef
+        ? prodRef.name + (i.version ? ` (${i.version})` : '')
+        : 'Producto';
+      return `${displayName} x${i.qty}`;
+    }).join(', ');
+  };
+
+  const filteredPurchases = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return purchases.filter(p => {
+      if (!inDateRange(p.d, dateRange.from, dateRange.to)) return false;
+      if (filterProvider !== 'todos' && p.prov !== filterProvider) return false;
+      if (q) {
+        const haystack = [
+          String(p.id),
+          p.prov,
+          p.d,
+          p.total,
+          getItemsLabel(p),
+        ].join(' ').toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [purchases, dateRange, filterProvider, searchTerm, insumos, products]);
+
+  const activeFiltersCount = [
+    period !== 'todo',
+    filterProvider !== 'todos',
+    searchTerm.trim() !== '',
+  ].filter(Boolean).length;
+
+  const clearFilters = () => {
+    setPeriod('todo');
+    setCustomFrom('');
+    setCustomTo('');
+    setFilterProvider('todos');
+    setSearchTerm('');
+  };
+
+  const filterSummaryLines = (): string[] => {
+    const lines = [
+      `Periodo: ${dateRange.label}`,
+      `Proveedor: ${filterProvider === 'todos' ? 'Todos' : filterProvider}`,
+      `Búsqueda: ${searchTerm.trim() ? `"${searchTerm.trim()}"` : 'Sin texto'}`,
+      `Registros exportados: ${filteredPurchases.length} de ${purchases.length}`,
+      `Fecha generación: ${new Date().toLocaleString('es-PE')}`,
+    ];
+    return lines;
+  };
+
   const handleAddPurchaseItem = () => {
     const q = parseFloat(qty);
     const c = parseFloat(cost);
@@ -208,7 +381,7 @@ export default function ComprasPage() {
   const buySubtotal = buyTotal / 1.18;
   const buyIgv = buyTotal - buySubtotal;
 
-  // Función para exportar a Excel con estilos profesionales usando ExcelJS
+  // Función para exportar a Excel (solo compras con filtros activos)
   const exportToExcel = async () => {
     try {
       const ExcelJS = await loadExcelJS();
@@ -216,159 +389,145 @@ export default function ComprasPage() {
       workbook.creator = 'Snack Roque POS';
       workbook.created = new Date();
 
-      if (purchases.length === 0) {
-        alert('No hay compras para exportar');
+      // Exporta únicamente el conjunto filtrado de la pantalla
+      const exportData = filteredPurchases;
+      const meta = filterSummaryLines();
+      const headerRow = 11; // filas 4–9 = filtros, 10 = espacio, 11 = cabecera
+
+      if (exportData.length === 0) {
+        alert('No hay compras con los filtros actuales para exportar');
         return;
       }
 
-      // Colores de marca
       const brandColor = 'B07D2E';
       const headerBg = 'FFF8E7';
       const titleBg = 'B07D2E';
       const titleFg = 'FFFFFF';
       const totalsBg = 'F5F5DC';
 
-      // Hoja 1: Resumen de compras
-      const totalCompras = purchases.reduce((a, p) => a + parseFloat(p.total.toString().replace(/[^0-9.-]+/g, "")), 0);
-      const totalSubtotal = purchases.reduce((a, p) => a + parseFloat(p.subTotal.toString().replace(/[^0-9.-]+/g, "")), 0);
-      const totalIGV = purchases.reduce((a, p) => a + parseFloat(p.igv.toString().replace(/[^0-9.-]+/g, "")), 0);
-
-      const resumenSheet = workbook.addWorksheet('1. Resumen');
-
-      // Título
-      resumenSheet.mergeCells('A1:B1');
-      const titleCell = resumenSheet.getCell('A1');
-      titleCell.value = 'REPORTE DE COMPRAS — RESUMEN';
-      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
-      titleCell.font = { bold: true, size: 16, color: { argb: titleFg } };
-      titleCell.alignment = { horizontal: 'center' };
-
-      // Subtítulo
-      resumenSheet.mergeCells('A2:B2');
-      const subtitleCell = resumenSheet.getCell('A2');
-      subtitleCell.value = 'Snack Roque — Sistema POS / Gestión';
-      subtitleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
-      subtitleCell.font = { bold: true, size: 11, color: { argb: titleFg } };
-      subtitleCell.alignment = { horizontal: 'center' };
-
-      // Filtros
-      resumenSheet.getCell('A4').value = 'CRITERIOS DE FILTRO';
-      resumenSheet.getCell('A4').font = { bold: true, size: 10, color: { argb: brandColor } };
-      resumenSheet.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
-
-      resumenSheet.getCell('A5').value = `Fecha generación: ${new Date().toLocaleString('es-PE')}`;
-      resumenSheet.getCell('A5').font = { size: 9, color: { argb: '666666' } };
-
-      resumenSheet.getCell('A6').value = `Total compras registradas: ${purchases.length}`;
-      resumenSheet.getCell('A6').font = { size: 9, color: { argb: '666666' } };
-
-      // Cabecera de tabla
-      resumenSheet.getCell('A8').value = 'Indicador';
-      resumenSheet.getCell('B8').value = 'Valor';
-      resumenSheet.getRow(8).eachCell((cell) => {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
-        cell.font = { bold: true, size: 11, color: { argb: brandColor } };
-        cell.border = {
-          top: { style: 'medium', color: { argb: brandColor } },
-          bottom: { style: 'medium', color: { argb: brandColor } },
-          left: { style: 'thin', color: { argb: 'D4D4D4' } },
-          right: { style: 'thin', color: { argb: 'D4D4D4' } }
-        };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      });
-
-      // Datos
-      const data = [
-        ['Total compras (S/.)', totalCompras.toFixed(2)],
-        ['Subtotal neto (S/.)', totalSubtotal.toFixed(2)],
-        ['IGV total (S/.)', totalIGV.toFixed(2)],
-        ['Promedio por compra (S/.)', (totalCompras / purchases.length).toFixed(2)],
-      ];
-
-      data.forEach((row, rowIndex) => {
-        const rowNumber = 9 + rowIndex;
-        resumenSheet.getCell(`A${rowNumber}`).value = row[0];
-        resumenSheet.getCell(`B${rowNumber}`).value = parseFloat(row[1]);
-        resumenSheet.getCell(`B${rowNumber}`).numFmt = '"S/." #,##0.00';
-        resumenSheet.getCell(`B${rowNumber}`).alignment = { horizontal: 'right' };
-
-        resumenSheet.getRow(rowNumber).eachCell((cell) => {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowIndex % 2 === 0 ? 'FFFFFF' : 'F9F9F9' } };
+      const styleHeaderRow = (sheet: any, row: number, colCount: number) => {
+        for (let c = 1; c <= colCount; c++) {
+          const cell = sheet.getCell(row, c);
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
+          cell.font = { bold: true, size: 11, color: { argb: brandColor } };
           cell.border = {
-            top: { style: 'thin', color: { argb: 'D4D4D4' } },
-            bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
+            top: { style: 'medium', color: { argb: brandColor } },
+            bottom: { style: 'medium', color: { argb: brandColor } },
             left: { style: 'thin', color: { argb: 'D4D4D4' } },
-            right: { style: 'thin', color: { argb: 'D4D4D4' } }
+            right: { style: 'thin', color: { argb: 'D4D4D4' } },
+          };
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        }
+      };
+
+      const styleDataCell = (cell: any, rowIndex: number) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowIndex % 2 === 0 ? 'FFFFFF' : 'F9F9F9' } };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'D4D4D4' } },
+          bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
+          left: { style: 'thin', color: { argb: 'D4D4D4' } },
+          right: { style: 'thin', color: { argb: 'D4D4D4' } },
+        };
+      };
+
+      const styleTotalsRow = (sheet: any, row: number) => {
+        sheet.getRow(row).eachCell((cell: any) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: totalsBg } };
+          cell.font = { bold: true, size: 11, color: { argb: brandColor } };
+          cell.border = {
+            top: { style: 'medium', color: { argb: brandColor } },
+            bottom: { style: 'medium', color: { argb: brandColor } },
+            left: { style: 'thin', color: { argb: 'D4D4D4' } },
+            right: { style: 'thin', color: { argb: 'D4D4D4' } },
           };
         });
+      };
+
+      const writeTitle = (sheet: any, lastCol: string, title: string) => {
+        sheet.mergeCells(`A1:${lastCol}1`);
+        const t = sheet.getCell('A1');
+        t.value = title;
+        t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
+        t.font = { bold: true, size: 16, color: { argb: titleFg } };
+        t.alignment = { horizontal: 'center' };
+
+        sheet.mergeCells(`A2:${lastCol}2`);
+        const s = sheet.getCell('A2');
+        s.value = 'Snack Roque — Sistema POS / Gestión';
+        s.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
+        s.font = { bold: true, size: 11, color: { argb: titleFg } };
+        s.alignment = { horizontal: 'center' };
+      };
+
+      const writeFilterBlock = (sheet: any) => {
+        sheet.getCell('A4').value = 'CRITERIOS DE FILTRO (aplicados en pantalla)';
+        sheet.getCell('A4').font = { bold: true, size: 10, color: { argb: brandColor } };
+        sheet.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
+        meta.forEach((line, i) => {
+          const r = 5 + i;
+          sheet.getCell(`A${r}`).value = line;
+          sheet.getCell(`A${r}`).font = { size: 9, color: { argb: '666666' } };
+        });
+      };
+
+      const totalCompras = exportData.reduce((a, p) => a + moneyNum(p.total), 0);
+      const totalSubtotal = exportData.reduce((a, p) => a + moneyNum(p.subTotal), 0);
+      const totalIGV = exportData.reduce((a, p) => a + moneyNum(p.igv), 0);
+
+      // ── Hoja 1: Resumen ──
+      const resumenSheet = workbook.addWorksheet('1. Resumen');
+      writeTitle(resumenSheet, 'B', 'REPORTE DE COMPRAS — RESUMEN');
+      writeFilterBlock(resumenSheet);
+
+      resumenSheet.getCell(`A${headerRow}`).value = 'Indicador';
+      resumenSheet.getCell(`B${headerRow}`).value = 'Valor';
+      styleHeaderRow(resumenSheet, headerRow, 2);
+
+      const resumenRows: [string, number][] = [
+        ['Total compras (S/.)', totalCompras],
+        ['Subtotal neto (S/.)', totalSubtotal],
+        ['IGV total (S/.)', totalIGV],
+        ['Promedio por compra (S/.)', exportData.length ? totalCompras / exportData.length : 0],
+        ['Cantidad de compras filtradas', exportData.length],
+      ];
+      resumenRows.forEach((row, rowIndex) => {
+        const rowNumber = headerRow + 1 + rowIndex;
+        resumenSheet.getCell(`A${rowNumber}`).value = row[0];
+        resumenSheet.getCell(`B${rowNumber}`).value = row[1];
+        if (rowIndex < 4) {
+          resumenSheet.getCell(`B${rowNumber}`).numFmt = '"S/." #,##0.00';
+        }
+        resumenSheet.getCell(`B${rowNumber}`).alignment = { horizontal: 'right' };
+        resumenSheet.getRow(rowNumber).eachCell((cell: any) => styleDataCell(cell, rowIndex));
       });
-
-      // Anchos de columna
-      resumenSheet.getColumn('A').width = 28;
+      resumenSheet.getColumn('A').width = 32;
       resumenSheet.getColumn('B').width = 18;
+      resumenSheet.views = [{ state: 'frozen', ySplit: headerRow }];
 
-      // Congelar paneles
-      resumenSheet.views = [{ state: 'frozen', ySplit: 8 }];
-
-      // Hoja 2: Detalle de compras
+      // ── Hoja 2: Detalle ──
       const detalleSheet = workbook.addWorksheet('2. Detalle compras');
+      writeTitle(detalleSheet, 'I', 'REPORTE DE COMPRAS — DETALLE');
+      writeFilterBlock(detalleSheet);
 
-      // Título
-      detalleSheet.mergeCells('A1:I1');
-      const detalleTitle = detalleSheet.getCell('A1');
-      detalleTitle.value = 'REPORTE DE COMPRAS — DETALLE';
-      detalleTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
-      detalleTitle.font = { bold: true, size: 16, color: { argb: titleFg } };
-      detalleTitle.alignment = { horizontal: 'center' };
-
-      // Subtítulo
-      detalleSheet.mergeCells('A2:I2');
-      const detalleSubtitle = detalleSheet.getCell('A2');
-      detalleSubtitle.value = 'Snack Roque — Sistema POS / Gestión';
-      detalleSubtitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
-      detalleSubtitle.font = { bold: true, size: 11, color: { argb: titleFg } };
-      detalleSubtitle.alignment = { horizontal: 'center' };
-
-      // Filtros
-      detalleSheet.getCell('A4').value = 'CRITERIOS DE FILTRO';
-      detalleSheet.getCell('A4').font = { bold: true, size: 10, color: { argb: brandColor } };
-      detalleSheet.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
-
-      detalleSheet.getCell('A5').value = `Fecha generación: ${new Date().toLocaleString('es-PE')}`;
-      detalleSheet.getCell('A5').font = { size: 9, color: { argb: '666666' } };
-
-      detalleSheet.getCell('A6').value = `Registros: ${purchases.length}`;
-      detalleSheet.getCell('A6').font = { size: 9, color: { argb: '666666' } };
-
-      // Cabecera de tabla
       const headers = ['Código', 'Fecha', 'Proveedor', 'RUC', 'Teléfono', 'Artículos (con costo)', 'Subtotal (S/.)', 'IGV (18%)', 'Total (S/.)'];
       headers.forEach((header, colIndex) => {
-        const cell = detalleSheet.getCell(8, colIndex + 1);
-        cell.value = header;
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
-        cell.font = { bold: true, size: 11, color: { argb: brandColor } };
-        cell.border = {
-          top: { style: 'medium', color: { argb: brandColor } },
-          bottom: { style: 'medium', color: { argb: brandColor } },
-          left: { style: 'thin', color: { argb: 'D4D4D4' } },
-          right: { style: 'thin', color: { argb: 'D4D4D4' } }
-        };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        detalleSheet.getCell(headerRow, colIndex + 1).value = header;
       });
+      styleHeaderRow(detalleSheet, headerRow, headers.length);
 
-      // Datos
-      const detalleRows = purchases.map(p => {
+      const detalleRows = exportData.map(p => {
         const provRef = providers.find(pr => pr.name === p.prov);
-        const itemsText = p.items ? p.items.map(i => {
-          if (i.type === 'insumo') {
-            const insRef = insumos.find(ins => ins.id === i.insumoId);
-            return `${insRef?.nombre || 'Insumo'} x${i.qty} (S/. ${i.cost.toFixed(2)})`;
-          } else {
-            const prodRef = products.find(prod => prod.id === i.productId);
-            const displayName = prodRef ? (prodRef.name + (i.version ? ` (${i.version})` : '')) : 'Producto';
-            return `${displayName} x${i.qty} (S/. ${i.cost.toFixed(2)})`;
-          }
-        }).join('; ') : 'Artículos varios';
+        const itemsText = p.items?.length
+          ? p.items.map(i => {
+              if (i.type === 'insumo') {
+                const insRef = insumos.find(ins => ins.id === i.insumoId);
+                return `${insRef?.nombre || 'Insumo'} x${i.qty} (S/. ${i.cost.toFixed(2)})`;
+              }
+              const prodRef = products.find(prod => prod.id === i.productId);
+              const displayName = prodRef ? (prodRef.name + (i.version ? ` (${i.version})` : '')) : 'Producto';
+              return `${displayName} x${i.qty} (S/. ${i.cost.toFixed(2)})`;
+            }).join('; ')
+          : 'Artículos varios';
 
         return [
           `#${p.id}`,
@@ -377,119 +536,59 @@ export default function ComprasPage() {
           provRef?.ruc || '',
           provRef?.phone || '',
           itemsText,
-          parseFloat(p.subTotal.toString().replace(/[^0-9.-]+/g, "")),
-          parseFloat(p.igv.toString().replace(/[^0-9.-]+/g, "")),
-          parseFloat(p.total.toString().replace(/[^0-9.-]+/g, "")),
+          moneyNum(p.subTotal),
+          moneyNum(p.igv),
+          moneyNum(p.total),
         ];
       });
 
       detalleRows.forEach((row, rowIndex) => {
-        const rowNumber = 9 + rowIndex;
+        const rowNumber = headerRow + 1 + rowIndex;
         row.forEach((value, colIndex) => {
           const cell = detalleSheet.getCell(rowNumber, colIndex + 1);
+          cell.value = value;
           if (colIndex >= 6 && typeof value === 'number') {
-            cell.value = value;
             cell.numFmt = '"S/." #,##0.00';
             cell.alignment = { horizontal: 'right' };
-          } else {
-            cell.value = value;
           }
-
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowIndex % 2 === 0 ? 'FFFFFF' : 'F9F9F9' } };
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'D4D4D4' } },
-            bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
-            left: { style: 'thin', color: { argb: 'D4D4D4' } },
-            right: { style: 'thin', color: { argb: 'D4D4D4' } }
-          };
+          styleDataCell(cell, rowIndex);
         });
       });
 
-      // Totales
-      const totalRowNumber = 9 + detalleRows.length + 1;
+      const totalRowNumber = headerRow + 1 + detalleRows.length + 1;
       detalleSheet.getCell(`A${totalRowNumber}`).value = 'TOTALES';
       detalleSheet.getCell(`G${totalRowNumber}`).value = totalSubtotal;
       detalleSheet.getCell(`H${totalRowNumber}`).value = totalIGV;
       detalleSheet.getCell(`I${totalRowNumber}`).value = totalCompras;
-
       ['G', 'H', 'I'].forEach(col => {
         const cell = detalleSheet.getCell(`${col}${totalRowNumber}`);
         cell.numFmt = '"S/." #,##0.00';
         cell.alignment = { horizontal: 'right' };
       });
+      styleTotalsRow(detalleSheet, totalRowNumber);
 
-      detalleSheet.getRow(totalRowNumber).eachCell((cell) => {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: totalsBg } };
-        cell.font = { bold: true, size: 11, color: { argb: brandColor } };
-        cell.border = {
-          top: { style: 'medium', color: { argb: brandColor } },
-          bottom: { style: 'medium', color: { argb: brandColor } },
-          left: { style: 'thin', color: { argb: 'D4D4D4' } },
-          right: { style: 'thin', color: { argb: 'D4D4D4' } }
-        };
+      [10, 14, 28, 14, 14, 55, 14, 14, 14].forEach((w, i) => {
+        detalleSheet.getColumn(i + 1).width = w;
       });
+      detalleSheet.views = [{ state: 'frozen', ySplit: headerRow }];
+      detalleSheet.autoFilter = {
+        from: `A${headerRow}`,
+        to: `I${headerRow + detalleRows.length}`,
+      };
 
-      // Anchos de columna
-      detalleSheet.getColumn(1).width = 10;
-      detalleSheet.getColumn(2).width = 14;
-      detalleSheet.getColumn(3).width = 28;
-      detalleSheet.getColumn(4).width = 14;
-      detalleSheet.getColumn(5).width = 14;
-      detalleSheet.getColumn(6).width = 55;
-      detalleSheet.getColumn(7).width = 14;
-      detalleSheet.getColumn(8).width = 14;
-      detalleSheet.getColumn(9).width = 14;
-
-      // Congelar paneles y autoFilter
-      detalleSheet.views = [{ state: 'frozen', ySplit: 8 }];
-      detalleSheet.autoFilter = { from: 'A8', to: `I${8 + detalleRows.length}` };
-
-      // Hoja 3: Por artículo
+      // ── Hoja 3: Por artículo ──
       const articuloSheet = workbook.addWorksheet('3. Por artículo');
+      writeTitle(articuloSheet, 'F', 'REPORTE DE COMPRAS — POR ARTÍCULO');
+      writeFilterBlock(articuloSheet);
 
-      // Título
-      articuloSheet.mergeCells('A1:F1');
-      const articuloTitle = articuloSheet.getCell('A1');
-      articuloTitle.value = 'REPORTE DE COMPRAS — POR ARTÍCULO';
-      articuloTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
-      articuloTitle.font = { bold: true, size: 16, color: { argb: titleFg } };
-      articuloTitle.alignment = { horizontal: 'center' };
-
-      // Subtítulo
-      articuloSheet.mergeCells('A2:F2');
-      const articuloSubtitle = articuloSheet.getCell('A2');
-      articuloSubtitle.value = 'Snack Roque — Sistema POS / Gestión';
-      articuloSubtitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
-      articuloSubtitle.font = { bold: true, size: 11, color: { argb: titleFg } };
-      articuloSubtitle.alignment = { horizontal: 'center' };
-
-      // Filtros
-      articuloSheet.getCell('A4').value = 'CRITERIOS DE FILTRO';
-      articuloSheet.getCell('A4').font = { bold: true, size: 10, color: { argb: brandColor } };
-      articuloSheet.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
-
-      articuloSheet.getCell('A5').value = `Fecha generación: ${new Date().toLocaleString('es-PE')}`;
-      articuloSheet.getCell('A5').font = { size: 9, color: { argb: '666666' } };
-
-      // Cabecera
       const articuloHeaders = ['Artículo', 'Tipo', 'Unidad', 'Cantidad total', 'Costo unit. (S/.)', 'Total (S/.)'];
       articuloHeaders.forEach((header, colIndex) => {
-        const cell = articuloSheet.getCell(8, colIndex + 1);
-        cell.value = header;
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
-        cell.font = { bold: true, size: 11, color: { argb: brandColor } };
-        cell.border = {
-          top: { style: 'medium', color: { argb: brandColor } },
-          bottom: { style: 'medium', color: { argb: brandColor } },
-          left: { style: 'thin', color: { argb: 'D4D4D4' } },
-          right: { style: 'thin', color: { argb: 'D4D4D4' } }
-        };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        articuloSheet.getCell(headerRow, colIndex + 1).value = header;
       });
+      styleHeaderRow(articuloSheet, headerRow, articuloHeaders.length);
 
-      // Datos
       const articuloMap: Record<string, { name: string; type: string; unidad: string; qty: number; cost: number; total: number }> = {};
-      purchases.forEach(p => {
+      exportData.forEach(p => {
         p.items?.forEach(i => {
           let name = '';
           let type = '';
@@ -515,193 +614,121 @@ export default function ComprasPage() {
       });
 
       const articuloRows = Object.values(articuloMap).sort((a, b) => b.total - a.total);
-      articuloSheet.getCell('A6').value = `Artículos únicos: ${articuloRows.length}`;
-      articuloSheet.getCell('A6').font = { size: 9, color: { argb: '666666' } };
-
       articuloRows.forEach((row, rowIndex) => {
-        const rowNumber = 9 + rowIndex;
+        const rowNumber = headerRow + 1 + rowIndex;
         const rowData = [row.name, row.type, row.unidad, row.qty, row.cost, row.total];
         rowData.forEach((value, colIndex) => {
           const cell = articuloSheet.getCell(rowNumber, colIndex + 1);
+          cell.value = value;
           if (colIndex >= 4 && typeof value === 'number') {
-            cell.value = value;
             cell.numFmt = '"S/." #,##0.00';
             cell.alignment = { horizontal: 'right' };
-          } else {
-            cell.value = value;
           }
-
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowIndex % 2 === 0 ? 'FFFFFF' : 'F9F9F9' } };
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'D4D4D4' } },
-            bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
-            left: { style: 'thin', color: { argb: 'D4D4D4' } },
-            right: { style: 'thin', color: { argb: 'D4D4D4' } }
-          };
+          styleDataCell(cell, rowIndex);
         });
       });
 
-      // Totales
-      const articuloTotalRow = 9 + articuloRows.length + 1;
+      const articuloTotalRow = headerRow + 1 + articuloRows.length + 1;
       articuloSheet.getCell(`A${articuloTotalRow}`).value = 'TOTALES';
       articuloSheet.getCell(`D${articuloTotalRow}`).value = articuloRows.reduce((a, r) => a + r.qty, 0);
       articuloSheet.getCell(`F${articuloTotalRow}`).value = articuloRows.reduce((a, r) => a + r.total, 0);
+      articuloSheet.getCell(`F${articuloTotalRow}`).numFmt = '"S/." #,##0.00';
+      articuloSheet.getCell(`F${articuloTotalRow}`).alignment = { horizontal: 'right' };
+      styleTotalsRow(articuloSheet, articuloTotalRow);
 
-      ['D', 'F'].forEach(col => {
-        const cell = articuloSheet.getCell(`${col}${articuloTotalRow}`);
-        cell.numFmt = '"S/." #,##0.00';
-        cell.alignment = { horizontal: 'right' };
+      [40, 12, 12, 14, 16, 14].forEach((w, i) => {
+        articuloSheet.getColumn(i + 1).width = w;
       });
+      articuloSheet.views = [{ state: 'frozen', ySplit: headerRow }];
+      articuloSheet.autoFilter = {
+        from: `A${headerRow}`,
+        to: `F${headerRow + articuloRows.length}`,
+      };
 
-      articuloSheet.getRow(articuloTotalRow).eachCell((cell) => {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: totalsBg } };
-        cell.font = { bold: true, size: 11, color: { argb: brandColor } };
-        cell.border = {
-          top: { style: 'medium', color: { argb: brandColor } },
-          bottom: { style: 'medium', color: { argb: brandColor } },
-          left: { style: 'thin', color: { argb: 'D4D4D4' } },
-          right: { style: 'thin', color: { argb: 'D4D4D4' } }
-        };
-      });
-
-      // Anchos
-      articuloSheet.getColumn(1).width = 40;
-      articuloSheet.getColumn(2).width = 12;
-      articuloSheet.getColumn(3).width = 12;
-      articuloSheet.getColumn(4).width = 14;
-      articuloSheet.getColumn(5).width = 16;
-      articuloSheet.getColumn(6).width = 14;
-
-      articuloSheet.views = [{ state: 'frozen', ySplit: 8 }];
-      articuloSheet.autoFilter = { from: 'A8', to: `F${8 + articuloRows.length}` };
-
-      // Hoja 4: Por proveedor
+      // ── Hoja 4: Por proveedor ──
       const proveedorSheet = workbook.addWorksheet('4. Por proveedor');
+      writeTitle(proveedorSheet, 'F', 'REPORTE DE COMPRAS — POR PROVEEDOR');
+      writeFilterBlock(proveedorSheet);
 
-      // Título
-      proveedorSheet.mergeCells('A1:F1');
-      const proveedorTitle = proveedorSheet.getCell('A1');
-      proveedorTitle.value = 'REPORTE DE COMPRAS — POR PROVEEDOR';
-      proveedorTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
-      proveedorTitle.font = { bold: true, size: 16, color: { argb: titleFg } };
-      proveedorTitle.alignment = { horizontal: 'center' };
-
-      // Subtítulo
-      proveedorSheet.mergeCells('A2:F2');
-      const proveedorSubtitle = proveedorSheet.getCell('A2');
-      proveedorSubtitle.value = 'Snack Roque — Sistema POS / Gestión';
-      proveedorSubtitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
-      proveedorSubtitle.font = { bold: true, size: 11, color: { argb: titleFg } };
-      proveedorSubtitle.alignment = { horizontal: 'center' };
-
-      // Filtros
-      proveedorSheet.getCell('A4').value = 'CRITERIOS DE FILTRO';
-      proveedorSheet.getCell('A4').font = { bold: true, size: 10, color: { argb: brandColor } };
-      proveedorSheet.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
-
-      proveedorSheet.getCell('A5').value = `Fecha generación: ${new Date().toLocaleString('es-PE')}`;
-      proveedorSheet.getCell('A5').font = { size: 9, color: { argb: '666666' } };
-
-      // Cabecera
       const proveedorHeaders = ['Proveedor', 'RUC', 'Teléfono', 'Compras', 'Total (S/.)', '% del total'];
       proveedorHeaders.forEach((header, colIndex) => {
-        const cell = proveedorSheet.getCell(8, colIndex + 1);
-        cell.value = header;
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
-        cell.font = { bold: true, size: 11, color: { argb: brandColor } };
-        cell.border = {
-          top: { style: 'medium', color: { argb: brandColor } },
-          bottom: { style: 'medium', color: { argb: brandColor } },
-          left: { style: 'thin', color: { argb: 'D4D4D4' } },
-          right: { style: 'thin', color: { argb: 'D4D4D4' } }
-        };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        proveedorSheet.getCell(headerRow, colIndex + 1).value = header;
       });
+      styleHeaderRow(proveedorSheet, headerRow, proveedorHeaders.length);
 
-      // Datos
       const proveedorMap: Record<string, { name: string; ruc: string; phone: string; count: number; total: number }> = {};
-      purchases.forEach(p => {
+      exportData.forEach(p => {
         if (!proveedorMap[p.prov]) {
           const provRef = providers.find(pr => pr.name === p.prov);
-          proveedorMap[p.prov] = { name: p.prov, ruc: provRef?.ruc || '', phone: provRef?.phone || '', count: 0, total: 0 };
+          proveedorMap[p.prov] = {
+            name: p.prov,
+            ruc: provRef?.ruc || '',
+            phone: provRef?.phone || '',
+            count: 0,
+            total: 0,
+          };
         }
         proveedorMap[p.prov].count += 1;
-        proveedorMap[p.prov].total += parseFloat(p.total.toString().replace(/[^0-9.-]+/g, ""));
+        proveedorMap[p.prov].total += moneyNum(p.total);
       });
 
       const proveedorRows = Object.values(proveedorMap).sort((a, b) => b.total - a.total);
-      proveedorSheet.getCell('A6').value = `Proveedores: ${proveedorRows.length}`;
-      proveedorSheet.getCell('A6').font = { size: 9, color: { argb: '666666' } };
-
       proveedorRows.forEach((row, rowIndex) => {
-        const rowNumber = 9 + rowIndex;
-        const rowData = [row.name, row.ruc, row.phone, row.count, row.total, totalCompras > 0 ? ((row.total / totalCompras) * 100).toFixed(1) + '%' : '0%'];
+        const rowNumber = headerRow + 1 + rowIndex;
+        const rowData = [
+          row.name,
+          row.ruc,
+          row.phone,
+          row.count,
+          row.total,
+          totalCompras > 0 ? ((row.total / totalCompras) * 100).toFixed(1) + '%' : '0%',
+        ];
         rowData.forEach((value, colIndex) => {
           const cell = proveedorSheet.getCell(rowNumber, colIndex + 1);
+          cell.value = value;
           if (colIndex === 4 && typeof value === 'number') {
-            cell.value = value;
             cell.numFmt = '"S/." #,##0.00';
             cell.alignment = { horizontal: 'right' };
-          } else {
-            cell.value = value;
           }
-
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowIndex % 2 === 0 ? 'FFFFFF' : 'F9F9F9' } };
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'D4D4D4' } },
-            bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
-            left: { style: 'thin', color: { argb: 'D4D4D4' } },
-            right: { style: 'thin', color: { argb: 'D4D4D4' } }
-          };
+          styleDataCell(cell, rowIndex);
         });
       });
 
-      // Totales
-      const proveedorTotalRow = 9 + proveedorRows.length + 1;
+      const proveedorTotalRow = headerRow + 1 + proveedorRows.length + 1;
       proveedorSheet.getCell(`A${proveedorTotalRow}`).value = 'TOTALES';
       proveedorSheet.getCell(`D${proveedorTotalRow}`).value = proveedorRows.reduce((a, r) => a + r.count, 0);
       proveedorSheet.getCell(`E${proveedorTotalRow}`).value = totalCompras;
+      proveedorSheet.getCell(`E${proveedorTotalRow}`).numFmt = '"S/." #,##0.00';
       proveedorSheet.getCell(`F${proveedorTotalRow}`).value = '100%';
+      styleTotalsRow(proveedorSheet, proveedorTotalRow);
 
-      ['D', 'E'].forEach(col => {
-        const cell = proveedorSheet.getCell(`${col}${proveedorTotalRow}`);
-        cell.numFmt = '"S/." #,##0.00';
-        cell.alignment = { horizontal: 'right' };
+      [32, 14, 14, 10, 14, 12].forEach((w, i) => {
+        proveedorSheet.getColumn(i + 1).width = w;
       });
+      proveedorSheet.views = [{ state: 'frozen', ySplit: headerRow }];
+      proveedorSheet.autoFilter = {
+        from: `A${headerRow}`,
+        to: `F${headerRow + proveedorRows.length}`,
+      };
 
-      proveedorSheet.getRow(proveedorTotalRow).eachCell((cell) => {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: totalsBg } };
-        cell.font = { bold: true, size: 11, color: { argb: brandColor } };
-        cell.border = {
-          top: { style: 'medium', color: { argb: brandColor } },
-          bottom: { style: 'medium', color: { argb: brandColor } },
-          left: { style: 'thin', color: { argb: 'D4D4D4' } },
-          right: { style: 'thin', color: { argb: 'D4D4D4' } }
-        };
-      });
-
-      // Anchos
-      proveedorSheet.getColumn(1).width = 32;
-      proveedorSheet.getColumn(2).width = 14;
-      proveedorSheet.getColumn(3).width = 14;
-      proveedorSheet.getColumn(4).width = 10;
-      proveedorSheet.getColumn(5).width = 14;
-      proveedorSheet.getColumn(6).width = 12;
-
-      proveedorSheet.views = [{ state: 'frozen', ySplit: 8 }];
-      proveedorSheet.autoFilter = { from: 'A8', to: `F${8 + proveedorRows.length}` };
-
-      // Descargar archivo
+      // Descargar
       const buffer = await workbook.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       const datePart = new Date().toISOString().split('T')[0];
-      a.download = `SnackRoque_Compras_${datePart}.xlsx`;
+      const periodSlug = period === 'custom'
+        ? `rango_${customFrom || 'ini'}_${customTo || 'fin'}`
+        : period;
+      a.download = `SnackRoque_Compras_${periodSlug}_${datePart}.xlsx`;
       a.click();
       window.URL.revokeObjectURL(url);
-      alert(`Excel de compras descargado (${purchases.length} registros)`);
+      alert(
+        `Excel de compras descargado (${exportData.length} registros · filtros aplicados)`
+      );
     } catch (err: any) {
       console.error(err);
       alert('Error al exportar Excel: ' + err.message);
@@ -714,10 +741,87 @@ export default function ComprasPage() {
       <div className="tb-bar">
         <div style={{ fontSize: '13px', color: 'var(--text-2)', fontWeight: '600' }}>
           Registra el ingreso de mercadería e insumos de tus proveedores estratégicos.
+          <span style={{ marginLeft: 10, color: 'var(--text-3)', fontWeight: 600 }}>
+            Mostrando {filteredPurchases.length} de {purchases.length}
+          </span>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="btn-new" onClick={exportToExcel} style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}>📊 Exportar Excel</button>
+          <button
+            className="btn-new"
+            onClick={exportToExcel}
+            title="Exporta solo las compras con los filtros actuales"
+            style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}
+          >
+            📊 Exportar Excel
+          </button>
           <button className="btn-new" onClick={handleOpenNew}>+ Registrar compra</button>
+        </div>
+      </div>
+
+      {/* FILTROS */}
+      <div className="rep-filters" style={{ marginBottom: 16 }}>
+        <div className="rep-filters-head">
+          <div className="rep-filters-title">
+            🎛️ Filtros de compras
+            <span className="rep-filters-hint">
+              {activeFiltersCount > 0
+                ? `${activeFiltersCount} personalizado${activeFiltersCount > 1 ? 's' : ''} · la exportación usa estos filtros`
+                : 'Sin filtros · se exporta el historial completo'}
+            </span>
+          </div>
+          {activeFiltersCount > 0 && (
+            <button type="button" className="rep-btn-ghost" onClick={clearFilters}>
+              ✕ Restablecer
+            </button>
+          )}
+        </div>
+
+        <div className="rep-period-pills">
+          {PERIOD_OPTIONS.map(opt => (
+            <button
+              key={opt.key}
+              type="button"
+              className={`rep-period-btn${period === opt.key ? ' active' : ''}`}
+              onClick={() => setPeriod(opt.key)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="rep-filter-row">
+          {period === 'custom' && (
+            <>
+              <div className="rep-field">
+                <label>Desde</label>
+                <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} />
+              </div>
+              <div className="rep-field">
+                <label>Hasta</label>
+                <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} />
+              </div>
+            </>
+          )}
+
+          <div className="rep-field">
+            <label>Proveedor</label>
+            <select value={filterProvider} onChange={e => setFilterProvider(e.target.value)}>
+              <option value="todos">Todos los proveedores</option>
+              {providerOptions.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="rep-field" style={{ flex: 1, minWidth: 200 }}>
+            <label>Buscar</label>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Código, proveedor o artículo…"
+            />
+          </div>
         </div>
       </div>
 
@@ -739,27 +843,31 @@ export default function ComprasPage() {
           <tbody>
             {purchases.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: '600' }}>
+                <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: '600' }}>
                   Aún no se han registrado compras.
                 </td>
               </tr>
+            ) : filteredPurchases.length === 0 ? (
+              <tr>
+                <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-3)', fontWeight: '600' }}>
+                  No hay compras con los filtros actuales.
+                  {activeFiltersCount > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <button type="button" className="rep-btn-ghost" onClick={clearFilters}>
+                        ✕ Quitar filtros
+                      </button>
+                    </div>
+                  )}
+                </td>
+              </tr>
             ) : (
-              purchases.map((p) => (
+              filteredPurchases.map((p) => (
                 <tr key={p.id}>
                   <td style={{ fontWeight: '700', color: 'var(--accent)' }}>#{p.id}</td>
                   <td>{p.d}</td>
                   <td style={{ fontWeight: '600', color: 'var(--text)' }}>{p.prov}</td>
                   <td style={{ color: 'var(--text-2)', fontSize: '12.5px' }}>
-                    {p.items ? p.items.map(i => {
-                      if (i.type === 'insumo') {
-                        const insRef = insumos.find(ins => ins.id === i.insumoId);
-                        return `${insRef?.nombre || 'Insumo'} x${i.qty}`;
-                      } else {
-                        const prodRef = products.find(prod => prod.id === i.productId);
-                        const displayName = prodRef ? (prodRef.name + (i.version ? ` (${i.version})` : '')) : 'Producto';
-                        return `${displayName} x${i.qty}`;
-                      }
-                    }).join(', ') : 'Artículos varios'}
+                    {getItemsLabel(p)}
                   </td>
                   <td>{p.subTotal}</td>
                   <td>{p.igv}</td>
