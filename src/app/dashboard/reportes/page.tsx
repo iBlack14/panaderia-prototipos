@@ -3,7 +3,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
 import type { Pedido, PedidoItem, Product, Insumo } from '@/context/types';
-import { loadJsPDFAutoTable, loadSheetJS } from '@/lib/cdn';
+import { loadJsPDFAutoTable, loadExcelJS } from '@/lib/cdn';
 
 type PeriodKey = 'hoy' | 'semana' | 'mes' | 'todo' | 'custom';
 type EstadoFiltro = 'todos' | 'pagado' | 'anulado';
@@ -804,101 +804,13 @@ export default function ReportesEstadisticasPage() {
     return `SnackRoque_${safeFileSlug(tabLabel)}_${periodPart}_${datePart}`;
   };
 
-  /** Construye hoja Excel profesional: cabecera + filtros + tabla con anchos y autofilter */
-  const buildExcelSheet = (
-    XLSX: any,
-    opts: {
-      title: string;
-      meta: string[];
-      headers: string[];
-      rows: (string | number | null | undefined)[][];
-      colWidths?: number[];
-      moneyCols?: number[]; // índices 0-based en la tabla (no en meta)
-      totalsRow?: (string | number | null | undefined)[];
-    }
-  ) => {
-    const aoa: (string | number | null | undefined)[][] = [];
-    aoa.push([opts.title]);
-    aoa.push(['Snack Roque — Sistema POS / Gestión']);
-    aoa.push([]);
-    aoa.push(['CRITERIOS DE FILTRO APLICADOS']);
-    opts.meta.forEach(m => aoa.push([m]));
-    aoa.push([]);
-    const headerRowIndex = aoa.length; // 0-based in aoa
-    aoa.push(opts.headers);
-    opts.rows.forEach(r => aoa.push(r));
-    if (opts.totalsRow) {
-      aoa.push([]);
-      aoa.push(opts.totalsRow);
-    }
-
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-    // Anchos de columna
-    const widths = opts.colWidths || opts.headers.map((h, i) => {
-      const maxCell = Math.max(
-        h.length,
-        ...opts.rows.map(r => String(r[i] ?? '').length)
-      );
-      return Math.min(42, Math.max(10, maxCell + 2));
-    });
-    ws['!cols'] = widths.map(w => ({ wch: w }));
-
-    // Merge título
-    ws['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(opts.headers.length - 1, 0) } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: Math.max(opts.headers.length - 1, 0) } },
-    ];
-
-    // Congelar cabecera de tabla
-    ws['!freeze'] = { xSplit: 0, ySplit: headerRowIndex + 1 };
-    // Algunos visores usan esta forma:
-    if (!ws['!views']) ws['!views'] = [{ state: 'frozen', ySplit: headerRowIndex + 1, topLeftCell: `A${headerRowIndex + 2}`, activeCell: `A${headerRowIndex + 2}` }];
-
-    // AutoFilter sobre la tabla de datos
-    const lastCol = colLetter(opts.headers.length - 1);
-    const firstDataRow = headerRowIndex + 1; // 1-based excel
-    const lastDataRow = headerRowIndex + 1 + opts.rows.length;
-    if (opts.rows.length > 0) {
-      ws['!autofilter'] = { ref: `A${firstDataRow}:${lastCol}${lastDataRow}` };
-    }
-
-    // Formato numérico en columnas de dinero (best-effort SheetJS community)
-    if (opts.moneyCols?.length) {
-      for (let r = 0; r < opts.rows.length; r++) {
-        for (const c of opts.moneyCols) {
-          const addr = `${colLetter(c)}${headerRowIndex + 2 + r}`;
-          const cell = ws[addr];
-          if (cell && typeof cell.v === 'number') {
-            cell.t = 'n';
-            cell.z = '"S/." #,##0.00';
-          }
-        }
-      }
-    }
-
-    return ws;
-  };
-
-  const colLetter = (idx: number) => {
-    let n = idx;
-    let s = '';
-    while (n >= 0) {
-      s = String.fromCharCode((n % 26) + 65) + s;
-      n = Math.floor(n / 26) - 1;
-    }
-    return s;
-  };
-
-  const appendSheet = (XLSX: any, wb: any, name: string, ws: any) => {
-    const safe = name.slice(0, 31);
-    XLSX.utils.book_append_sheet(wb, ws, safe);
-  };
-
   const exportToExcel = async () => {
     try {
-      const XLSX = await loadSheetJS();
-      const wb = XLSX.utils.book_new();
+      const ExcelJS = await loadExcelJS();
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Snack Roque POS';
+      workbook.created = new Date();
+
       const meta = filterSummaryLines();
       const rowsCount = listForPage.length;
 
@@ -907,303 +819,205 @@ export default function ReportesEstadisticasPage() {
         return;
       }
 
+      // Colores de marca
+      const brandColor = 'B07D2E';
+      const headerBg = 'FFF8E7';
+      const titleBg = 'B07D2E';
+      const titleFg = 'FFFFFF';
+      const totalsBg = 'F5F5DC';
+
+      // Función helper para crear hoja con estilos
+      const createStyledSheet = (title: string, headers: string[], data: any[][], totals?: any[]) => {
+        const sheet = workbook.addWorksheet(title);
+        
+        // Título
+        sheet.mergeCells(`A1:${String.fromCharCode(64 + headers.length)}1`);
+        const titleCell = sheet.getCell('A1');
+        titleCell.value = title;
+        titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
+        titleCell.font = { bold: true, size: 16, color: { argb: titleFg } };
+        titleCell.alignment = { horizontal: 'center' };
+
+        // Subtítulo
+        sheet.mergeCells(`A2:${String.fromCharCode(64 + headers.length)}2`);
+        const subtitleCell = sheet.getCell('A2');
+        subtitleCell.value = 'Snack Roque — Sistema POS / Gestión';
+        subtitleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
+        subtitleCell.font = { bold: true, size: 11, color: { argb: titleFg } };
+        subtitleCell.alignment = { horizontal: 'center' };
+
+        // Meta
+        sheet.getCell('A4').value = 'CRITERIOS DE FILTRO';
+        sheet.getCell('A4').font = { bold: true, size: 10, color: { argb: brandColor } };
+        sheet.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
+        
+        meta.forEach((m, i) => {
+          sheet.getCell(`A${5 + i}`).value = m;
+          sheet.getCell(`A${5 + i}`).font = { size: 9, color: { argb: '666666' } };
+        });
+
+        // Cabecera
+        headers.forEach((header, i) => {
+          const cell = sheet.getCell(8, i + 1);
+          cell.value = header;
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
+          cell.font = { bold: true, size: 11, color: { argb: brandColor } };
+          cell.border = {
+            top: { style: 'medium', color: { argb: brandColor } },
+            bottom: { style: 'medium', color: { argb: brandColor } },
+            left: { style: 'thin', color: { argb: 'D4D4D4' } },
+            right: { style: 'thin', color: { argb: 'D4D4D4' } }
+          };
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        });
+
+        // Datos
+        data.forEach((row, rowIndex) => {
+          const rowNumber = 9 + rowIndex;
+          row.forEach((value, colIndex) => {
+            const cell = sheet.getCell(rowNumber, colIndex + 1);
+            if (typeof value === 'number') {
+              cell.value = value;
+              cell.numFmt = '"S/." #,##0.00';
+              cell.alignment = { horizontal: 'right' };
+            } else {
+              cell.value = value;
+            }
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowIndex % 2 === 0 ? 'FFFFFF' : 'F9F9F9' } };
+            cell.border = {
+              top: { style: 'thin', color: { argb: 'D4D4D4' } },
+              bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
+              left: { style: 'thin', color: { argb: 'D4D4D4' } },
+              right: { style: 'thin', color: { argb: 'D4D4D4' } }
+            };
+          });
+        });
+
+        // Totales
+        if (totals) {
+          const totalRowNumber = 9 + data.length + 1;
+          totals.forEach((value, colIndex) => {
+            const cell = sheet.getCell(totalRowNumber, colIndex + 1);
+            cell.value = value;
+            if (typeof value === 'number') {
+              cell.numFmt = '"S/." #,##0.00';
+              cell.alignment = { horizontal: 'right' };
+            }
+          });
+          sheet.getRow(totalRowNumber).eachCell((cell) => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: totalsBg } };
+            cell.font = { bold: true, size: 11, color: { argb: brandColor } };
+            cell.border = {
+              top: { style: 'medium', color: { argb: brandColor } },
+              bottom: { style: 'medium', color: { argb: brandColor } },
+              left: { style: 'thin', color: { argb: 'D4D4D4' } },
+              right: { style: 'thin', color: { argb: 'D4D4D4' } }
+            };
+          });
+        }
+
+        // Congelar paneles
+        sheet.views = [{ state: 'frozen', ySplit: 8 }];
+        sheet.autoFilter = { from: 'A8', to: `${String.fromCharCode(64 + headers.length)}${8 + data.length}` };
+
+        return sheet;
+      };
+
       if (tab === 'ventas') {
-        // Hoja 1: Resumen KPIs (solo ventas filtradas)
-        const resumenWs = buildExcelSheet(XLSX, {
-          title: 'REPORTE DE VENTAS — RESUMEN',
-          meta,
-          headers: ['Indicador', 'Valor', 'Periodo anterior', 'Variación %'],
-          rows: [
-            ['Ventas netas (S/.)', round2(salesMetrics.tv), round2(salesMetrics.prevTv), formatPct(pctChange(salesMetrics.tv, salesMetrics.prevTv))],
-            ['Transacciones', salesMetrics.tr, salesMetrics.prevTr, formatPct(pctChange(salesMetrics.tr, salesMetrics.prevTr))],
-            ['Unidades vendidas', salesMetrics.un, salesMetrics.prevUn, formatPct(pctChange(salesMetrics.un, salesMetrics.prevUn))],
-            ['Ticket promedio (S/.)', round2(salesMetrics.av), round2(salesMetrics.prevAv), formatPct(pctChange(salesMetrics.av, salesMetrics.prevAv))],
-            ['Anuladas (en filtro)', salesMetrics.annulledCount, '', ''],
-            ['Mejor producto', salesMetrics.bestProduct, '', ''],
-            ['Método dominante', salesMetrics.bestMethod, '', ''],
-            ['Cajero top', salesMetrics.bestCajero, '', ''],
-            ['Pico de ventas', `${salesMetrics.peakLabel} = ${money(salesMetrics.peakVal)}`, '', ''],
-          ],
-          colWidths: [28, 18, 18, 14],
-          moneyCols: [1, 2],
-        });
-        appendSheet(XLSX, wb, '1. Resumen', resumenWs);
-
-        // Hoja 2: Detalle transacciones (filtradas + búsqueda)
-        const detRows = filteredHistory.map(h => [
-          `B-${h.n}`,
-          h.d,
-          h.t || '',
-          h.items.map(i => `${i.name} x${i.qty}`).join('; '),
-          h.clienteNombre || '',
-          h.cajero,
-          h.method,
-          round2(h.total),
-          h.estado === 0 ? 'Anulado' : 'Pagado',
+        createStyledSheet('1. Resumen', ['Indicador', 'Valor', 'Periodo anterior', 'Variación %'], [
+          ['Ventas netas (S/.)', round2(salesMetrics.tv), round2(salesMetrics.prevTv), formatPct(pctChange(salesMetrics.tv, salesMetrics.prevTv))],
+          ['Transacciones', salesMetrics.tr, salesMetrics.prevTr, formatPct(pctChange(salesMetrics.tr, salesMetrics.prevTr))],
+          ['Unidades vendidas', salesMetrics.un, salesMetrics.prevUn, formatPct(pctChange(salesMetrics.un, salesMetrics.prevUn))],
+          ['Ticket promedio (S/.)', round2(salesMetrics.av), round2(salesMetrics.prevAv), formatPct(pctChange(salesMetrics.av, salesMetrics.prevAv))],
+          ['Anuladas (en filtro)', salesMetrics.annulledCount, '', ''],
+          ['Mejor producto', salesMetrics.bestProduct, '', ''],
+          ['Método dominante', salesMetrics.bestMethod, '', ''],
+          ['Cajero top', salesMetrics.bestCajero, '', ''],
+          ['Pico de ventas', `${salesMetrics.peakLabel} = ${money(salesMetrics.peakVal)}`, '', ''],
         ]);
-        const detWs = buildExcelSheet(XLSX, {
-          title: 'REPORTE DE VENTAS — DETALLE',
-          meta,
-          headers: ['Boleta', 'Fecha', 'Hora', 'Productos', 'Cliente', 'Cajero', 'Método', 'Total (S/.)', 'Estado'],
-          rows: detRows,
-          colWidths: [12, 14, 10, 40, 18, 16, 14, 12, 10],
-          moneyCols: [7],
-          totalsRow: ['TOTAL', '', '', '', '', '', '', round2(filteredHistory.filter(h => h.estado !== 0).reduce((a, h) => a + h.total, 0)), `${filteredHistory.length} filas`],
-        });
-        appendSheet(XLSX, wb, '2. Transacciones', detWs);
 
-        // Hoja 3: Serie temporal
-        if (salesMetrics.barLabels.length) {
-          const serieWs = buildExcelSheet(XLSX, {
-            title: 'REPORTE DE VENTAS — SERIE',
-            meta: [...meta, `Gráfico: ${salesMetrics.chartTitle}`],
-            headers: ['Periodo / Etiqueta', 'Total (S/.)'],
-            rows: salesMetrics.barLabels.map((lbl, i) => [lbl, round2(salesMetrics.barTotals[i])]),
-            colWidths: [22, 14],
-            moneyCols: [1],
-          });
-          appendSheet(XLSX, wb, '3. Serie temporal', serieWs);
-        }
-
-        // Hoja 4: Top productos del filtro
-        if (salesMetrics.topProducts.length) {
-          const topWs = buildExcelSheet(XLSX, {
-            title: 'REPORTE DE VENTAS — TOP PRODUCTOS',
-            meta,
-            headers: ['#', 'Producto', 'Unidades', 'Ingresos (S/.)'],
-            rows: salesMetrics.topProducts.map((p, i) => [i + 1, p.name, p.qty, round2(p.revenue)]),
-            colWidths: [6, 32, 12, 14],
-            moneyCols: [3],
-          });
-          appendSheet(XLSX, wb, '4. Top productos', topWs);
-        }
-
-        // Hoja 5: Métodos
-        if (salesMetrics.byMethod.length) {
-          const mWs = buildExcelSheet(XLSX, {
-            title: 'REPORTE DE VENTAS — MÉTODOS DE PAGO',
-            meta,
-            headers: ['Método', 'Operaciones', 'Total (S/.)', '% del total'],
-            rows: salesMetrics.byMethod.map(m => [
-              m.name,
-              m.count,
-              round2(m.total),
-              salesMetrics.tv > 0 ? round2((m.total / salesMetrics.tv) * 100) : 0,
-            ]),
-            colWidths: [22, 14, 14, 12],
-            moneyCols: [2],
-          });
-          appendSheet(XLSX, wb, '5. Metodos de pago', mWs);
-        }
-
-        // Hoja 6: Cajeros
-        if (salesMetrics.byCajero.length) {
-          const cWs = buildExcelSheet(XLSX, {
-            title: 'REPORTE DE VENTAS — POR CAJERO',
-            meta,
-            headers: ['Cajero', 'Operaciones', 'Total (S/.)', 'Ticket prom. (S/.)'],
-            rows: salesMetrics.byCajero.map(c => [
-              c.name,
-              c.count,
-              round2(c.total),
-              round2(c.count > 0 ? c.total / c.count : 0),
-            ]),
-            colWidths: [22, 14, 14, 16],
-            moneyCols: [2, 3],
-          });
-          appendSheet(XLSX, wb, '6. Por cajero', cWs);
-        }
+        const detRows = filteredHistory.map(h => [
+          `B-${h.n}`, h.d, h.t || '', h.items.map(i => `${i.name} x${i.qty}`).join('; '),
+          h.clienteNombre || '', h.cajero, h.method, round2(h.total), h.estado === 0 ? 'Anulado' : 'Pagado',
+        ]);
+        const detSheet = createStyledSheet('2. Transacciones', ['Boleta', 'Fecha', 'Hora', 'Productos', 'Cliente', 'Cajero', 'Método', 'Total (S/.)', 'Estado'], detRows);
+        detSheet.getColumn(8).numFmt = '"S/." #,##0.00';
       }
 
       if (tab === 'productos') {
-        const resWs = buildExcelSheet(XLSX, {
-          title: 'REPORTE DE PRODUCTOS — RESUMEN',
-          meta,
-          headers: ['Indicador', 'Valor'],
-          rows: [
-            ['SKUs en catálogo', productReport.totalSKUs],
-            ['Valor inventario (S/.)', round2(productReport.valorInventario)],
-            ['Unidades vendidas (periodo)', productReport.totalSoldUnits],
-            ['Ingresos por productos (S/.)', round2(productReport.totalRevenue)],
-            ['Stock bajo', productReport.lowStock],
-            ['Agotados', productReport.agotados],
-            ['Filas exportadas (búsqueda)', filteredProductRows.length],
-          ],
-          colWidths: [32, 18],
-          moneyCols: [1],
-        });
-        appendSheet(XLSX, wb, '1. Resumen', resWs);
+        createStyledSheet('1. Resumen', ['Indicador', 'Valor'], [
+          ['SKUs en catálogo', productReport.totalSKUs],
+          ['Valor inventario (S/.)', round2(productReport.valorInventario)],
+          ['Unidades vendidas (periodo)', productReport.totalSoldUnits],
+          ['Ingresos por productos (S/.)', round2(productReport.totalRevenue)],
+          ['Stock bajo', productReport.lowStock],
+          ['Agotados', productReport.agotados],
+          ['Filas exportadas (búsqueda)', filteredProductRows.length],
+        ]);
 
-        const detWs = buildExcelSheet(XLSX, {
-          title: 'REPORTE DE PRODUCTOS — DETALLE',
-          meta,
-          headers: [
-            'Producto', 'Categoría', 'Stock', 'Precio (S/.)', 'Valor inv. (S/.)',
-            'Vendidos', 'Ingresos (S/.)', 'Producción', 'Descarte', 'Estado stock',
-          ],
-          rows: filteredProductRows.map(r => [
-            r.name, r.cat, r.stock, round2(r.price), round2(r.valor),
-            r.qtySold, round2(r.revenue), r.produccion, r.descarte,
-            r.status === 'ok' ? 'OK' : r.status === 'bajo' ? 'Bajo' : 'Agotado',
-          ]),
-          colWidths: [28, 14, 10, 12, 14, 10, 14, 12, 10, 12],
-          moneyCols: [3, 4, 6],
-          totalsRow: [
-            'TOTALES', '',
-            filteredProductRows.reduce((a, r) => a + r.stock, 0),
-            '',
-            round2(filteredProductRows.reduce((a, r) => a + r.valor, 0)),
-            filteredProductRows.reduce((a, r) => a + r.qtySold, 0),
-            round2(filteredProductRows.reduce((a, r) => a + r.revenue, 0)),
-            filteredProductRows.reduce((a, r) => a + r.produccion, 0),
-            filteredProductRows.reduce((a, r) => a + r.descarte, 0),
-            '',
-          ],
-        });
-        appendSheet(XLSX, wb, '2. Inventario y ventas', detWs);
-
-        if (productReport.categories.length) {
-          const catWs = buildExcelSheet(XLSX, {
-            title: 'REPORTE DE PRODUCTOS — POR CATEGORÍA',
-            meta,
-            headers: ['Categoría', 'SKUs', 'Stock total', 'Ingresos (S/.)'],
-            rows: productReport.categories.map(c => [c.name, c.count, c.stock, round2(c.revenue)]),
-            colWidths: [22, 10, 12, 14],
-            moneyCols: [3],
-          });
-          appendSheet(XLSX, wb, '3. Por categoria', catWs);
-        }
+        const prodRows = filteredProductRows.map(r => [
+          r.name, r.cat, r.stock, round2(r.price), round2(r.valor),
+          r.qtySold, round2(r.revenue), r.produccion, r.descarte,
+          r.status === 'ok' ? 'OK' : r.status === 'bajo' ? 'Bajo' : 'Agotado',
+        ]);
+        const prodSheet = createStyledSheet('2. Inventario y ventas', ['Producto', 'Categoría', 'Stock', 'Precio (S/.)', 'Valor inv. (S/.)', 'Vendidos', 'Ingresos (S/.)', 'Producción', 'Descarte', 'Estado stock'], prodRows);
+        [3, 4, 6].forEach(i => prodSheet.getColumn(i).numFmt = '"S/." #,##0.00');
       }
 
       if (tab === 'insumos') {
-        const resWs = buildExcelSheet(XLSX, {
-          title: 'REPORTE DE INSUMOS — RESUMEN',
-          meta,
-          headers: ['Indicador', 'Valor'],
-          rows: [
-            ['Total insumos', insumoReport.total],
-            ['Activos', insumoReport.activos],
-            ['Valor inventario (S/.)', round2(insumoReport.valorTotal)],
-            ['Compras del periodo (S/.)', round2(insumoReport.comprasPeriodo)],
-            ['Cantidad comprada (und.)', round2(insumoReport.qtyCompradaPeriodo)],
-            ['Stock bajo (≤ mínimo)', insumoReport.bajos],
-            ['Agotados', insumoReport.agotados],
-            ['Filas exportadas (búsqueda)', filteredInsumoRows.length],
-          ],
-          colWidths: [32, 18],
-          moneyCols: [1],
-        });
-        appendSheet(XLSX, wb, '1. Resumen', resWs);
+        createStyledSheet('1. Resumen', ['Indicador', 'Valor'], [
+          ['Total insumos', insumoReport.total],
+          ['Activos', insumoReport.activos],
+          ['Valor inventario (S/.)', round2(insumoReport.valorTotal)],
+          ['Compras del periodo (S/.)', round2(insumoReport.comprasPeriodo)],
+          ['Cantidad comprada (und.)', round2(insumoReport.qtyCompradaPeriodo)],
+          ['Stock bajo (≤ mínimo)', insumoReport.bajos],
+          ['Agotados', insumoReport.agotados],
+          ['Filas exportadas (búsqueda)', filteredInsumoRows.length],
+        ]);
 
-        const detWs = buildExcelSheet(XLSX, {
-          title: 'REPORTE DE INSUMOS — DETALLE',
-          meta,
-          headers: [
-            'Insumo', 'Stock', 'Mínimo', 'Unidad', 'Costo unit. (S/.)', 'Valor (S/.)',
-            'Comprado (periodo)', 'Costo compras (S/.)', 'Usado en pedidos', 'Estado', 'Activo',
-          ],
-          rows: filteredInsumoRows.map(r => [
-            r.nombre, r.stock, r.stockMinimo, r.unidad, round2(r.costoUnitario), round2(r.valor),
-            r.qtyComprada, round2(r.costoCompras), r.qtyEnPedidos,
-            r.status === 'ok' ? 'OK' : r.status === 'bajo' ? 'Bajo' : 'Agotado',
-            r.active ? 'Sí' : 'No',
-          ]),
-          colWidths: [26, 10, 10, 10, 14, 12, 14, 16, 14, 10, 8],
-          moneyCols: [4, 5, 7],
-          totalsRow: [
-            'TOTALES', '', '', '', '',
-            round2(filteredInsumoRows.reduce((a, r) => a + r.valor, 0)),
-            round2(filteredInsumoRows.reduce((a, r) => a + r.qtyComprada, 0)),
-            round2(filteredInsumoRows.reduce((a, r) => a + r.costoCompras, 0)),
-            round2(filteredInsumoRows.reduce((a, r) => a + r.qtyEnPedidos, 0)),
-            '', '',
-          ],
-        });
-        appendSheet(XLSX, wb, '2. Inventario insumos', detWs);
-
-        if (insumoReport.alerts.length) {
-          const alWs = buildExcelSheet(XLSX, {
-            title: 'REPORTE DE INSUMOS — ALERTAS',
-            meta: [...meta, 'Solo stock bajo o agotado'],
-            headers: ['Insumo', 'Stock', 'Mínimo', 'Unidad', 'Estado', 'Valor (S/.)'],
-            rows: insumoReport.alerts.map(r => [
-              r.nombre, r.stock, r.stockMinimo, r.unidad,
-              r.status === 'bajo' ? 'Bajo' : 'Agotado', round2(r.valor),
-            ]),
-            colWidths: [26, 10, 10, 10, 10, 12],
-            moneyCols: [5],
-          });
-          appendSheet(XLSX, wb, '3. Alertas', alWs);
-        }
+        const insRows = filteredInsumoRows.map(r => [
+          r.nombre, r.stock, r.stockMinimo, r.unidad, round2(r.costoUnitario), round2(r.valor),
+          r.qtyComprada, round2(r.costoCompras), r.qtyEnPedidos,
+          r.status === 'ok' ? 'OK' : r.status === 'bajo' ? 'Bajo' : 'Agotado', r.active ? 'Sí' : 'No',
+        ]);
+        const insSheet = createStyledSheet('2. Inventario insumos', ['Insumo', 'Stock', 'Mínimo', 'Unidad', 'Costo unit. (S/.)', 'Valor (S/.)', 'Comprado (periodo)', 'Costo compras (S/.)', 'Usado en pedidos', 'Estado', 'Activo'], insRows);
+        [4, 5, 7].forEach(i => insSheet.getColumn(i).numFmt = '"S/." #,##0.00');
       }
 
       if (tab === 'pedidos') {
-        const resWs = buildExcelSheet(XLSX, {
-          title: 'REPORTE DE PEDIDOS / RESERVAS — RESUMEN',
-          meta,
-          headers: ['Indicador', 'Valor'],
-          rows: [
-            ['Total en periodo', pedidoReport.totalReservas],
-            ['Activas (Pendiente + Listo)', pedidoReport.activas],
-            ['Entregadas', pedidoReport.entregadas],
-            ['Canceladas', pedidoReport.canceladas],
-            ['Pendientes', pedidoReport.byEstado.Pendiente || 0],
-            ['Listos', pedidoReport.byEstado.Listo || 0],
-            ['Adelantos cobrados (S/.)', round2(pedidoReport.montoaAdelantos)],
-            ['Monto total reservas (S/.)', round2(pedidoReport.montoTotal)],
-            ['Saldo por cobrar (S/.)', round2(pedidoReport.montoPendiente)],
-            ['Filas exportadas (filtros + búsqueda)', filteredPedidoList.length],
-          ],
-          colWidths: [36, 18],
-          moneyCols: [1],
-        });
-        appendSheet(XLSX, wb, '1. Resumen', resWs);
+        createStyledSheet('1. Resumen', ['Indicador', 'Valor'], [
+          ['Total en periodo', pedidoReport.totalReservas],
+          ['Activas (Pendiente + Listo)', pedidoReport.activas],
+          ['Entregadas', pedidoReport.entregadas],
+          ['Canceladas', pedidoReport.canceladas],
+          ['Pendientes', pedidoReport.byEstado.Pendiente || 0],
+          ['Listos', pedidoReport.byEstado.Listo || 0],
+          ['Adelantos cobrados (S/.)', round2(pedidoReport.montoaAdelantos)],
+          ['Monto total reservas (S/.)', round2(pedidoReport.montoTotal)],
+          ['Saldo por cobrar (S/.)', round2(pedidoReport.montoPendiente)],
+          ['Filas exportadas (filtros + búsqueda)', filteredPedidoList.length],
+        ]);
 
-        const detWs = buildExcelSheet(XLSX, {
-          title: 'REPORTE DE PEDIDOS / RESERVAS — DETALLE',
-          meta,
-          headers: [
-            'ID', 'Cliente', 'Detalle', 'Fecha entrega', 'Estado',
-            'Total (S/.)', 'Adelanto (S/.)', 'Saldo (S/.)', 'Ítems',
-          ],
-          rows: filteredPedidoList.map(p => [
-            String(p.id).startsWith('local_') ? 'Local' : String(p.id),
-            p.clienteNombre || '',
-            p.summary,
-            p.fecEntrega || '',
-            p.estado,
-            round2(p.totalVal),
-            round2(p.adelanto || 0),
-            round2(p.saldo),
-            p.itemsList.length,
-          ]),
-          colWidths: [12, 20, 40, 14, 12, 12, 12, 12, 8],
-          moneyCols: [5, 6, 7],
-          totalsRow: [
-            'TOTALES', '', '', '', `${filteredPedidoList.length} pedidos`,
-            round2(filteredPedidoList.reduce((a, p) => a + p.totalVal, 0)),
-            round2(filteredPedidoList.reduce((a, p) => a + (p.adelanto || 0), 0)),
-            round2(filteredPedidoList.reduce((a, p) => a + p.saldo, 0)),
-            '',
-          ],
-        });
-        appendSheet(XLSX, wb, '2. Listado pedidos', detWs);
-
-        if (pedidoReport.topItems.length) {
-          const topWs = buildExcelSheet(XLSX, {
-            title: 'REPORTE DE PEDIDOS — ÍTEMS MÁS RESERVADOS',
-            meta,
-            headers: ['#', 'Ítem', 'Cantidad', 'Ingresos est. (S/.)'],
-            rows: pedidoReport.topItems.map((it, i) => [i + 1, it.name, it.qty, round2(it.revenue)]),
-            colWidths: [6, 32, 12, 16],
-            moneyCols: [3],
-          });
-          appendSheet(XLSX, wb, '3. Items reservados', topWs);
-        }
+        const pedRows = filteredPedidoList.map(p => [
+          String(p.id).startsWith('local_') ? 'Local' : String(p.id), p.clienteNombre || '',
+          p.summary, p.fecEntrega || '', p.estado, round2(p.totalVal),
+          round2(p.adelanto || 0), round2(p.saldo), p.itemsList.length,
+        ]);
+        const pedSheet = createStyledSheet('2. Listado pedidos', ['ID', 'Cliente', 'Detalle', 'Fecha entrega', 'Estado', 'Total (S/.)', 'Adelanto (S/.)', 'Saldo (S/.)', 'Ítems'], pedRows);
+        [5, 6, 7].forEach(i => pedSheet.getColumn(i).numFmt = '"S/." #,##0.00');
       }
 
+      // Descargar archivo
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
       const fileName = `${exportFileBase()}.xlsx`;
-      XLSX.writeFile(wb, fileName);
+      a.download = fileName;
+      a.click();
+      window.URL.revokeObjectURL(url);
       toast(`📥 Excel de ${tabLabel} descargado (${rowsCount} registros · filtros aplicados)`);
     } catch (err: any) {
       console.error(err);

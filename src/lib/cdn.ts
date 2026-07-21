@@ -50,3 +50,7 @@ export async function loadJsPDFAutoTable(): Promise<any> {
 export async function loadSheetJS(): Promise<any> {
   return loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', 'XLSX');
 }
+
+export async function loadExcelJS(): Promise<any> {
+  return loadScript('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js', 'ExcelJS');
+}

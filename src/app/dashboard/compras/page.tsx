@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
+import { loadExcelJS } from '@/lib/cdn';
 
 export default function ComprasPage() {
   const router = useRouter();
@@ -207,6 +208,506 @@ export default function ComprasPage() {
   const buySubtotal = buyTotal / 1.18;
   const buyIgv = buyTotal - buySubtotal;
 
+  // Función para exportar a Excel con estilos profesionales usando ExcelJS
+  const exportToExcel = async () => {
+    try {
+      const ExcelJS = await loadExcelJS();
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Snack Roque POS';
+      workbook.created = new Date();
+
+      if (purchases.length === 0) {
+        alert('No hay compras para exportar');
+        return;
+      }
+
+      // Colores de marca
+      const brandColor = 'B07D2E';
+      const headerBg = 'FFF8E7';
+      const titleBg = 'B07D2E';
+      const titleFg = 'FFFFFF';
+      const totalsBg = 'F5F5DC';
+
+      // Hoja 1: Resumen de compras
+      const totalCompras = purchases.reduce((a, p) => a + parseFloat(p.total.toString().replace(/[^0-9.-]+/g, "")), 0);
+      const totalSubtotal = purchases.reduce((a, p) => a + parseFloat(p.subTotal.toString().replace(/[^0-9.-]+/g, "")), 0);
+      const totalIGV = purchases.reduce((a, p) => a + parseFloat(p.igv.toString().replace(/[^0-9.-]+/g, "")), 0);
+
+      const resumenSheet = workbook.addWorksheet('1. Resumen');
+
+      // Título
+      resumenSheet.mergeCells('A1:B1');
+      const titleCell = resumenSheet.getCell('A1');
+      titleCell.value = 'REPORTE DE COMPRAS — RESUMEN';
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
+      titleCell.font = { bold: true, size: 16, color: { argb: titleFg } };
+      titleCell.alignment = { horizontal: 'center' };
+
+      // Subtítulo
+      resumenSheet.mergeCells('A2:B2');
+      const subtitleCell = resumenSheet.getCell('A2');
+      subtitleCell.value = 'Snack Roque — Sistema POS / Gestión';
+      subtitleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
+      subtitleCell.font = { bold: true, size: 11, color: { argb: titleFg } };
+      subtitleCell.alignment = { horizontal: 'center' };
+
+      // Filtros
+      resumenSheet.getCell('A4').value = 'CRITERIOS DE FILTRO';
+      resumenSheet.getCell('A4').font = { bold: true, size: 10, color: { argb: brandColor } };
+      resumenSheet.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
+
+      resumenSheet.getCell('A5').value = `Fecha generación: ${new Date().toLocaleString('es-PE')}`;
+      resumenSheet.getCell('A5').font = { size: 9, color: { argb: '666666' } };
+
+      resumenSheet.getCell('A6').value = `Total compras registradas: ${purchases.length}`;
+      resumenSheet.getCell('A6').font = { size: 9, color: { argb: '666666' } };
+
+      // Cabecera de tabla
+      resumenSheet.getCell('A8').value = 'Indicador';
+      resumenSheet.getCell('B8').value = 'Valor';
+      resumenSheet.getRow(8).eachCell((cell) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
+        cell.font = { bold: true, size: 11, color: { argb: brandColor } };
+        cell.border = {
+          top: { style: 'medium', color: { argb: brandColor } },
+          bottom: { style: 'medium', color: { argb: brandColor } },
+          left: { style: 'thin', color: { argb: 'D4D4D4' } },
+          right: { style: 'thin', color: { argb: 'D4D4D4' } }
+        };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      // Datos
+      const data = [
+        ['Total compras (S/.)', totalCompras.toFixed(2)],
+        ['Subtotal neto (S/.)', totalSubtotal.toFixed(2)],
+        ['IGV total (S/.)', totalIGV.toFixed(2)],
+        ['Promedio por compra (S/.)', (totalCompras / purchases.length).toFixed(2)],
+      ];
+
+      data.forEach((row, rowIndex) => {
+        const rowNumber = 9 + rowIndex;
+        resumenSheet.getCell(`A${rowNumber}`).value = row[0];
+        resumenSheet.getCell(`B${rowNumber}`).value = parseFloat(row[1]);
+        resumenSheet.getCell(`B${rowNumber}`).numFmt = '"S/." #,##0.00';
+        resumenSheet.getCell(`B${rowNumber}`).alignment = { horizontal: 'right' };
+
+        resumenSheet.getRow(rowNumber).eachCell((cell) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowIndex % 2 === 0 ? 'FFFFFF' : 'F9F9F9' } };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'D4D4D4' } },
+            bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
+            left: { style: 'thin', color: { argb: 'D4D4D4' } },
+            right: { style: 'thin', color: { argb: 'D4D4D4' } }
+          };
+        });
+      });
+
+      // Anchos de columna
+      resumenSheet.getColumn('A').width = 28;
+      resumenSheet.getColumn('B').width = 18;
+
+      // Congelar paneles
+      resumenSheet.views = [{ state: 'frozen', ySplit: 8 }];
+
+      // Hoja 2: Detalle de compras
+      const detalleSheet = workbook.addWorksheet('2. Detalle compras');
+
+      // Título
+      detalleSheet.mergeCells('A1:I1');
+      const detalleTitle = detalleSheet.getCell('A1');
+      detalleTitle.value = 'REPORTE DE COMPRAS — DETALLE';
+      detalleTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
+      detalleTitle.font = { bold: true, size: 16, color: { argb: titleFg } };
+      detalleTitle.alignment = { horizontal: 'center' };
+
+      // Subtítulo
+      detalleSheet.mergeCells('A2:I2');
+      const detalleSubtitle = detalleSheet.getCell('A2');
+      detalleSubtitle.value = 'Snack Roque — Sistema POS / Gestión';
+      detalleSubtitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
+      detalleSubtitle.font = { bold: true, size: 11, color: { argb: titleFg } };
+      detalleSubtitle.alignment = { horizontal: 'center' };
+
+      // Filtros
+      detalleSheet.getCell('A4').value = 'CRITERIOS DE FILTRO';
+      detalleSheet.getCell('A4').font = { bold: true, size: 10, color: { argb: brandColor } };
+      detalleSheet.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
+
+      detalleSheet.getCell('A5').value = `Fecha generación: ${new Date().toLocaleString('es-PE')}`;
+      detalleSheet.getCell('A5').font = { size: 9, color: { argb: '666666' } };
+
+      detalleSheet.getCell('A6').value = `Registros: ${purchases.length}`;
+      detalleSheet.getCell('A6').font = { size: 9, color: { argb: '666666' } };
+
+      // Cabecera de tabla
+      const headers = ['Código', 'Fecha', 'Proveedor', 'RUC', 'Teléfono', 'Artículos (con costo)', 'Subtotal (S/.)', 'IGV (18%)', 'Total (S/.)'];
+      headers.forEach((header, colIndex) => {
+        const cell = detalleSheet.getCell(8, colIndex + 1);
+        cell.value = header;
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
+        cell.font = { bold: true, size: 11, color: { argb: brandColor } };
+        cell.border = {
+          top: { style: 'medium', color: { argb: brandColor } },
+          bottom: { style: 'medium', color: { argb: brandColor } },
+          left: { style: 'thin', color: { argb: 'D4D4D4' } },
+          right: { style: 'thin', color: { argb: 'D4D4D4' } }
+        };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      // Datos
+      const detalleRows = purchases.map(p => {
+        const provRef = providers.find(pr => pr.name === p.prov);
+        const itemsText = p.items ? p.items.map(i => {
+          if (i.type === 'insumo') {
+            const insRef = insumos.find(ins => ins.id === i.insumoId);
+            return `${insRef?.nombre || 'Insumo'} x${i.qty} (S/. ${i.cost.toFixed(2)})`;
+          } else {
+            const prodRef = products.find(prod => prod.id === i.productId);
+            const displayName = prodRef ? (prodRef.name + (i.version ? ` (${i.version})` : '')) : 'Producto';
+            return `${displayName} x${i.qty} (S/. ${i.cost.toFixed(2)})`;
+          }
+        }).join('; ') : 'Artículos varios';
+
+        return [
+          `#${p.id}`,
+          p.d,
+          p.prov,
+          provRef?.ruc || '',
+          provRef?.phone || '',
+          itemsText,
+          parseFloat(p.subTotal.toString().replace(/[^0-9.-]+/g, "")),
+          parseFloat(p.igv.toString().replace(/[^0-9.-]+/g, "")),
+          parseFloat(p.total.toString().replace(/[^0-9.-]+/g, "")),
+        ];
+      });
+
+      detalleRows.forEach((row, rowIndex) => {
+        const rowNumber = 9 + rowIndex;
+        row.forEach((value, colIndex) => {
+          const cell = detalleSheet.getCell(rowNumber, colIndex + 1);
+          if (colIndex >= 6 && typeof value === 'number') {
+            cell.value = value;
+            cell.numFmt = '"S/." #,##0.00';
+            cell.alignment = { horizontal: 'right' };
+          } else {
+            cell.value = value;
+          }
+
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowIndex % 2 === 0 ? 'FFFFFF' : 'F9F9F9' } };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'D4D4D4' } },
+            bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
+            left: { style: 'thin', color: { argb: 'D4D4D4' } },
+            right: { style: 'thin', color: { argb: 'D4D4D4' } }
+          };
+        });
+      });
+
+      // Totales
+      const totalRowNumber = 9 + detalleRows.length + 1;
+      detalleSheet.getCell(`A${totalRowNumber}`).value = 'TOTALES';
+      detalleSheet.getCell(`G${totalRowNumber}`).value = totalSubtotal;
+      detalleSheet.getCell(`H${totalRowNumber}`).value = totalIGV;
+      detalleSheet.getCell(`I${totalRowNumber}`).value = totalCompras;
+
+      ['G', 'H', 'I'].forEach(col => {
+        const cell = detalleSheet.getCell(`${col}${totalRowNumber}`);
+        cell.numFmt = '"S/." #,##0.00';
+        cell.alignment = { horizontal: 'right' };
+      });
+
+      detalleSheet.getRow(totalRowNumber).eachCell((cell) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: totalsBg } };
+        cell.font = { bold: true, size: 11, color: { argb: brandColor } };
+        cell.border = {
+          top: { style: 'medium', color: { argb: brandColor } },
+          bottom: { style: 'medium', color: { argb: brandColor } },
+          left: { style: 'thin', color: { argb: 'D4D4D4' } },
+          right: { style: 'thin', color: { argb: 'D4D4D4' } }
+        };
+      });
+
+      // Anchos de columna
+      detalleSheet.getColumn(1).width = 10;
+      detalleSheet.getColumn(2).width = 14;
+      detalleSheet.getColumn(3).width = 28;
+      detalleSheet.getColumn(4).width = 14;
+      detalleSheet.getColumn(5).width = 14;
+      detalleSheet.getColumn(6).width = 55;
+      detalleSheet.getColumn(7).width = 14;
+      detalleSheet.getColumn(8).width = 14;
+      detalleSheet.getColumn(9).width = 14;
+
+      // Congelar paneles y autoFilter
+      detalleSheet.views = [{ state: 'frozen', ySplit: 8 }];
+      detalleSheet.autoFilter = { from: 'A8', to: `I${8 + detalleRows.length}` };
+
+      // Hoja 3: Por artículo
+      const articuloSheet = workbook.addWorksheet('3. Por artículo');
+
+      // Título
+      articuloSheet.mergeCells('A1:F1');
+      const articuloTitle = articuloSheet.getCell('A1');
+      articuloTitle.value = 'REPORTE DE COMPRAS — POR ARTÍCULO';
+      articuloTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
+      articuloTitle.font = { bold: true, size: 16, color: { argb: titleFg } };
+      articuloTitle.alignment = { horizontal: 'center' };
+
+      // Subtítulo
+      articuloSheet.mergeCells('A2:F2');
+      const articuloSubtitle = articuloSheet.getCell('A2');
+      articuloSubtitle.value = 'Snack Roque — Sistema POS / Gestión';
+      articuloSubtitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
+      articuloSubtitle.font = { bold: true, size: 11, color: { argb: titleFg } };
+      articuloSubtitle.alignment = { horizontal: 'center' };
+
+      // Filtros
+      articuloSheet.getCell('A4').value = 'CRITERIOS DE FILTRO';
+      articuloSheet.getCell('A4').font = { bold: true, size: 10, color: { argb: brandColor } };
+      articuloSheet.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
+
+      articuloSheet.getCell('A5').value = `Fecha generación: ${new Date().toLocaleString('es-PE')}`;
+      articuloSheet.getCell('A5').font = { size: 9, color: { argb: '666666' } };
+
+      // Cabecera
+      const articuloHeaders = ['Artículo', 'Tipo', 'Unidad', 'Cantidad total', 'Costo unit. (S/.)', 'Total (S/.)'];
+      articuloHeaders.forEach((header, colIndex) => {
+        const cell = articuloSheet.getCell(8, colIndex + 1);
+        cell.value = header;
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
+        cell.font = { bold: true, size: 11, color: { argb: brandColor } };
+        cell.border = {
+          top: { style: 'medium', color: { argb: brandColor } },
+          bottom: { style: 'medium', color: { argb: brandColor } },
+          left: { style: 'thin', color: { argb: 'D4D4D4' } },
+          right: { style: 'thin', color: { argb: 'D4D4D4' } }
+        };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      // Datos
+      const articuloMap: Record<string, { name: string; type: string; unidad: string; qty: number; cost: number; total: number }> = {};
+      purchases.forEach(p => {
+        p.items?.forEach(i => {
+          let name = '';
+          let type = '';
+          let unidad = '';
+          if (i.type === 'insumo') {
+            const insRef = insumos.find(ins => ins.id === i.insumoId);
+            name = insRef?.nombre || 'Insumo';
+            type = 'Insumo';
+            unidad = insRef?.unidadMedida || 'und';
+          } else {
+            const prodRef = products.find(prod => prod.id === i.productId);
+            name = prodRef ? (prodRef.name + (i.version ? ` (${i.version})` : '')) : 'Producto';
+            type = 'Producto';
+            unidad = prodRef?.unidad_medida || 'unidades';
+          }
+          if (!articuloMap[name]) {
+            articuloMap[name] = { name, type, unidad, qty: 0, cost: 0, total: 0 };
+          }
+          articuloMap[name].qty += i.qty;
+          articuloMap[name].total += i.qty * i.cost;
+          articuloMap[name].cost = i.cost;
+        });
+      });
+
+      const articuloRows = Object.values(articuloMap).sort((a, b) => b.total - a.total);
+      articuloSheet.getCell('A6').value = `Artículos únicos: ${articuloRows.length}`;
+      articuloSheet.getCell('A6').font = { size: 9, color: { argb: '666666' } };
+
+      articuloRows.forEach((row, rowIndex) => {
+        const rowNumber = 9 + rowIndex;
+        const rowData = [row.name, row.type, row.unidad, row.qty, row.cost, row.total];
+        rowData.forEach((value, colIndex) => {
+          const cell = articuloSheet.getCell(rowNumber, colIndex + 1);
+          if (colIndex >= 4 && typeof value === 'number') {
+            cell.value = value;
+            cell.numFmt = '"S/." #,##0.00';
+            cell.alignment = { horizontal: 'right' };
+          } else {
+            cell.value = value;
+          }
+
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowIndex % 2 === 0 ? 'FFFFFF' : 'F9F9F9' } };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'D4D4D4' } },
+            bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
+            left: { style: 'thin', color: { argb: 'D4D4D4' } },
+            right: { style: 'thin', color: { argb: 'D4D4D4' } }
+          };
+        });
+      });
+
+      // Totales
+      const articuloTotalRow = 9 + articuloRows.length + 1;
+      articuloSheet.getCell(`A${articuloTotalRow}`).value = 'TOTALES';
+      articuloSheet.getCell(`D${articuloTotalRow}`).value = articuloRows.reduce((a, r) => a + r.qty, 0);
+      articuloSheet.getCell(`F${articuloTotalRow}`).value = articuloRows.reduce((a, r) => a + r.total, 0);
+
+      ['D', 'F'].forEach(col => {
+        const cell = articuloSheet.getCell(`${col}${articuloTotalRow}`);
+        cell.numFmt = '"S/." #,##0.00';
+        cell.alignment = { horizontal: 'right' };
+      });
+
+      articuloSheet.getRow(articuloTotalRow).eachCell((cell) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: totalsBg } };
+        cell.font = { bold: true, size: 11, color: { argb: brandColor } };
+        cell.border = {
+          top: { style: 'medium', color: { argb: brandColor } },
+          bottom: { style: 'medium', color: { argb: brandColor } },
+          left: { style: 'thin', color: { argb: 'D4D4D4' } },
+          right: { style: 'thin', color: { argb: 'D4D4D4' } }
+        };
+      });
+
+      // Anchos
+      articuloSheet.getColumn(1).width = 40;
+      articuloSheet.getColumn(2).width = 12;
+      articuloSheet.getColumn(3).width = 12;
+      articuloSheet.getColumn(4).width = 14;
+      articuloSheet.getColumn(5).width = 16;
+      articuloSheet.getColumn(6).width = 14;
+
+      articuloSheet.views = [{ state: 'frozen', ySplit: 8 }];
+      articuloSheet.autoFilter = { from: 'A8', to: `F${8 + articuloRows.length}` };
+
+      // Hoja 4: Por proveedor
+      const proveedorSheet = workbook.addWorksheet('4. Por proveedor');
+
+      // Título
+      proveedorSheet.mergeCells('A1:F1');
+      const proveedorTitle = proveedorSheet.getCell('A1');
+      proveedorTitle.value = 'REPORTE DE COMPRAS — POR PROVEEDOR';
+      proveedorTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
+      proveedorTitle.font = { bold: true, size: 16, color: { argb: titleFg } };
+      proveedorTitle.alignment = { horizontal: 'center' };
+
+      // Subtítulo
+      proveedorSheet.mergeCells('A2:F2');
+      const proveedorSubtitle = proveedorSheet.getCell('A2');
+      proveedorSubtitle.value = 'Snack Roque — Sistema POS / Gestión';
+      proveedorSubtitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: titleBg } };
+      proveedorSubtitle.font = { bold: true, size: 11, color: { argb: titleFg } };
+      proveedorSubtitle.alignment = { horizontal: 'center' };
+
+      // Filtros
+      proveedorSheet.getCell('A4').value = 'CRITERIOS DE FILTRO';
+      proveedorSheet.getCell('A4').font = { bold: true, size: 10, color: { argb: brandColor } };
+      proveedorSheet.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
+
+      proveedorSheet.getCell('A5').value = `Fecha generación: ${new Date().toLocaleString('es-PE')}`;
+      proveedorSheet.getCell('A5').font = { size: 9, color: { argb: '666666' } };
+
+      // Cabecera
+      const proveedorHeaders = ['Proveedor', 'RUC', 'Teléfono', 'Compras', 'Total (S/.)', '% del total'];
+      proveedorHeaders.forEach((header, colIndex) => {
+        const cell = proveedorSheet.getCell(8, colIndex + 1);
+        cell.value = header;
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerBg } };
+        cell.font = { bold: true, size: 11, color: { argb: brandColor } };
+        cell.border = {
+          top: { style: 'medium', color: { argb: brandColor } },
+          bottom: { style: 'medium', color: { argb: brandColor } },
+          left: { style: 'thin', color: { argb: 'D4D4D4' } },
+          right: { style: 'thin', color: { argb: 'D4D4D4' } }
+        };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      // Datos
+      const proveedorMap: Record<string, { name: string; ruc: string; phone: string; count: number; total: number }> = {};
+      purchases.forEach(p => {
+        if (!proveedorMap[p.prov]) {
+          const provRef = providers.find(pr => pr.name === p.prov);
+          proveedorMap[p.prov] = { name: p.prov, ruc: provRef?.ruc || '', phone: provRef?.phone || '', count: 0, total: 0 };
+        }
+        proveedorMap[p.prov].count += 1;
+        proveedorMap[p.prov].total += parseFloat(p.total.toString().replace(/[^0-9.-]+/g, ""));
+      });
+
+      const proveedorRows = Object.values(proveedorMap).sort((a, b) => b.total - a.total);
+      proveedorSheet.getCell('A6').value = `Proveedores: ${proveedorRows.length}`;
+      proveedorSheet.getCell('A6').font = { size: 9, color: { argb: '666666' } };
+
+      proveedorRows.forEach((row, rowIndex) => {
+        const rowNumber = 9 + rowIndex;
+        const rowData = [row.name, row.ruc, row.phone, row.count, row.total, totalCompras > 0 ? ((row.total / totalCompras) * 100).toFixed(1) + '%' : '0%'];
+        rowData.forEach((value, colIndex) => {
+          const cell = proveedorSheet.getCell(rowNumber, colIndex + 1);
+          if (colIndex === 4 && typeof value === 'number') {
+            cell.value = value;
+            cell.numFmt = '"S/." #,##0.00';
+            cell.alignment = { horizontal: 'right' };
+          } else {
+            cell.value = value;
+          }
+
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowIndex % 2 === 0 ? 'FFFFFF' : 'F9F9F9' } };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'D4D4D4' } },
+            bottom: { style: 'thin', color: { argb: 'D4D4D4' } },
+            left: { style: 'thin', color: { argb: 'D4D4D4' } },
+            right: { style: 'thin', color: { argb: 'D4D4D4' } }
+          };
+        });
+      });
+
+      // Totales
+      const proveedorTotalRow = 9 + proveedorRows.length + 1;
+      proveedorSheet.getCell(`A${proveedorTotalRow}`).value = 'TOTALES';
+      proveedorSheet.getCell(`D${proveedorTotalRow}`).value = proveedorRows.reduce((a, r) => a + r.count, 0);
+      proveedorSheet.getCell(`E${proveedorTotalRow}`).value = totalCompras;
+      proveedorSheet.getCell(`F${proveedorTotalRow}`).value = '100%';
+
+      ['D', 'E'].forEach(col => {
+        const cell = proveedorSheet.getCell(`${col}${proveedorTotalRow}`);
+        cell.numFmt = '"S/." #,##0.00';
+        cell.alignment = { horizontal: 'right' };
+      });
+
+      proveedorSheet.getRow(proveedorTotalRow).eachCell((cell) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: totalsBg } };
+        cell.font = { bold: true, size: 11, color: { argb: brandColor } };
+        cell.border = {
+          top: { style: 'medium', color: { argb: brandColor } },
+          bottom: { style: 'medium', color: { argb: brandColor } },
+          left: { style: 'thin', color: { argb: 'D4D4D4' } },
+          right: { style: 'thin', color: { argb: 'D4D4D4' } }
+        };
+      });
+
+      // Anchos
+      proveedorSheet.getColumn(1).width = 32;
+      proveedorSheet.getColumn(2).width = 14;
+      proveedorSheet.getColumn(3).width = 14;
+      proveedorSheet.getColumn(4).width = 10;
+      proveedorSheet.getColumn(5).width = 14;
+      proveedorSheet.getColumn(6).width = 12;
+
+      proveedorSheet.views = [{ state: 'frozen', ySplit: 8 }];
+      proveedorSheet.autoFilter = { from: 'A8', to: `F${8 + proveedorRows.length}` };
+
+      // Descargar archivo
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const datePart = new Date().toISOString().split('T')[0];
+      a.download = `SnackRoque_Compras_${datePart}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      alert(`Excel de compras descargado (${purchases.length} registros)`);
+    } catch (err: any) {
+      console.error(err);
+      alert('Error al exportar Excel: ' + err.message);
+    }
+  };
+
   return (
     <div className="screen active">
       {/* TOOLBAR */}
@@ -214,7 +715,10 @@ export default function ComprasPage() {
         <div style={{ fontSize: '13px', color: 'var(--text-2)', fontWeight: '600' }}>
           Registra el ingreso de mercadería e insumos de tus proveedores estratégicos.
         </div>
-        <button className="btn-new" onClick={handleOpenNew}>+ Registrar compra</button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn-new" onClick={exportToExcel} style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}>📊 Exportar Excel</button>
+          <button className="btn-new" onClick={handleOpenNew}>+ Registrar compra</button>
+        </div>
       </div>
 
       {/* TABLE PANEL */}
